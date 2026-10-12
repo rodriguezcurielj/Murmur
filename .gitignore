@@ -1,0 +1,5 @@
+node_modules/
+music-data/
+npm-debug.log*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+services:
+  murmur:
+    build: .
+    image: murmur-player
+    container_name: murmur
+    ports:
+      - "8080:8080"
+    volumes:
+      # Your music lives here on your computer, so it survives rebuilds
+      - ./music-data:/data
+    restart: unless-stopped
