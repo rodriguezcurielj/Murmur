@@ -349,6 +349,26 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .device{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .device>div{display:flex;flex-direction:column;min-width:0}
 
+/* ---------- YouTube ---------- */
+.yt-box{position:fixed;right:16px;bottom:100px;z-index:45;width:min(356px,calc(100vw - 32px));background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--line);box-shadow:0 16px 40px rgba(0,0,0,.55)}
+.yt-frame{aspect-ratio:16/9;width:100%}
+.yt-frame iframe{width:100%;height:100%;display:block;border:0}
+.yt-bar{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--raise)}
+.yt-bar a,.steps a{color:var(--accent)}
+.yt-badge{position:absolute;left:8px;top:8px;background:#e0473f;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:.02em}
+.yt-setup{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:28px;padding:16px;background:var(--raise);border-radius:12px}
+.yt-setup>span{color:#e0473f}
+.yt-setup>div{flex:1;min-width:14rem}
+.yt-setup p{margin:4px 0 0}
+.yt-search-row{display:flex;align-items:center;gap:12px;margin-top:28px;flex-wrap:wrap}
+.yt-av{background:#e0473f;color:#fff}
+.yt-av svg{width:16px;height:16px}
+.yt-key-form{margin:0}
+.yt-key-form .field input{width:min(26rem,100%)}
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;max-width:62ch}
+.sub-head{font:700 20px var(--font-display);margin:30px 0 6px}
+.yt-settings{margin:12px 0 4px}
+
 /* ---------- modal ---------- */
 .modal-back{position:fixed;inset:0;z-index:90;background:rgba(8,5,12,.62);display:grid;place-items:center;padding:16px}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(460px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.6)}
@@ -407,6 +427,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .bottom-nav svg{width:24px;height:24px}
   .toast{bottom:150px}
   .up-status{bottom:140px}
+  .yt-box{right:8px;bottom:138px;width:calc(100vw - 16px)}
   .sel-bar{bottom:136px;width:calc(100vw - 16px);max-width:none;justify-content:center;padding:8px 6px}
   .sb span{display:none}
   .sb.done span{display:inline}
@@ -430,6 +451,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 <div class="sel-bar" id="selBar" role="toolbar" aria-label="Selected items" hidden></div>
 <div class="modal-back" id="modal" hidden></div>
 <div class="gate" id="gate" hidden></div>
+<div class="yt-box" id="ytBox" hidden><div class="yt-frame"><div id="ytFrame"></div></div><div class="yt-bar"><span class="small">Playing from YouTube</span><a id="ytOpen" class="small" href="https://www.youtube.com" target="_blank" rel="noopener">Open on YouTube</a></div></div>
 
 <script>
 (() => {
@@ -654,6 +676,34 @@ const UPLOADS = { id: 'uploads', title: 'Uploads', artist: 'You', year: 'Your fi
   colors: ['#8a76e0', '#241c3a', '#ffb070'], desc: 'Audio and video files stored on your Murmur server.', trackIds: [] };
 UPLOADS.cover = makeCover(UPLOADS);
 ALBUM_MAP.uploads = UPLOADS;
+/* ---------- YouTube songs ---------- */
+const YTALBUM = { id: 'youtube', title: 'From YouTube', artist: 'YouTube', year: 'Played in Murmur', genre: 'youtube', seed: 7,
+  colors: ['#e0473f', '#2a1416', '#ffb070'], desc: 'YouTube songs you’ve played, liked or saved to playlists.', trackIds: [] };
+YTALBUM.cover = makeCover(YTALBUM);
+ALBUM_MAP.youtube = YTALBUM;
+const yt = { enabled: false, shelves: [], results: new Map(), loading: new Set(), error: '' };
+function addYtTrack(v, genreTag) {
+  const id = 'yt-' + v.id;
+  const old = TRACKS[id];
+  TRACKS[id] = { id, ytId: v.id, yt: true, title: v.title, artist: v.channel || 'YouTube', album: 'YouTube', albumId: 'youtube',
+    genre: 'youtube', genreTag: genreTag || (old && old.genreTag) || '', duration: v.duration || 0, cover: v.thumb, seed: hashStr(id) };
+  return id;
+}
+const ytMeta = id => { const t = TRACKS[id]; return { id: t.ytId, title: t.title, channel: t.artist, thumb: t.cover, duration: t.duration, genre: t.genreTag }; };
+function saveYtCache() {
+  // Keep YouTube songs that are liked, in a playlist, recently played or in the queue.
+  const keep = new Set([...state.liked, ...state.playlists.flatMap(p => p.tracks), ...state.manual, ...ytRecent(), state.current].filter(id => id && id.startsWith('yt-') && TRACKS[id]));
+  store.set('ytTracks', [...keep].map(ytMeta));
+  YTALBUM.trackIds = [...keep];
+}
+const ytRecent = () => store.get('ytRecent', []);
+function noteYtPlay(id) {
+  if (!id || !id.startsWith('yt-')) return;
+  store.set('ytRecent', [id, ...ytRecent().filter(x => x !== id)].slice(0, 50));
+  saveYtCache();
+}
+store.get('ytTracks', []).forEach(v => { if (v && v.id) addYtTrack(v, v.genre); });
+YTALBUM.trackIds = store.get('ytTracks', []).map(v => 'yt-' + v.id);
 const UP_PALETTES = [['#e98a6b', '#3a1f2b', '#ffd8a8'], ['#6bb8e9', '#18263f', '#c6f0ff'], ['#9ad07a', '#1f3322', '#f2f7c4'], ['#d77ad0', '#2c1838', '#ffd0f5'], ['#e9c46b', '#33270f', '#fff1c4']];
 const coverCache = {};
 const offline = new Map();      // track id -> { size } for songs saved on this device
@@ -697,7 +747,7 @@ function normalizeServer(a) {
 const canEditMusic = () => server.on && !!me && (me.role === 'owner' || !!me.canEdit);
 function addServerTrack(r) {
   const id = 'f-' + r.id;
-  TRACKS[id] = { id, sid: r.id, title: r.title || 'Untitled', artist: r.artist || 'Unknown artist', albumTag: r.album || '', album: r.album || 'Uploads',
+  TRACKS[id] = { id, sid: r.id, title: r.title || 'Untitled', artist: r.artist || 'Unknown artist', albumTag: r.album || '', genreTag: r.genre || '',album: r.album || 'Uploads',
     albumId: 'uploads', trackNo: r.trackNo || 0, genre: 'upload', duration: r.duration || 0, src: fileUrl('media/' + encodeURIComponent(r.file)),
     cover: r.cover ? fileUrl('covers/' + encodeURIComponent(r.cover)) : null, size: r.size || 0, format: r.format || '', fromVideo: !!r.fromVideo,
     addedAt: r.addedAt, seed: hashStr(id), raw: r };
@@ -1023,8 +1073,8 @@ const state = {
   sel: null,      // { type, id, idx: Set<number>, last } while selecting songs in a list
   libSel: null    // Set of 'type:id' while selecting items in Your Library
 };
-const saveLiked = () => store.set('liked', [...state.liked]);
-const savePlaylists = () => store.set('playlists', state.playlists);
+const saveLiked = () => { store.set('liked', [...state.liked]); saveYtCache(); };
+const savePlaylists = () => { store.set('playlists', state.playlists); saveYtCache(); };
 const volGain = () => state.muted ? 0 : Math.pow(state.volume, 2);
 const visible = id => !!TRACKS[id] && !state.hidden.has(id);
 const visAlbums = () => ALBUMS.filter(a => a.trackIds.some(visible));
@@ -1273,10 +1323,72 @@ const FileEng = {
   position() { return this.audio ? this.audio.currentTime || 0 : 0; },
   get duration() { const d = this.audio && this.audio.duration; return isFinite(d) && d > 0 ? d : (this.track ? this.track.duration : 0); }
 };
+/* YouTube songs play in YouTube's official embedded player, shown in a small window while playing. */
+const YTEng = {
+  player: null, ready: null, track: null, onEnd: null, pending: null, cued: false,
+  api() {
+    if (this.ready) return this.ready;
+    this.ready = new Promise((resolve, reject) => {
+      const done = () => {
+        this.player = new YT.Player('ytFrame', {
+          width: '100%', height: '100%',
+          playerVars: { playsinline: 1, rel: 0, modestbranding: 1, origin: location.origin },
+          events: {
+            onReady: () => resolve(this.player),
+            onStateChange: e => {
+              if (e.data === 0) { this.onEnd && this.onEnd(); return; }
+              updatePlayIcons(); highlight();
+            },
+            onError: () => {
+              const t = this.track;
+              if (t) toast(`“${t.title}” can’t be played outside YouTube. Skipping it.`);
+              setTimeout(() => next(true), 600);
+            }
+          }
+        });
+      };
+      if (window.YT && window.YT.Player) { done(); return; }
+      window.onYouTubeIframeAPIReady = done;
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = () => { this.ready = null; reject(new Error('YouTube’s player didn’t load. Check your internet connection.')); };
+      document.head.appendChild(s);
+    });
+    return this.ready;
+  },
+  load(t) {
+    this.track = t; this.cued = false;
+    $('#ytBox').hidden = false;
+    $('#ytOpen').href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(t.ytId);
+    this.api().then(p => { if (this.track !== t) return; p.cueVideoById(t.ytId); this.cued = true; }).catch(e => toast(e.message));
+  },
+  unload() {
+    this.track = null;
+    if (this.player && this.player.stopVideo) { try { this.player.stopVideo(); } catch (e) {} }
+    const box = $('#ytBox'); if (box) box.hidden = true;
+  },
+  get playing() { try { const s = this.player && this.player.getPlayerState(); return !!this.track && (s === 1 || s === 3); } catch (e) { return false; } },
+  play() {
+    const t = this.track; if (!t) return;
+    this.api().then(p => {
+      if (this.track !== t) return;
+      try { p.setVolume(Math.round(volGain() * 100)); } catch (e) {}
+      if (this.cued) p.playVideo(); else { p.loadVideoById(t.ytId); this.cued = true; }
+    }).catch(e => toast(e.message));
+  },
+  pause() { try { this.player && this.player.pauseVideo(); } catch (e) {} },
+  restart() { this.seek(0); this.play(); },
+  seek(s) { try { this.player && this.player.seekTo(s, true); } catch (e) {} },
+  position() { try { return (this.player && this.player.getCurrentTime && this.player.getCurrentTime()) || 0; } catch (e) { return 0; } },
+  get duration() { try { const d = this.player && this.player.getDuration && this.player.getDuration(); return d > 0 ? d : (this.track ? this.track.duration : 0); } catch (e) { return this.track ? this.track.duration : 0; } },
+  setVolume() { try { this.player && this.player.setVolume(Math.round(volGain() * 100)); } catch (e) {} }
+};
 const Engine = {
   mode: 'synth',
-  get e() { return this.mode === 'file' ? FileEng : Synth; },
+  get e() { return this.mode === 'file' ? FileEng : this.mode === 'yt' ? YTEng : Synth; },
   load(t) {
+    if (t.yt) { Synth.unload(); FileEng.unload(); this.mode = 'yt'; YTEng.load(t); return; }
+    YTEng.unload();
     if (t.src) { Synth.unload(); this.mode = 'file'; FileEng.load(t); }
     else { FileEng.unload(); this.mode = 'synth'; Synth.load(t); }
   },
@@ -1288,9 +1400,9 @@ const Engine = {
   get duration() { return this.e.duration; },
   get playing() { return this.e.playing; },
   get analyser() { return Synth.analyser; },
-  setVolume() { Synth.setVolume(); if (FileEng.audio && !FileEng.node) FileEng.audio.volume = volGain(); }
+  setVolume() { Synth.setVolume(); YTEng.setVolume(); if (FileEng.audio && !FileEng.node) FileEng.audio.volume = volGain(); }
 };
-Synth.onEnd = FileEng.onEnd = () => next(true);
+Synth.onEnd = FileEng.onEnd = YTEng.onEnd = () => next(true);
 
 /* ================= collections ================= */
 function mosaicFor(ids) {
@@ -1311,7 +1423,7 @@ function getCollection(type, id) {
     const tracks = a.trackIds.filter(visible);
     if (!tracks.length && !a.uploaded && id !== 'uploads') return null;
     return { type, id, kind: 'Album', title: a.title, desc: a.desc, sub: `<b>${esc(a.artist)}</b> · ${a.year}`, tracks, cover: a.cover, color: a.colors[0],
-      artist: a.artist, uploaded: !!a.uploaded, demo: !a.uploaded && id !== 'uploads', uploadsAll: id === 'uploads' };
+      artist: a.artist, uploaded: !!a.uploaded, demo: !a.uploaded && id !== 'uploads' && id !== 'youtube', uploadsAll: id === 'uploads' };
   }
   if (type === 'playlist') {
     const cur = state.hiddenCols.has(id) ? null : CURATED.find(p => p.id === id), user = state.playlists.find(p => p.id === id), p = cur || user;
@@ -1342,6 +1454,9 @@ function getCollection(type, id) {
     if (!tracks.length) return null;
     const sub = albums.length ? plural(albums.filter(a => a.trackIds.some(visible)).length, 'album') : 'From your uploads';
     return { type, id, kind: 'Artist', title: id, desc: '', sub, tracks, cover: tCover(tracks[0]), color: ALBUM_MAP[TRACKS[tracks[0]].albumId].colors[0], round: true };
+  }
+  if (type === 'ytq') {
+    return { type, id, kind: 'YouTube', title: id, sub: '<b>YouTube</b>', tracks: (yt.results.get(id) || []).filter(visible), color: '#e0473f' };
   }
   if (type === 'search') {
     return { type, id, kind: 'Search', title: `“${id}”`, tracks: searchTracks(id), color: '#6b5a7d' };
@@ -1381,8 +1496,75 @@ function playFrom(type, id, start) {
 function loadAndPlay(tid, autoplay = true) {
   state.current = tid;
   Engine.load(TRACKS[tid]);
-  if (autoplay) Engine.play();
+  if (autoplay) { Engine.play(); notePlay(tid); }
   updatePlayerUI();
+}
+
+/* ================= taste & YouTube suggestions ================= */
+function notePlay(id) {
+  const plays = store.get('plays', {});
+  plays[id] = (plays[id] || 0) + 1;
+  store.set('plays', plays);
+  noteYtPlay(id);
+}
+const genreOf = t => (t.genreTag || (GENRES[t.genre] && GENRES[t.genre].label) || '').trim();
+/* Weigh what you like: liked songs count most, then songs you play. Returns the top genres and artists. */
+function tasteSeeds() {
+  const w = new Map(), add = (k, n) => { if (k) w.set(k, (w.get(k) || 0) + n); };
+  const plays = store.get('plays', {});
+  const weigh = (id, n) => {
+    const t = TRACKS[id]; if (!t || !visible(id)) return;
+    const g = genreOf(t); if (g) add('g:' + g, n);
+    if ((t.src || t.yt) && t.artist && !/^(unknown artist|youtube)$/i.test(t.artist)) add('a:' + t.artist, n * 0.8);
+  };
+  state.liked.forEach(id => weigh(id, 3));
+  Object.entries(plays).forEach(([id, n]) => weigh(id, Math.min(n, 5)));
+  UPLOADS.trackIds.forEach(id => weigh(id, 0.5));
+  const ranked = [...w.entries()].sort((a, b) => b[1] - a[1]);
+  const genres = ranked.filter(([k]) => k.startsWith('g:')).slice(0, 3).map(([k]) => k.slice(2));
+  const artists = ranked.filter(([k]) => k.startsWith('a:')).slice(0, 2).map(([k]) => k.slice(2));
+  if (!genres.length) genres.push('Lo-fi', 'Synthwave');
+  return { genres, artists };
+}
+const ytQueryFor = s => s.kind === 'genre' ? `${s.value} music` : `songs like ${s.value}`;
+async function ytSearch(q, genreTag) {
+  q = q.trim().toLowerCase();
+  // Results are kept for 12 hours on this device to save YouTube's daily quota.
+  const cached = store.get('yt:' + q, null);
+  if (cached && Date.now() - cached.at < 12 * 3600e3) return cached.items.map(v => addYtTrack(v, genreTag));
+  const res = await api('GET', 'api/youtube/search?q=' + encodeURIComponent(q));
+  try { store.set('yt:' + q, { at: Date.now(), items: res.items }); } catch (e) {}
+  return res.items.map(v => addYtTrack(v, genreTag));
+}
+async function loadSuggestions() {
+  if (!yt.enabled) return;
+  const { genres, artists } = tasteSeeds();
+  yt.shelves = [...genres.map(g => ({ kind: 'genre', value: g })), ...artists.map(a => ({ kind: 'artist', value: a }))].slice(0, 4);
+  await Promise.all(yt.shelves.map(async s => {
+    const q = ytQueryFor(s);
+    try { yt.results.set(q, await ytSearch(q, s.kind === 'genre' ? s.value : '')); yt.error = ''; }
+    catch (e) { yt.error = e.message; }
+  }));
+  if (state.view.name === 'home') render();
+}
+function ytCard(id, q, i) {
+  const t = TRACKS[id];
+  return `<div class="card yt-card" data-act="yt-play" data-q="${esc(q)}" data-i="${i}" data-tid="${id}" role="button" tabindex="0" aria-label="Play ${esc(t.title)} from YouTube">
+    <div class="card-art"><img class="cover yt-thumb" src="${esc(t.cover)}" alt="" loading="lazy"><span class="yt-badge">YouTube</span></div>
+    <div><div class="nm ell">${esc(t.title)}</div><div class="sb ell">${esc(t.artist)} · ${fmt(t.duration)}</div></div></div>`;
+}
+function ytShelvesHTML() {
+  if (!server.on || !yt.enabled) {
+    return server.on && me && me.role === 'owner'
+      ? `<div class="yt-setup"><span>${icon('search')}</span><div><b>Get song suggestions from YouTube</b><p class="small">Murmur can suggest YouTube songs based on the genres and artists you like. Connect a free YouTube API key to turn it on.</p></div><button class="text-btn" data-act="go-settings">Set up YouTube</button></div>` : '';
+  }
+  const shelves = yt.shelves.map(s => {
+    const q = ytQueryFor(s), ids = (yt.results.get(q) || []).filter(id => TRACKS[id] && visible(id));
+    if (!ids.length) return '';
+    const title = s.kind === 'genre' ? `Because you like ${esc(s.value)}` : `If you like ${esc(s.value)}`;
+    return `<div class="shelf-head"><h2>${title}</h2><p>Suggested from YouTube</p></div><div class="shelf">${ids.slice(0, 12).map((id, i) => ytCard(id, q, i)).join('')}</div>`;
+  }).join('');
+  return shelves || (yt.error ? `<p class="small" style="margin-top:28px">${esc(yt.error)}</p>` : '');
 }
 function togglePlay() {
   if (!state.current) { resetPlayback(); if (state.current) Engine.play(); updatePlayIcons(); highlight(); return; }
@@ -1477,6 +1659,7 @@ function viewHome() {
     return `<div class="qt" data-act="open" data-type="${t}" data-id="${i}" data-col-key="${t}:${i}" role="button" tabindex="0">${coverHTML(col, '')}<span class="nm ell">${esc(col.title)}</span>${col.tracks.length ? playFab(t, i) : ''}</div>`;
   }).join('')}</div>
   ${shelf('Your albums', upAlbums().map(a => card('album', a.id)), 'Grouped from the album tags on your uploads')}
+  ${ytShelvesHTML()}
   ${shelf('Made for you', visCurated().map(p => card('playlist', p.id)), 'Mixes built from your listening')}
   ${shelf('Recently played', recent.map(([t, i]) => card(t, i)))}
   ${shelf('New albums', visAlbums().map(a => card('album', a.id)))}
@@ -1501,13 +1684,32 @@ function searchResultsHTML() {
   const tracks = searchTracks(q);
   const albums = [...visAlbums(), ...upAlbums()].filter(a => a.title.toLowerCase().includes(ql) || a.artist.toLowerCase().includes(ql) || gLabel(a.genre).toLowerCase().includes(ql));
   const artists = visArtists().filter(a => a.toLowerCase().includes(ql));
+  let ytPart = '';
+  if (server.on && yt.enabled) {
+    const key = q.toLowerCase(), ids = yt.results.get(key);
+    ytPart = ids
+      ? `<div class="shelf-head"><h2>From YouTube</h2>${ids.length ? `<div class="head-actions"><p>${plural(ids.length, 'song')}</p>${selBtn('ytq', key)}</div>` : ''}</div>
+         ${ids.length ? trackList(ids.filter(visible), 'ytq', key, { head: false }) : '<p class="small">YouTube found no songs for that.</p>'}`
+      : `<div class="yt-search-row"><button class="text-btn" data-act="yt-search" data-q="${esc(q)}">${icon('search')}<span>${yt.loading.has(key) ? 'Searching YouTube…' : `Search YouTube for “${esc(q)}”`}</span></button><span class="small">or press Enter</span></div>`;
+  }
   if (!tracks.length && !albums.length && !artists.length) {
-    return `<div class="empty"><h2>No results for “${esc(q)}”</h2>Check the spelling, or try an artist like Halden or a style like synthwave.</div>`;
+    return `${ytPart}${ytPart ? '' : `<div class="empty"><h2>No results for “${esc(q)}”</h2>Check the spelling, or try an artist like Halden or a style like synthwave.</div>`}`;
   }
   return `${artists.length ? `<div class="shelf-head"><h2>Artists</h2></div><div class="artist-chips">${artists.map(a => `<button class="ac" data-act="open" data-type="artist" data-id="${esc(a)}"><img src="${ALBUMS.find(x => x.artist === a).cover}" alt="">${esc(a)}</button>`).join('')}</div>` : ''}
   ${tracks.length ? `<div class="shelf-head"><h2>Songs</h2><div class="head-actions"><p>${tracks.length} match${tracks.length > 1 ? 'es' : ''}</p>${selBtn('search', q)}</div></div>${trackList(tracks, 'search', q, { head: false })}` : ''}
-  ${shelf('Albums', albums.map(a => card('album', a.id)))}`;
+  ${shelf('Albums', albums.map(a => card('album', a.id)))}
+  ${ytPart}`;
 }
+async function runYtSearch(q) {
+  q = String(q || '').trim(); if (!q || !yt.enabled) return;
+  const key = q.toLowerCase();
+  if (yt.loading.has(key)) return;
+  yt.loading.add(key); refreshSearch();
+  try { yt.results.set(key, await ytSearch(key, '')); }
+  catch (e) { toast(e.message); }
+  yt.loading.delete(key); refreshSearch();
+}
+function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
 function viewCollection(type, id) {
   const col = getCollection(type, id);
   if (!col) return `<div class="empty"><h2>This is gone</h2>It was deleted or removed. Pick something from your library instead.</div>`;
@@ -1560,6 +1762,8 @@ function viewCollection(type, id) {
 function libEntries() {
   const out = [{ type: 'liked', id: 'liked', name: 'Liked Songs', sub: `Playlist · ${plural(getCollection('liked').tracks.length, 'song')}`, k: 'playlist' }];
   if (server.on || server.offlineMode) out.push({ type: 'album', id: 'uploads', name: 'Uploads', sub: `Your files · ${plural(UPLOADS.trackIds.length, 'song')}`, k: 'playlist' });
+  const ytCount = YTALBUM.trackIds.filter(visible).length;
+  if (ytCount) out.push({ type: 'album', id: 'youtube', name: 'From YouTube', sub: `YouTube · ${plural(ytCount, 'song')}`, k: 'playlist' });
   if (server.on || offline.size) out.push({ type: 'downloads', id: 'downloads', name: 'Downloaded', sub: `On this device · ${plural(getCollection('downloads').tracks.length, 'song')}`, k: 'playlist' });
   state.playlists.forEach(p => out.push({ type: 'playlist', id: p.id, name: p.name, sub: `Playlist · ${plural(p.tracks.length, 'song')}`, k: 'playlist', sel: true }));
   visCurated().forEach(p => out.push({ type: 'playlist', id: p.id, name: p.name, sub: 'Playlist · Murmur', k: 'playlist', sel: true }));
@@ -1764,8 +1968,8 @@ function updatePlayerUI() {
     $('#fCover').src = tCover(t.id); $('#fCover').alt = t.album;
     $('#fTitle').textContent = t.title;
     $('#fCtx').textContent = state.ctx ? state.ctx.title : t.album;
-    $('#fFacts').innerHTML = t.src
-      ? `${esc(t.format.toUpperCase())} · ${fmtSize(t.size)} · stored on your Murmur server`
+    $('#fFacts').innerHTML = t.yt ? `Playing from YouTube · ${esc(t.artist)}` : t.src
+      ?`${esc(t.format.toUpperCase())} · ${fmtSize(t.size)} · stored on your Murmur server`
       : `${NOTE[t.root % 12]} ${t.scale} · ${t.bpm} BPM · <span class="prog">${chordName(t)}</span>`;
     document.documentElement.style.setProperty('--tint', a.colors[1]);
     $('#full').style.setProperty('--tint', a.colors[0]);
@@ -1781,7 +1985,11 @@ function renderNP() {
   <img class="cover np-cover" src="${tCover(t.id)}" alt="${esc(t.album)}">
   <div class="np-meta"><div style="min-width:0"><h3>${esc(t.title)}</h3><button class="np-artist ell" data-act="open" data-type="artist" data-id="${esc(t.artist)}">${esc(t.artist)}</button></div>
     <button class="icon-btn like${state.liked.has(t.id) ? ' on' : ''}" data-act="like" data-tid="${t.id}" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
-  ${t.src ? `<div class="np-card"><span class="eyebrow">Your file</span>
+  ${t.yt ? `<div class="np-card"><span class="eyebrow">From YouTube</span>
+    <dl class="facts"><dt>Channel</dt><dd>${esc(t.artist)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd>${t.genreTag ? `<dt>Suggested for</dt><dd>${esc(t.genreTag)}</dd>` : ''}</dl>
+    <p class="small">Plays in YouTube’s player, so it needs a connection and can’t be downloaded.</p>
+    <a class="text-btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(t.ytId)}" target="_blank" rel="noopener">${icon('expand')}<span>Open on YouTube</span></a></div>`
+  : t.src ? `<div class="np-card"><span class="eyebrow">Your file</span>
     <dl class="facts"><dt>Format</dt><dd>${esc(t.format.toUpperCase())}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Size</dt><dd>${fmtSize(t.size)}</dd>${t.addedAt ? `<dt>Added</dt><dd>${new Date(t.addedAt).toLocaleDateString()}</dd>` : ''}</dl>
     <p class="small">${t.fromVideo ? 'Audio extracted from a video file. ' : ''}Stored in the music-data folder of your Murmur server.</p>
     ${canEditMusic() ? `<button class="text-btn" data-act="edit-one" data-tid="${t.id}">${icon('edit')}<span>Edit details</span></button>` : ''}</div>`
@@ -1839,7 +2047,8 @@ function renderMenu() {
     html += b('queue', icon('queue') + 'Add to queue')
       + b('like', icon('heart') + (state.liked.has(t.id) ? 'Remove from Liked Songs' : 'Save to Liked Songs'))
       + b('sub', icon('plus') + 'Add to playlist')
-      + '<hr>' + b('album', icon('album') + 'Go to album') + b('artist', icon('user') + 'Go to artist')
+      + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
+      + (t.yt ? b('ytopen', icon('expand') + 'Open on YouTube') : '')
       + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '')
         + (server.on ? b('save', icon('save') + 'Save file to device') : '') : '')
       + (t.src && canEditMusic() ? b('edit', icon('edit') + 'Edit details') : '')
@@ -2134,7 +2343,8 @@ function act(el, e) {
       if (op === 'back') { m.sub = false; renderMenu(); return; }
       if (op === 'delete' && !m.confirm) { m.confirm = true; renderMenu(); return; }
       closeMenu();
-      if (op === 'dl') downloadTracks(tids);
+      if (op === 'ytopen') { const a = document.createElement('a'); a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(TRACKS[tids[0]].ytId); a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+      else if (op === 'dl') downloadTracks(tids);
       else if (op === 'undl') confirmRemoveDownloads(tids);
       else if (op === 'save') saveToDevice(tids[0]);
       else if (op === 'delete') removeTracks(tids);
@@ -2192,6 +2402,13 @@ function act(el, e) {
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); showGate('connect'); break;
+    /* YouTube */
+    case 'yt-play': playFrom('ytq', d.q, +d.i); break;
+    case 'yt-search': runYtSearch(d.q); break;
+    case 'go-settings': people = null; navigate({ name: 'people' }); break;
+    case 'yt-key-remove':
+      api('DELETE', 'api/settings/youtube').then(() => { yt.enabled = false; yt.shelves = []; toast('YouTube disconnected'); render(); }).catch(err => toast(err.message));
+      break;
     case 'p-edit': {
       const on = el.checked;
       api('PATCH', 'api/users/' + d.id, { canEdit: on })
@@ -2279,6 +2496,15 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', async e => {
   if (e.target.id === 'gForm') { e.preventDefault(); gateSubmit(e.target); return; }
   if (e.target.id === 'addPerson') { e.preventDefault(); addPerson(e.target); return; }
+  if (e.target.id === 'ytKeyForm') {
+    e.preventDefault();
+    const btn = e.target.querySelector('.m-ok'); btn.disabled = true; btn.textContent = 'Checking key…';
+    try {
+      await api('PUT', 'api/settings/youtube', { key: new FormData(e.target).get('key') });
+      yt.enabled = true; toast('YouTube connected. Suggestions are on Home.'); render(); loadSuggestions();
+    } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = 'Connect YouTube'; }
+    return;
+  }
   if (e.target.id !== 'mForm') return;
   e.preventDefault();
   const fn = modalSubmit, fd = new FormData(e.target);
@@ -2323,6 +2549,7 @@ document.addEventListener('keydown', e => {
   }
   if (!$('#modal').hidden || !$('#gate').hidden) return;
   if (e.target.id === 'plName' && e.key === 'Enter') { e.target.blur(); return; }
+  if (e.target.id === 'q' && e.key === 'Enter') { e.preventDefault(); runYtSearch(e.target.value); return; }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"]')) { e.preventDefault(); e.target.click(); return; }
   if (e.key === ' ' && !['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(tag)) { e.preventDefault(); togglePlay(); }
 });
@@ -2465,7 +2692,7 @@ function openAccount() {
   const where = remote.base ? `<p>Server: <b>${esc(remote.base)}</b></p>` : '';
   openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}
     <div class="acct-actions">
-      ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>Manage people</span></button>` : ''}
+      ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Use a different server</span></button>` : ''}
@@ -2506,7 +2733,9 @@ function viewPeople() {
       </div>
       <ul class="devices" aria-label="Signed-in devices">${devices}</ul></article>`;
   };
-  return `<h1 class="greet">People</h1>
+  return `<h1 class="greet">People & settings</h1>
+  ${ytSettingsHTML()}
+  <h2 class="sub-head">People</h2>
   <p class="small" style="max-width:60ch">People you add sign in with their name and a 4-digit PIN. When they choose “Remember this computer” they stay signed in there for 90 days, then need their PIN again. Deleting someone signs them out everywhere.</p>
   <form id="addPerson" class="person-add">
     <div class="field"><label for="apName">Name</label><input id="apName" name="name" maxlength="40" required autocomplete="off"></div>
@@ -2515,6 +2744,23 @@ function viewPeople() {
     <button class="m-ok" type="submit">Add person</button>
   </form>
   <div class="people">${people.map(person).join('')}</div>`;
+}
+function ytSettingsHTML() {
+  const status = yt.enabled ? 'Connected. YouTube search and suggestions are on for everyone who signs in.' : 'Not connected yet.';
+  return `<section class="person yt-settings" aria-labelledby="ytSetTitle">
+    <header class="person-head"><span class="avatar yt-av">${icon('play')}</span>
+      <div class="person-meta"><h3 id="ytSetTitle">YouTube</h3><span class="small">${status}</span></div></header>
+    ${yt.enabled ? `<div class="person-actions"><button class="text-btn danger" data-act="yt-key-remove">Disconnect YouTube</button></div>` : `
+    <ol class="steps small">
+      <li>Open <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a> in Google Cloud and sign in with your Google account. Create a project if it asks, then click <b>Enable</b>.</li>
+      <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials</a>, click <b>Create credentials</b> then <b>API key</b>, and copy the key.</li>
+      <li>Paste it below. It’s saved only on your Murmur server. The free plan allows about 90 YouTube searches a day, and Murmur reuses results to stay under that.</li>
+    </ol>
+    <form id="ytKeyForm" class="person-add yt-key-form">
+      <div class="field"><label for="ytKey">YouTube API key</label><input id="ytKey" name="key" required autocomplete="off" spellcheck="false" placeholder="AIza…"></div>
+      <button class="m-ok" type="submit">Connect YouTube</button>
+    </form>`}
+  </section>`;
 }
 async function addPerson(form) {
   const fd = new FormData(form);
@@ -2534,7 +2780,10 @@ async function addPerson(form) {
   if (['setup', 'login', 'expired', 'offline-expired', 'connect', 'unreachable'].includes(mode)) { showGate(mode); return; }
   $('#acctBtn').hidden = !me;
   if (me) $('#acctBtn').textContent = me.name.slice(0, 1).toUpperCase();
-  if (mode === 'ok') await connectServer();
+  if (mode === 'ok') {
+    await connectServer();
+    try { yt.enabled = !!(await api('GET', 'api/youtube/status')).enabled; } catch (e) {}
+  }
   const saved = mode === 'demo' ? [] : await loadOffline();
   if (server.on) {
     // Downloads of songs that were deleted from the server are no longer needed.
@@ -2552,6 +2801,7 @@ async function addPerson(form) {
   resetPlayback();
   render();
   requestAnimationFrame(frame);
+  loadSuggestions();
   // Notice when the sign-in ends (90 days up, PIN changed, or removed by the owner).
   if (mode === 'ok') {
     document.addEventListener('visibilitychange', async () => {

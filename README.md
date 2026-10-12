@@ -37,6 +37,16 @@ Then open **http://localhost:8080**.
 - **Security:** PINs are stored as salted scrypt hashes, and sessions as SHA-256 hashes of random tokens. Five wrong PINs lock that name and address for 1 minute, and the lock doubles up to 15 minutes. All music, covers and API routes require sign-in, and requests from other websites are rejected.
 - **Forgot the owner PIN?** Stop Murmur and delete `music-data/auth.json`. Your music is untouched; you'll set up the owner again and re-add people.
 
+## YouTube suggestions
+
+The owner can connect a free YouTube Data API key under **People & settings**. The key is stored in `music-data/settings.json` on the server, never in git. Once it is connected:
+
+- **Home** shows *Because you like …* shelves of YouTube songs, based on the genres and artists of the songs you like and play.
+- **Search** gets a *Search YouTube* button (or press Enter).
+- YouTube songs play in YouTube's official embedded player, which appears as a small video window while playing. You can like them, add them to playlists and queue them. They can't be downloaded.
+
+The free quota allows about 90 searches a day, so results are cached for 12 hours.
+
 ## Where your music is stored
 
 Everything you upload goes into `music-data/` at the top of this repo. That folder is mounted into the container and isn't committed to git:
@@ -71,6 +81,8 @@ sw.js                 Service worker that keeps the app available offline
 manifest.webmanifest, icons/   Install-as-app metadata
 server.js             Express server: upload, edit, delete, file streaming
 auth.js               Accounts, PINs, sessions, permissions
+youtube.js            YouTube search and suggestions (official API)
+config.js             Server address used by the GitHub Pages copy
 Docker/               Dockerfile and docker-compose.yml
 music-data/           Your music and accounts (not in git)
 ```

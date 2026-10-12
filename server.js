@@ -9,6 +9,7 @@ const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 const createAuth = require('./auth');
+const createYouTube = require('./youtube');
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -71,6 +72,7 @@ app.use(auth.sameOrigin);
 app.use('/api', express.json({ limit: '1mb' }));
 app.use('/api', auth.requireUser);
 auth.routes(app);
+createYouTube(path.join(DATA, 'settings.json'), auth).routes(app);
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -123,6 +125,7 @@ app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res
       title: tags.title || guess.title,
       artist: tags.artist || tags.album_artist || guess.artist || '',
       album: tags.album || '',
+      genre: tags.genre || '',
       trackNo: parseInt(tags.track, 10) || 0,
       duration,
       file,
