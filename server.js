@@ -8,6 +8,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const createAuth = require('./auth');
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -60,12 +61,16 @@ function guessFromName(name) {
 const app = express();
 app.disable('x-powered-by');
 app.use('/api', express.json({ limit: '1mb' }));
+const auth = createAuth(path.join(DATA, 'auth.json'));
+app.use(auth.sameOrigin);
+app.use('/api', auth.requireUser);
+auth.routes(app);
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, tracks: library.length }));
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.get('/api/tracks', (req, res) => res.json({ tracks: library }));
 
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res) => {
   const f = req.file;
   if (!f) return res.status(400).json({ error: 'No file received.' });
   const id = crypto.randomBytes(8).toString('hex');
@@ -146,21 +151,21 @@ async function deleteIds(ids) {
 }
 const idList = b => (b && Array.isArray(b.ids) ? b.ids.filter(x => typeof x === 'string') : []);
 
-app.delete('/api/tracks/:id', async (req, res) => {
+app.delete('/api/tracks/:id', auth.requireEdit, async (req, res) => {
   const deleted = await deleteIds([req.params.id]);
   if (!deleted.length) return res.status(404).json({ error: 'That file is already gone.' });
   res.json({ ok: true, deleted });
 });
 
 // Bulk delete: { ids: [...] }
-app.post('/api/tracks/delete', async (req, res) => {
+app.post('/api/tracks/delete', auth.requireEdit, async (req, res) => {
   const ids = idList(req.body);
   if (!ids.length) return res.status(400).json({ error: 'No songs were picked.' });
   res.json({ ok: true, deleted: await deleteIds(ids) });
 });
 
 // Bulk edit: { ids: [...], title?, artist?, album? }. Fields left out are kept.
-app.patch('/api/tracks', async (req, res) => {
+app.patch('/api/tracks', auth.requireEdit, async (req, res) => {
   const ids = new Set(idList(req.body)), b = req.body || {};
   const tracks = library.filter(t => ids.has(t.id));
   if (!tracks.length) return res.status(404).json({ error: 'Those songs are no longer on the server.' });
@@ -174,8 +179,8 @@ app.patch('/api/tracks', async (req, res) => {
   res.json({ tracks });
 });
 
-app.use('/media', express.static(DIRS.music, { maxAge: '7d', fallthrough: false }));
-app.use('/covers', express.static(DIRS.covers, { maxAge: '7d', fallthrough: false }));
+app.use('/media', auth.requireUserFiles, express.static(DIRS.music, { maxAge: '7d', fallthrough: false }));
+app.use('/covers', auth.requireUserFiles, express.static(DIRS.covers, { maxAge: '7d', fallthrough: false }));
 // The app shell is revalidated on every load so updates reach installed copies;
 // the service worker keeps the last good version for offline use.
 app.use(express.static(path.join(__dirname, 'public'), {

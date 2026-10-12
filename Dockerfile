@@ -6,7 +6,7 @@ RUN apk add --no-cache ffmpeg
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
-COPY server.js ./
+COPY server.js auth.js ./
 COPY public ./public
 
 ENV PORT=8080 DATA_DIR=/data MAX_UPLOAD_MB=2048

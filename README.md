@@ -18,6 +18,22 @@ Then open **http://localhost:8080**.
 | Rebuild after changing code | `docker compose up -d --build` |
 | See server logs | `docker logs -f murmur` |
 
+## Sign-in and people
+
+- **First visit:** Murmur asks you to set up the owner account (your name + a 4-digit PIN). Do this right away. Until you do, anyone who can reach the server could claim it.
+- **Signing in:** everyone signs in with their name and PIN. After a correct PIN, Murmur asks **"Remember this computer?"**
+  - **Yes:** you stay signed in on that device for 90 days. Then Murmur locks and asks for your PIN again.
+  - **No:** you're signed out when the browser closes, or after 12 hours.
+- **People** (owner only, from the round account button at the top right, then *Manage people*):
+  - Add people with a name and a 4-digit PIN.
+  - Choose per person whether they **can add, edit and delete music**. The default is listen and download only.
+  - See each person's signed-in devices and sign any of them out.
+  - Set a new PIN for someone (this signs them out everywhere).
+  - Delete people, which stops their PIN and signs them out on every device.
+- Everyone can change their own PIN from the account button.
+- **Security:** PINs are stored as salted scrypt hashes, and sessions as SHA-256 hashes of random tokens. Five wrong PINs lock that name and address for 1 minute, and the lock doubles up to 15 minutes. All music, covers and API routes require sign-in, and requests from other websites are rejected.
+- **Forgot the owner PIN?** Stop Murmur and delete `music-data/auth.json`. Your music is untouched; you'll set up the owner again and re-add people.
+
 ## Where your music is stored
 
 Everything you upload goes into `music-data/` in this folder. That folder is mounted into the container and isn't committed to git:
@@ -25,6 +41,7 @@ Everything you upload goes into `music-data/` in this folder. That folder is mou
 - `music-data/music/`: the audio files
 - `music-data/covers/`: cover art taken from file tags or video frames
 - `music-data/library.json`: titles, artists, albums and other song details
+- `music-data/auth.json`: accounts and sign-ins (hashed PINs only)
 
 Back up `music-data/` to keep your library.
 
@@ -47,6 +64,7 @@ From another device on your Wi-Fi (`http://<your-PC's-IP>:8080`), you can stream
 
 ```
 server.js            Express server: upload, edit, delete, file streaming
+auth.js              Accounts, PINs, sessions, permissions
 public/index.html    The whole player (HTML, CSS, JS in one file)
 public/sw.js         Service worker that keeps the app available offline
 public/manifest.webmanifest, public/icons/   Install-as-app metadata

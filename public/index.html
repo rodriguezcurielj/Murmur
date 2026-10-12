@@ -316,6 +316,38 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .sb.done:hover{background:var(--fg)!important;opacity:.9}
 .sb-sep{width:1px;align-self:stretch;background:var(--line);margin:4px 4px}
 
+/* ---------- sign-in & people ---------- */
+.gate{position:fixed;inset:0;z-index:100;overflow:auto;display:grid;place-items:center;padding:24px 16px;background:radial-gradient(120% 80% at 50% 0%,color-mix(in srgb,var(--accent) 14%,var(--bg)) 0%,var(--bg) 60%)}
+.gate-card{width:min(400px,100%);display:flex;flex-direction:column;gap:6px}
+.gate-brand{padding:0 0 22px}
+.gate h1{font:800 clamp(28px,6vw,36px)/1.05 var(--font-display);letter-spacing:-.02em;margin:0;text-wrap:balance}
+.gate-sub{color:var(--muted);margin:6px 0 18px;max-width:46ch}
+.gate-form{display:flex;flex-direction:column;gap:14px}
+.gate-ok{padding:13px 20px;font-size:15px}
+.gate-ok:disabled{opacity:.6}
+.gate-alt{justify-content:center;padding:12px}
+.gate-err{margin:0;color:#ff9a9a;font-size:14px}
+.pin{letter-spacing:.6em;font-size:22px!important;font-variant-numeric:tabular-nums;text-align:center;max-width:12rem}
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent);color:var(--accent-ink);font:800 15px var(--font-display)}
+.acct-btn:hover{filter:brightness(1.08)}
+.acct-actions{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.person-add{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px;padding:16px;margin:18px 0 22px;background:var(--raise);border-radius:12px}
+.person-add .field{min-width:0}
+.person-add .field input{width:min(16rem,100%)}
+.switch{display:inline-flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+.switch input{width:18px;height:18px;accent-color:var(--accent)}
+.people{display:flex;flex-direction:column;gap:12px}
+.person{background:var(--raise);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.person-head{display:flex;align-items:center;gap:12px}
+.person-meta{min-width:0;display:flex;flex-direction:column}
+.person-meta h3{margin:0;font:700 18px var(--font-display)}
+.person-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.text-btn.danger{color:#ff8e8e;border-color:color-mix(in srgb,#ff8e8e 50%,transparent)}
+.devices{list-style:none;margin:0;padding:10px 0 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.device{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.device>div{display:flex;flex-direction:column;min-width:0}
+
 /* ---------- modal ---------- */
 .modal-back{position:fixed;inset:0;z-index:90;background:rgba(8,5,12,.62);display:grid;place-items:center;padding:16px}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(460px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.6)}
@@ -396,6 +428,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 <div class="drop-overlay" id="dropOverlay" data-act="drop-close" hidden><div><b>Drop files to add them to Uploads</b><span>Click anywhere or press Esc to cancel</span></div></div>
 <div class="sel-bar" id="selBar" role="toolbar" aria-label="Selected items" hidden></div>
 <div class="modal-back" id="modal" hidden></div>
+<div class="gate" id="gate" hidden></div>
 
 <script>
 (() => {
@@ -630,7 +663,9 @@ const fmtSize = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : b >= 1e6 ? (b / 1
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /* ================= server (Docker) ================= */
-const server = { on: false, queue: [], busy: false, current: null, done: 0, failed: 0 };
+const server = { on: false, auth: false, offlineMode: false, queue: [], busy: false, current: null, done: 0, failed: 0 };
+let me = null;   // the signed-in person when running on the Murmur server
+const canEditMusic = () => server.on && !!me && (me.role === 'owner' || !!me.canEdit);
 function addServerTrack(r) {
   const id = 'f-' + r.id;
   TRACKS[id] = { id, sid: r.id, title: r.title || 'Untitled', artist: r.artist || 'Unknown artist', albumTag: r.album || '', album: r.album || 'Uploads',
@@ -689,7 +724,7 @@ function xhrUpload(file, onProg) {
 function uploadFiles(files) {
   files = Array.from(files || []);
   if (!files.length) return;
-  if (!server.on) { toast('Uploading needs the Murmur server. Start it with Docker, then open localhost:8080.'); return; }
+  if (!canEditMusic()) { toast(me ? 'Your account can listen and download, but not add music. Ask the owner to allow it.' : 'Uploading needs the Murmur server. Start it with Docker, then open localhost:8080.'); return; }
   server.queue.push(...files);
   if (!server.busy) pumpUploads();
 }
@@ -723,6 +758,7 @@ function renderUploadStatus() {
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   let j = null; try { j = await r.json(); } catch (e) {}
+  if (r.status === 401 && server.auth && !/api\/auth\/(login|setup)$/.test(url)) { showGate('expired'); throw new Error('Please sign in again.'); }
   if (!r.ok) throw new Error((j && j.error) || `The server said no (error ${r.status}).`);
   return j;
 }
@@ -1450,7 +1486,7 @@ function viewCollection(type, id) {
       : col.uploadsAll ? ''
       : `<div class="empty"><h2>Your playlist is empty</h2>Add songs from the list below, or use the ⋯ menu on any song.</div>`;
   } else body = trackList(col.tracks, type, id);
-  if ((col.uploadsAll || col.uploaded) && server.on) {
+  if ((col.uploadsAll || col.uploaded) && canEditMusic()) {
     body = `<label class="drop" for="fileGlobal" tabindex="0" role="button">${icon('upload')}<span><b>Drop audio or video files here, or click to choose</b>
       <span class="small">MP3, M4A, FLAC, WAV, OGG, MP4, MOV, MKV, WEBM and more. Songs with the same album tag are grouped into albums.</span></span></label>` + body;
   }
@@ -1459,13 +1495,13 @@ function viewCollection(type, id) {
     const pool = Object.keys(TRACKS).filter(t => visible(t) && !col.tracks.includes(t)).sort((a, b) => TRACKS[a].seed - TRACKS[b].seed).slice(0, 6);
     if (pool.length) rec = `<div class="shelf-head"><h2>Recommended</h2><p>Based on what's in this playlist</p></div><div class="tracks">${pool.map((t, i) => trackRow(t, i, { add: true })).join('')}</div>`;
   }
-  const delLabel = col.editable ? 'Delete playlist' : col.uploaded ? 'Delete album' : (col.demo || col.curated) ? 'Remove from library' : '';
+  const delLabel = col.editable ? 'Delete playlist' : col.uploaded ? (canEditMusic() ? 'Delete album' : '') : (col.demo || col.curated) ? 'Remove from library' : '';
   const del = delLabel ? `<button class="text-btn" data-act="col-delete" data-type="${type}" data-id="${esc(id)}">${icon('trash')}<span>${delLabel}</span></button>` : '';
   const hasUploads = col.tracks.some(canDownload);
   const dlBtn = hasUploads && (server.on || col.tracks.some(t => offline.has(t)))
     ? `<button class="icon-btn dl-btn" data-act="col-dl" data-type="${type}" data-id="${esc(id)}" aria-label="Download for offline">${icon('download')}</button>` : '';
   const clearDl = type === 'downloads' && n ? `<button class="text-btn" data-act="dl-clear">${icon('trash')}<span>Remove all downloads</span></button>` : '';
-  const editAlbum = col.uploaded && server.on ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '';
+  const editAlbum = col.uploaded && canEditMusic() ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '';
   return `<header class="hero" style="--tint:${col.color}">
     ${coverHTML(col, 'hero-cover')}
     <div class="hero-meta"><span class="eyebrow">${col.kind}</span>${title}
@@ -1486,7 +1522,7 @@ function libEntries() {
   if (server.on || offline.size) out.push({ type: 'downloads', id: 'downloads', name: 'Downloaded', sub: `On this device · ${plural(getCollection('downloads').tracks.length, 'song')}`, k: 'playlist' });
   state.playlists.forEach(p => out.push({ type: 'playlist', id: p.id, name: p.name, sub: `Playlist · ${plural(p.tracks.length, 'song')}`, k: 'playlist', sel: true }));
   visCurated().forEach(p => out.push({ type: 'playlist', id: p.id, name: p.name, sub: 'Playlist · Murmur', k: 'playlist', sel: true }));
-  upAlbums().forEach(a => out.push({ type: 'album', id: a.id, name: a.title, sub: `Album · ${a.artist} · your upload`, k: 'album', sel: true }));
+  upAlbums().forEach(a => out.push({ type: 'album', id: a.id, name: a.title, sub: `Album · ${a.artist} · your upload`, k: 'album', sel: canEditMusic() }));
   visAlbums().forEach(a => out.push({ type: 'album', id: a.id, name: a.title, sub: 'Album · ' + a.artist, k: 'album', sel: true }));
   visArtists().forEach(a => out.push({ type: 'artist', id: a, name: a, sub: 'Artist', k: 'artist' }));
   return state.libFilter === 'all' ? out : out.filter(e => e.k === state.libFilter);
@@ -1510,7 +1546,7 @@ function viewLibrary() {
     ? `<div class="restore"><p class="small">You removed ${[state.hidden.size ? plural(state.hidden.size, 'demo song') : '', state.hiddenCols.size ? plural(state.hiddenCols.size, 'Murmur playlist') : ''].filter(Boolean).join(' and ')}.</p><button class="text-btn" data-act="restore">Restore removed demo music</button></div>` : '';
   return `<div class="shelf-head" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
-      ${server.on ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
+      ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
       <button class="icon-btn" data-act="new-pl" aria-label="Create playlist">${icon('plus')}</button></div></div>
   <div class="chips" style="padding-left:0">${chipsHTML()}</div>
   ${selecting ? '<p class="small" style="margin:0 0 10px">Pick playlists and albums to delete or to add to a playlist. Liked Songs, Uploads and artists can’t be selected.</p>' : ''}
@@ -1559,6 +1595,7 @@ function buildShell() {
       <div class="top-right">
         <button class="text-btn up-btn" data-act="install" id="installBtn" hidden title="Install Murmur as an app on this device">${icon('download')}<span>Install app</span></button>
         <button class="text-btn up-btn" data-act="upload" id="upBtn" hidden>${icon('upload')}<span>Upload</span></button>
+        <button class="avatar acct-btn" data-act="acct" id="acctBtn" aria-label="Your account" title="Your account" hidden></button>
       </div>
       <input type="file" id="fileGlobal" class="vh" multiple accept="audio/*,video/*,.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.wma,.aiff,.aif,.mp4,.m4v,.mov,.mkv,.webm,.avi" tabindex="-1" aria-hidden="true">
     </div>
@@ -1616,6 +1653,7 @@ function render() {
   else if (v.name === 'search') el.innerHTML = viewSearch();
   else if (v.name === 'library') el.innerHTML = viewLibrary();
   else if (v.name === 'queue') el.innerHTML = viewQueue();
+  else if (v.name === 'people') el.innerHTML = viewPeople();
   else if (v.name === 'collection') el.innerHTML = viewCollection(v.type, v.id);
   if (server.offlineMode) {
     el.insertAdjacentHTML('afterbegin', `<div class="offline-banner" role="status">${icon('cloudOff')}<span><b>Offline.</b> Can’t reach your Murmur server, so only downloaded songs and the demo music can play.</span><button class="text-btn" data-act="retry">Try again</button></div>`);
@@ -1705,7 +1743,7 @@ function renderNP() {
   ${t.src ? `<div class="np-card"><span class="eyebrow">Your file</span>
     <dl class="facts"><dt>Format</dt><dd>${esc(t.format.toUpperCase())}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Size</dt><dd>${fmtSize(t.size)}</dd>${t.addedAt ? `<dt>Added</dt><dd>${new Date(t.addedAt).toLocaleDateString()}</dd>` : ''}</dl>
     <p class="small">${t.fromVideo ? 'Audio extracted from a video file. ' : ''}Stored in the music-data folder of your Murmur server.</p>
-    <button class="text-btn" data-act="edit-one" data-tid="${t.id}">${icon('edit')}<span>Edit details</span></button></div>`
+    ${canEditMusic() ? `<button class="text-btn" data-act="edit-one" data-tid="${t.id}">${icon('edit')}<span>Edit details</span></button>` : ''}</div>`
   : `<div class="np-card"><span class="eyebrow">Inside this track</span>
     <dl class="facts"><dt>Key</dt><dd>${NOTE[t.root % 12]} ${t.scale}</dd><dt>Tempo</dt><dd>${t.bpm} BPM</dd><dt>Form</dt><dd>${t.bars} bars</dd><dt>Style</dt><dd>${gLabel(t.genre)}</dd></dl>
     <p class="small">Synthesized live in your browser over the progression <span class="prog">${chordName(t)}</span>.</p></div>`}
@@ -1763,9 +1801,9 @@ function renderMenu() {
       + '<hr>' + b('album', icon('album') + 'Go to album') + b('artist', icon('user') + 'Go to artist')
       + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '')
         + (server.on ? b('save', icon('save') + 'Save file to device') : '') : '')
-      + (t.src && server.on ? b('edit', icon('edit') + 'Edit details') : '')
+      + (t.src && canEditMusic() ? b('edit', icon('edit') + 'Edit details') : '')
       + (editable ? '<hr>' + b('remove', icon('list') + 'Remove from this playlist') : '')
-      + (t.src && !server.on ? '' : '<hr>' + (t.src
+      + (t.src && !canEditMusic() ? '' : '<hr>' + (t.src
         ? b('delete', icon('trash') + (m.confirm ? '<b class="danger-text">Click again to delete the file</b>' : 'Delete from server'))
         : b('hide', icon('trash') + 'Remove from library')));
   } else {
@@ -1862,8 +1900,8 @@ function renderSelBar() {
       <button class="sb" data-act="sel-queue"${dis}>${icon('queue')}<span>Add to queue</span></button>
       ${col && col.editable ? `<button class="sb" data-act="sel-remove"${dis}>${icon('list')}<span>Remove from playlist</span></button>` : ''}
       ${anyFile && (server.on || allDl) ? `<button class="sb" data-act="sel-dl"${dis}>${icon(allDl ? 'dlFill' : 'download')}<span>${allDl ? 'Remove download' : 'Download'}</span></button>` : ''}
-      ${allFiles && server.on ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
-      ${anyFile && !server.on ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
+      ${allFiles && canEditMusic() ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
+      ${anyFile && !canEditMusic() ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
       <button class="sb done" data-act="sel-done">Done</button>`;
     bar.hidden = false; return;
   }
@@ -2106,6 +2144,39 @@ function act(el, e) {
     }
     case 'dl-clear': confirmRemoveDownloads([...offline.keys()].filter(id => TRACKS[id])); break;
     case 'retry': location.reload(); break;
+    /* account & people */
+    case 'gate-remember': el.disabled = true; chooseRemember(d.v === '1'); break;
+    case 'acct': openAccount(); break;
+    case 'acct-people': closeModal(); people = null; navigate({ name: 'people' }); break;
+    case 'acct-pin': closeModal(); openChangeMyPin(); break;
+    case 'acct-out': closeModal(); signOut(); break;
+    case 'p-edit': {
+      const on = el.checked;
+      api('PATCH', 'api/users/' + d.id, { canEdit: on })
+        .then(() => { toast(on ? 'They can now add, edit and delete music' : 'They can now only listen and download'); loadPeople(); })
+        .catch(err => { toast(err.message); loadPeople(); });
+      break;
+    }
+    case 'p-pin': {
+      const u = people && people.find(x => x.id === d.id); if (!u) return;
+      if (u.id === me.id) { openChangeMyPin(); return; }
+      openModal({ title: `New PIN for ${esc(u.name)}`, confirm: 'Save PIN', html: `<p>Their old PIN stops working and they’re signed out on every device. Give them the new PIN.</p>
+        <div class="field"><label for="npPin">New 4-digit PIN</label><input id="npPin" name="pin" ${PIN_ATTRS}></div>`,
+        onSubmit: async fd => { try { await api('PATCH', 'api/users/' + u.id, { pin: fd.get('pin') }); toast(`New PIN saved for ${u.name}`); loadPeople(); } catch (e) { toast(e.message); } } });
+      break;
+    }
+    case 'p-del': {
+      const u = people && people.find(x => x.id === d.id); if (!u) return;
+      openModal({ title: `Delete ${esc(u.name)}?`, confirm: 'Delete', danger: true,
+        html: `<p>Their PIN stops working right away and they’re signed out on ${u.sessions.length ? plural(u.sessions.length, 'device') : 'every device'}. Music they added stays in your library.</p>`,
+        onSubmit: async () => { try { await api('DELETE', 'api/users/' + u.id); toast(`Deleted ${u.name}`); loadPeople(); } catch (e) { toast(e.message); } } });
+      break;
+    }
+    case 'dev-out':
+      api('DELETE', 'api/sessions/' + d.id)
+        .then(() => { if (d.cur === '1') location.reload(); else { toast('Signed out that device'); loadPeople(); } })
+        .catch(err => toast(err.message));
+      break;
     case 'install':
       if (installEvt) { installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; $('#installBtn').hidden = true; }); }
       break;
@@ -2164,6 +2235,8 @@ document.addEventListener('click', e => {
   if (el && !el.disabled) act(el, e);
 });
 document.addEventListener('submit', async e => {
+  if (e.target.id === 'gForm') { e.preventDefault(); gateSubmit(e.target); return; }
+  if (e.target.id === 'addPerson') { e.preventDefault(); addPerson(e.target); return; }
   if (e.target.id !== 'mForm') return;
   e.preventDefault();
   const fn = modalSubmit, fd = new FormData(e.target);
@@ -2206,7 +2279,7 @@ document.addEventListener('keydown', e => {
     else if (state.sel || state.libSel) clearSel();
     return;
   }
-  if (!$('#modal').hidden) return;
+  if (!$('#modal').hidden || !$('#gate').hidden) return;
   if (e.target.id === 'plName' && e.key === 'Enter') { e.target.blur(); return; }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"]')) { e.preventDefault(); e.target.click(); return; }
   if (e.key === ' ' && !['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(tag)) { e.preventDefault(); togglePlay(); }
@@ -2218,8 +2291,8 @@ let dropTimer = null;
 const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
 function showDrop() { $('#dropOverlay').hidden = false; clearTimeout(dropTimer); dropTimer = setTimeout(hideDrop, 350); }
 function hideDrop() { clearTimeout(dropTimer); $('#dropOverlay').hidden = true; }
-document.addEventListener('dragenter', e => { if (hasFiles(e)) { e.preventDefault(); showDrop(); } });
-document.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); showDrop(); } });
+document.addEventListener('dragenter', e => { if (hasFiles(e) && canEditMusic()) { e.preventDefault(); showDrop(); } });
+document.addEventListener('dragover', e => { if (hasFiles(e) && canEditMusic()) { e.preventDefault(); showDrop(); } });
 document.addEventListener('drop', e => {
   hideDrop();
   if (!hasFiles(e)) return;
@@ -2228,12 +2301,164 @@ document.addEventListener('drop', e => {
 });
 window.addEventListener('blur', hideDrop);
 
+/* ================= sign-in (Docker server only) ================= */
+const PIN_ATTRS = 'type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4" required autocomplete="off" class="pin"';
+async function checkAuth() {
+  let st;
+  try {
+    const r = await fetch('api/auth/status', { cache: 'no-store' });
+    if (!r.ok) throw new Error();
+    st = await r.json();
+    if (!st || typeof st.setup !== 'boolean') throw new Error();
+  } catch (e) {
+    // No server answered: this is the hosted demo, or the app opened offline.
+    const c = store.get('auth', null);
+    if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
+    return c ? 'offline-expired' : 'demo';
+  }
+  server.auth = true;
+  if (!st.setup) return 'setup';
+  if (!st.user) return store.get('auth', null) ? 'expired' : 'login';
+  me = st.user; store.set('auth', st.user);
+  return 'ok';
+}
+function showGate(step, msg = '') {
+  const g = $('#gate'), lastName = store.get('lastName', '');
+  closeMenu(); if (!$('#modal').hidden) closeModal();
+  const card = (title, sub, form) => `<div class="gate-card"><div class="brand gate-brand">${LOGO}<span>Murmur</span></div>
+    <h1>${title}</h1><p class="gate-sub">${sub}</p>${form}</div>`;
+  const err = msg ? `<p class="gate-err" role="alert">${esc(msg)}</p>` : '';
+  let html;
+  if (step === 'setup') {
+    html = card('Set up Murmur', 'You’re the first one here, so this will be the owner account. Pick your name and a 4-digit PIN. You’ll use them to sign in and to let other people in.',
+      `<form id="gForm" data-step="setup" class="gate-form">
+        <div class="field"><label for="gName">Your name</label><input id="gName" name="name" maxlength="40" required autocomplete="username" value="${esc(lastName)}"></div>
+        <div class="field"><label for="gPin">Choose a 4-digit PIN</label><input id="gPin" name="pin" ${PIN_ATTRS}></div>
+        <div class="field"><label for="gPin2">Type the PIN again</label><input id="gPin2" name="pin2" ${PIN_ATTRS}></div>
+        ${err}<button class="m-ok gate-ok" type="submit">Create my account</button></form>`);
+  } else if (step === 'remember') {
+    html = card(`Hi, ${esc(me ? me.name : '')}`, 'Remember this computer? You’ll stay signed in here for 90 days, then Murmur asks for your PIN again. Don’t choose this on a shared or public computer.',
+      `<div class="gate-form"><button class="m-ok gate-ok" data-act="gate-remember" data-v="1">Yes, remember for 90 days</button>
+       <button class="text-btn gate-alt" data-act="gate-remember" data-v="0">No, just this time</button></div>`);
+  } else if (step === 'offline-expired') {
+    html = card('Can’t reach your Murmur server', 'Your sign-in on this device has ended, and signing in again needs a connection to your server. Your downloaded songs unlock once you’re signed in.',
+      `<div class="gate-form">${err}<button class="m-ok gate-ok" data-act="retry">Try again</button></div>`);
+  } else {
+    const expired = step === 'expired';
+    html = card(expired ? 'Please sign in again' : 'Sign in', expired ? 'Your sign-in ended, or the owner changed your access. Enter your name and PIN to keep using Murmur.' : 'Enter your name and 4-digit PIN.',
+      `<form id="gForm" data-step="login" class="gate-form">
+        <div class="field"><label for="gName">Name</label><input id="gName" name="name" maxlength="40" required autocomplete="username" value="${esc(lastName)}"></div>
+        <div class="field"><label for="gPin">PIN</label><input id="gPin" name="pin" ${PIN_ATTRS}></div>
+        ${err}<button class="m-ok gate-ok" type="submit">Sign in</button>
+        <p class="small">Don’t have a PIN? Ask the person who runs this Murmur to add you.</p></form>`);
+  }
+  g.innerHTML = html; g.hidden = false;
+  const f = (lastName && $('#gPin')) || $('#gName') || g.querySelector('button');
+  if (f) setTimeout(() => f.focus(), 0);
+}
+async function gateSubmit(form) {
+  const fd = new FormData(form), step = form.dataset.step;
+  const name = String(fd.get('name') || '').trim(), pin = String(fd.get('pin') || '');
+  if (!/^\d{4}$/.test(pin)) { showGate(step, 'Your PIN must be exactly 4 digits.'); return; }
+  if (step === 'setup' && pin !== fd.get('pin2')) { showGate('setup', 'Those two PINs don’t match. Try again.'); return; }
+  const btn = form.querySelector('.gate-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  try {
+    const res = await api('POST', step === 'setup' ? 'api/auth/setup' : 'api/auth/login', { name, pin });
+    store.set('lastName', name);
+    me = res.user;
+    showGate('remember');
+  } catch (e) { showGate(step === 'setup' ? 'setup' : 'login', e.message); }
+}
+async function chooseRemember(yes) {
+  try { const res = await api('POST', 'api/auth/remember', { remember: yes }); store.set('auth', res.user); } catch (e) {}
+  location.reload();
+}
+async function signOut() {
+  try { await api('POST', 'api/auth/logout'); } catch (e) {}
+  store.set('auth', null);
+  location.reload();
+}
+const roleLabel = u => u.role === 'owner' ? 'Owner' : u.canEdit ? 'Can add, edit and delete music' : 'Listen and download only';
+const when = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+function ago(ms) {
+  const m = Math.round((Date.now() - ms) / 60000);
+  return m < 2 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+}
+function openAccount() {
+  if (!me) return;
+  const until = me.remembered ? `Remembered on this computer until <b>${when(me.expiresAt)}</b>.` : 'Signed in for this visit only. You’ll need your PIN again after 12 hours or when the browser closes.';
+  openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>
+    <div class="acct-actions">
+      ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>Manage people</span></button>` : ''}
+      ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
+      ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
+    </div>`, onSubmit: () => {} });
+}
+function openChangeMyPin() {
+  openModal({ title: 'Change my PIN', confirm: 'Save PIN', html: `<p>Your other devices will be signed out.</p>
+    <div class="field"><label for="cpOld">Current PIN</label><input id="cpOld" name="current" ${PIN_ATTRS}></div>
+    <div class="field"><label for="cpNew">New PIN</label><input id="cpNew" name="pin" ${PIN_ATTRS}></div>`,
+    onSubmit: async fd => {
+      try { await api('POST', 'api/me/pin', { current: fd.get('current'), pin: fd.get('pin') }); toast('PIN changed'); }
+      catch (e) { toast(e.message); }
+    } });
+}
+
+/* ---------- People (owner) ---------- */
+let people = null;
+async function loadPeople() {
+  try { people = (await api('GET', 'api/users')).users; } catch (e) { people = []; toast(e.message); }
+  if (state.view.name === 'people') render();
+}
+function viewPeople() {
+  if (!me || me.role !== 'owner') return `<div class="empty"><h2>Only the owner can manage people</h2></div>`;
+  if (!people) { loadPeople(); return `<h1 class="greet">People</h1><p class="small">Loading…</p>`; }
+  const person = u => {
+    const devices = u.sessions.length ? u.sessions.map(s => `<li class="device">
+        <div><b>${esc(s.device)}</b>${s.current ? ' <span class="badge">This device</span>' : ''}
+        <span class="small">${s.remember ? `Remembered until ${when(s.expiresAt)}` : 'This visit only'} · last used ${ago(s.lastSeen)}</span></div>
+        <button class="text-btn" data-act="dev-out" data-id="${s.id}" data-cur="${s.current ? 1 : 0}">Sign out</button></li>`).join('')
+      : '<li class="small">Not signed in anywhere.</li>';
+    return `<article class="person">
+      <header class="person-head"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span>
+        <div class="person-meta"><h3>${esc(u.name)}</h3><span class="small">${esc(roleLabel(u))} · added ${when(u.createdAt)}</span></div></header>
+      <div class="person-actions">
+        <button class="text-btn" data-act="p-pin" data-id="${u.id}">${icon('edit')}<span>${u.id === me.id ? 'Change my PIN' : 'Set new PIN'}</span></button>
+        ${u.role === 'owner' ? '' : `<label class="switch"><input type="checkbox" data-act="p-edit" data-id="${u.id}" ${u.canEdit ? 'checked' : ''}><span>Can add, edit and delete music</span></label>
+        <button class="text-btn danger" data-act="p-del" data-id="${u.id}">${icon('trash')}<span>Delete</span></button>`}
+      </div>
+      <ul class="devices" aria-label="Signed-in devices">${devices}</ul></article>`;
+  };
+  return `<h1 class="greet">People</h1>
+  <p class="small" style="max-width:60ch">People you add sign in with their name and a 4-digit PIN. When they choose “Remember this computer” they stay signed in there for 90 days, then need their PIN again. Deleting someone signs them out everywhere.</p>
+  <form id="addPerson" class="person-add">
+    <div class="field"><label for="apName">Name</label><input id="apName" name="name" maxlength="40" required autocomplete="off"></div>
+    <div class="field"><label for="apPin">4-digit PIN</label><input id="apPin" name="pin" ${PIN_ATTRS}></div>
+    <label class="switch"><input type="checkbox" name="canEdit"><span>Can add, edit and delete music</span></label>
+    <button class="m-ok" type="submit">Add person</button>
+  </form>
+  <div class="people">${people.map(person).join('')}</div>`;
+}
+async function addPerson(form) {
+  const fd = new FormData(form);
+  try {
+    await api('POST', 'api/users', { name: String(fd.get('name') || '').trim(), pin: fd.get('pin'), canEdit: fd.get('canEdit') === 'on' });
+    toast(`Added ${String(fd.get('name')).trim()}. Give them their PIN.`);
+    loadPeople();
+  } catch (e) { toast(e.message); }
+}
+
 /* ================= boot ================= */
 (async () => {
   buildShell();
   $('#main').addEventListener('scroll', closeMenu, { passive: true });
-  await connectServer();
-  const saved = await loadOffline();
+  const mode = await checkAuth();
+  if (server.auth && 'serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {} }
+  if (['setup', 'login', 'expired', 'offline-expired'].includes(mode)) { showGate(mode); return; }
+  $('#acctBtn').hidden = !me;
+  if (me) $('#acctBtn').textContent = me.name.slice(0, 1).toUpperCase();
+  if (mode === 'ok') await connectServer();
+  const saved = mode === 'demo' ? [] : await loadOffline();
   if (server.on) {
     // Downloads of songs that were deleted from the server are no longer needed.
     for (const r of saved) if (!TRACKS[r.id]) await dropDownload(r.id);
@@ -2246,13 +2471,16 @@ window.addEventListener('blur', hideDrop);
   state.liked = new Set([...state.liked].filter(visible));
   state.playlists.forEach(p => { p.tracks = p.tracks.filter(visible); });
   state.recent = state.recent.filter(k => k !== 'album:uploads' || server.on);
-  $('#upBtn').hidden = !server.on;
+  $('#upBtn').hidden = !canEditMusic();
   resetPlayback();
   render();
   requestAnimationFrame(frame);
-  // Offline app shell + install support (needs localhost or HTTPS; quietly skipped elsewhere).
-  if ((server.on || server.offlineMode) && 'serviceWorker' in navigator) {
-    try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
+  // Notice when the sign-in ends (90 days up, PIN changed, or removed by the owner).
+  if (mode === 'ok') {
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState !== 'visible') return;
+      try { const r = await fetch('api/auth/status', { cache: 'no-store' }); const st = await r.json(); if (st && st.setup && !st.user) showGate('expired'); } catch (e) {}
+    });
   }
 })();
 let installEvt = null;
