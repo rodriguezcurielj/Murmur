@@ -1,6 +1,6 @@
 services:
   murmur:
-    build: .
+    build: ..
     image: murmur-player
     container_name: murmur
     ports:
