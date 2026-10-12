@@ -1,11 +1,25 @@
+name: murmur
 services:
   murmur:
-    build: ..
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
     image: murmur-player
     container_name: murmur
     ports:
       - "8080:8080"
     volumes:
-      # Your music lives here on your computer, so it survives rebuilds
-      - ./music-data:/data
+      # Your music and accounts live in music-data/ at the repo root, so they survive rebuilds
+      - ../music-data:/data
+    restart: unless-stopped
+
+  # Gives the server a public https:// address so other computers (and the GitHub Pages
+  # player) can reach it. Find the address with:  docker logs murmur-tunnel
+  # This free "quick tunnel" gets a new random address each time it restarts.
+  tunnel:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: murmur-tunnel
+    command: tunnel --no-autoupdate --url http://murmur:8080
+    depends_on:
+      - murmur
     restart: unless-stopped

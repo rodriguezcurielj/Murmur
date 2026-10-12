@@ -7,8 +7,11 @@ A self-hosted music player. Upload your own audio and video files, build playlis
 You need [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
 ```sh
+cd Docker
 docker compose up -d --build
 ```
+
+(Run the `docker compose` commands from the `Docker` folder.)
 
 Then open **http://localhost:8080**.
 
@@ -36,7 +39,7 @@ Then open **http://localhost:8080**.
 
 ## Where your music is stored
 
-Everything you upload goes into `music-data/` in this folder. That folder is mounted into the container and isn't committed to git:
+Everything you upload goes into `music-data/` at the top of this repo. That folder is mounted into the container and isn't committed to git:
 
 - `music-data/music/`: the audio files
 - `music-data/covers/`: cover art taken from file tags or video frames
@@ -63,13 +66,16 @@ From another device on your Wi-Fi (`http://<your-PC's-IP>:8080`), you can stream
 ## Project layout
 
 ```
-server.js            Express server: upload, edit, delete, file streaming
-auth.js              Accounts, PINs, sessions, permissions
-public/index.html    The whole player (HTML, CSS, JS in one file)
-public/sw.js         Service worker that keeps the app available offline
-public/manifest.webmanifest, public/icons/   Install-as-app metadata
-Dockerfile, docker-compose.yml
+index.html            The whole player (HTML, CSS, JS in one file). Also served by GitHub Pages as a demo
+sw.js                 Service worker that keeps the app available offline
+manifest.webmanifest, icons/   Install-as-app metadata
+server.js             Express server: upload, edit, delete, file streaming
+auth.js               Accounts, PINs, sessions, permissions
+Docker/               Dockerfile and docker-compose.yml
+music-data/           Your music and accounts (not in git)
 ```
+
+The GitHub Pages copy at https://rodriguezcurielj.github.io/Murmur/ has no server, so it runs as a demo with the built-in songs only. Sign-in, uploads and downloads need the Docker server.
 
 ## API
 

@@ -9,6 +9,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<script src="config.js"></script>
 </head>
 <body>
 <title>Murmur Player</title>
@@ -665,12 +666,40 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 /* ================= server (Docker) ================= */
 const server = { on: false, auth: false, offlineMode: false, queue: [], busy: false, current: null, done: 0, failed: 0 };
 let me = null;   // the signed-in person when running on the Murmur server
+/* Where the Murmur server is: the same address when the server hosts this page, otherwise the
+   address in config.js (the GitHub Pages copy) or one typed in on the connect screen. */
+const cfg = window.MURMUR_CONFIG || null;
+const remote = { base: '', token: null, mediaKey: null };
+const savedServer = () => store.get('server', null) || (cfg && cfg.server) || '';
+const joinUrl = (base, u) => base ? base.replace(/\/+$/, '') + '/' + u : u;
+const apiUrl = u => joinUrl(remote.base, u);
+const fileUrl = u => remote.base ? apiUrl(u) + (remote.mediaKey ? '?k=' + encodeURIComponent(remote.mediaKey) : '') : u;
+const authHeaders = (extra = {}) => remote.token ? { ...extra, Authorization: 'Bearer ' + remote.token } : extra;
+function loadToken() {
+  try {
+    remote.token = localStorage.getItem('murmur:token') || sessionStorage.getItem('murmur:token');
+    remote.mediaKey = localStorage.getItem('murmur:mkey') || sessionStorage.getItem('murmur:mkey');
+  } catch (e) {}
+}
+function saveToken(token, mediaKey, persist) {
+  try {
+    for (const st of [localStorage, sessionStorage]) { st.removeItem('murmur:token'); st.removeItem('murmur:mkey'); }
+    if (token) { const st = persist ? localStorage : sessionStorage; st.setItem('murmur:token', token); st.setItem('murmur:mkey', mediaKey || ''); }
+  } catch (e) {}
+  remote.token = token || null; remote.mediaKey = mediaKey || null;
+}
+function normalizeServer(a) {
+  a = String(a || '').trim().replace(/\/+$/, '');
+  if (!a) return '';
+  if (!/^https?:\/\//i.test(a)) a = (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a) ? 'http://' : 'https://') + a;
+  return a;
+}
 const canEditMusic = () => server.on && !!me && (me.role === 'owner' || !!me.canEdit);
 function addServerTrack(r) {
   const id = 'f-' + r.id;
   TRACKS[id] = { id, sid: r.id, title: r.title || 'Untitled', artist: r.artist || 'Unknown artist', albumTag: r.album || '', album: r.album || 'Uploads',
-    albumId: 'uploads', trackNo: r.trackNo || 0, genre: 'upload', duration: r.duration || 0, src: 'media/' + encodeURIComponent(r.file),
-    cover: r.cover ? 'covers/' + encodeURIComponent(r.cover) : null, size: r.size || 0, format: r.format || '', fromVideo: !!r.fromVideo,
+    albumId: 'uploads', trackNo: r.trackNo || 0, genre: 'upload', duration: r.duration || 0, src: fileUrl('media/' + encodeURIComponent(r.file)),
+    cover: r.cover ? fileUrl('covers/' + encodeURIComponent(r.cover)) : null, size: r.size || 0, format: r.format || '', fromVideo: !!r.fromVideo,
     addedAt: r.addedAt, seed: hashStr(id), raw: r };
   if (!UPLOADS.trackIds.includes(id)) UPLOADS.trackIds.unshift(id);
   return id;
@@ -698,7 +727,7 @@ function rebuildUploadAlbums() {
 const upAlbums = () => Object.values(ALBUM_MAP).filter(a => a.uploaded).sort((a, b) => a.title.localeCompare(b.title));
 async function connectServer() {
   try {
-    const res = await fetch('api/tracks', { cache: 'no-store' });
+    const res = await fetch(apiUrl('api/tracks'), { cache: 'no-store', headers: authHeaders() });
     if (!res.ok) return;
     const data = await res.json();
     if (!data || !Array.isArray(data.tracks)) return;
@@ -710,7 +739,8 @@ async function connectServer() {
 function xhrUpload(file, onProg) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
-    x.open('POST', 'api/upload');
+    x.open('POST', apiUrl('api/upload'));
+    if (remote.token) x.setRequestHeader('Authorization', 'Bearer ' + remote.token);
     x.upload.onprogress = e => { if (e.lengthComputable) onProg(Math.round(e.loaded / e.total * 100)); };
     x.onload = () => {
       let j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
@@ -756,7 +786,7 @@ function renderUploadStatus() {
   el.hidden = false;
 }
 async function api(method, url, body) {
-  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(apiUrl(url), { method, headers: authHeaders({ 'Content-Type': 'application/json' }), body: body ? JSON.stringify(body) : undefined });
   let j = null; try { j = await r.json(); } catch (e) {}
   if (r.status === 401 && server.auth && !/api\/auth\/(login|setup)$/.test(url)) { showGate('expired'); throw new Error('Please sign in again.'); }
   if (!r.ok) throw new Error((j && j.error) || `The server said no (error ${r.status}).`);
@@ -920,12 +950,22 @@ function syncDownloads() {
     b.setAttribute('aria-label', label); b.title = label;
   });
 }
-function saveToDevice(id) {
+async function saveToDevice(id) {
   const t = TRACKS[id]; if (!t || !t.src) return;
   const name = `${t.artist && t.artist !== 'Unknown artist' ? t.artist + ' - ' : ''}${t.title}`.replace(/[\\/:*?"<>|]+/g, '').slice(0, 120) || 'song';
+  let href = t.src, temp = null;
+  if (remote.base || offline.has(id)) {
+    // Browsers ignore the file name for links to other sites, so fetch the file first.
+    try {
+      const rec = offline.has(id) ? await Offline.get(id) : null;
+      const blob = rec && rec.blob ? rec.blob : await (await fetch(t.src)).blob();
+      href = temp = URL.createObjectURL(blob);
+    } catch (e) { toast(`Couldn't save ${t.title}. Check your connection to the Murmur server.`); return; }
+  }
   const a = document.createElement('a');
-  a.href = t.src; a.download = `${name}.${t.format || 'mp3'}`;
+  a.href = href; a.download = `${name}.${t.format || 'mp3'}`;
   document.body.appendChild(a); a.click(); a.remove();
+  if (temp) setTimeout(() => URL.revokeObjectURL(temp), 60e3);
 }
 
 function purge(ids) {
@@ -1188,6 +1228,7 @@ const FileEng = {
   el() {
     if (!this.audio) {
       const a = this.audio = new Audio(); a.preload = 'auto';
+      if (remote.base) a.crossOrigin = 'anonymous';   // needed to route server audio through Web Audio from another site
       a.addEventListener('ended', () => this.onEnd && this.onEnd());
       a.addEventListener('play', () => { updatePlayIcons(); highlight(); });
       a.addEventListener('pause', () => { updatePlayIcons(); highlight(); });
@@ -2150,6 +2191,7 @@ function act(el, e) {
     case 'acct-people': closeModal(); people = null; navigate({ name: 'people' }); break;
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-out': closeModal(); signOut(); break;
+    case 'acct-server': closeModal(); showGate('connect'); break;
     case 'p-edit': {
       const on = el.checked;
       api('PATCH', 'api/users/' + d.id, { canEdit: on })
@@ -2303,23 +2345,37 @@ window.addEventListener('blur', hideDrop);
 
 /* ================= sign-in (Docker server only) ================= */
 const PIN_ATTRS = 'type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4" required autocomplete="off" class="pin"';
+async function getStatus(base) {
+  const r = await fetch(joinUrl(base, 'api/auth/status'), { cache: 'no-store', headers: base ? authHeaders() : {} });
+  if (!r.ok) throw new Error();
+  const st = await r.json();
+  if (!st || typeof st.setup !== 'boolean') throw new Error();
+  return st;
+}
 async function checkAuth() {
-  let st;
-  try {
-    const r = await fetch('api/auth/status', { cache: 'no-store' });
-    if (!r.ok) throw new Error();
-    st = await r.json();
-    if (!st || typeof st.setup !== 'boolean') throw new Error();
-  } catch (e) {
-    // No server answered: this is the hosted demo, or the app opened offline.
-    const c = store.get('auth', null);
-    if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
-    return c ? 'offline-expired' : 'demo';
+  let st = null;
+  try { st = await getStatus(''); } catch (e) {}   // is this page served by the Murmur server itself?
+  if (!st) {
+    const base = savedServer();
+    if (!base) {
+      if (cfg) return 'connect';                     // hosted copy with no server address yet
+      const c = store.get('auth', null);             // the claude.ai demo, or opened offline
+      if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
+      return c ? 'offline-expired' : 'demo';
+    }
+    remote.base = normalizeServer(base); loadToken();
+    try { st = await getStatus(remote.base); } catch (e) {
+      const c = store.get('auth', null);
+      if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
+      return 'unreachable';
+    }
   }
   server.auth = true;
   if (!st.setup) return 'setup';
-  if (!st.user) return store.get('auth', null) ? 'expired' : 'login';
-  me = st.user; store.set('auth', st.user);
+  if (!st.user) { if (remote.base) saveToken(null); return store.get('auth', null) ? 'expired' : 'login'; }
+  me = st.user;
+  if (st.user.mediaKey) remote.mediaKey = st.user.mediaKey;
+  store.set('auth', st.user);
   return 'ok';
 }
 function showGate(step, msg = '') {
@@ -2340,6 +2396,14 @@ function showGate(step, msg = '') {
     html = card(`Hi, ${esc(me ? me.name : '')}`, 'Remember this computer? You’ll stay signed in here for 90 days, then Murmur asks for your PIN again. Don’t choose this on a shared or public computer.',
       `<div class="gate-form"><button class="m-ok gate-ok" data-act="gate-remember" data-v="1">Yes, remember for 90 days</button>
        <button class="text-btn gate-alt" data-act="gate-remember" data-v="0">No, just this time</button></div>`);
+  } else if (step === 'connect' || step === 'unreachable') {
+    const addr = remote.base || savedServer();
+    html = card(step === 'connect' ? 'Connect to your Murmur' : 'Can’t reach your Murmur server',
+      step === 'connect' ? 'Enter the address of the Murmur server that holds your music. You’ll sign in with your name and PIN next.'
+        : `Murmur couldn’t connect to <b>${esc(addr)}</b>. Check that the server is running and the address is right, then try again.`,
+      `<form id="gForm" data-step="server" class="gate-form">
+        <div class="field"><label for="gServer">Server address</label><input id="gServer" name="server" required autocomplete="url" inputmode="url" placeholder="https://murmur.example.com" value="${esc(addr)}"></div>
+        ${err}<button class="m-ok gate-ok" type="submit">Connect</button></form>`);
   } else if (step === 'offline-expired') {
     html = card('Can’t reach your Murmur server', 'Your sign-in on this device has ended, and signing in again needs a connection to your server. Your downloaded songs unlock once you’re signed in.',
       `<div class="gate-form">${err}<button class="m-ok gate-ok" data-act="retry">Try again</button></div>`);
@@ -2358,6 +2422,12 @@ function showGate(step, msg = '') {
 }
 async function gateSubmit(form) {
   const fd = new FormData(form), step = form.dataset.step;
+  if (step === 'server') {
+    const addr = normalizeServer(fd.get('server'));
+    if (!addr) { showGate('connect', 'Enter the server address.'); return; }
+    store.set('server', addr); saveToken(null); store.set('auth', null);
+    location.reload(); return;
+  }
   const name = String(fd.get('name') || '').trim(), pin = String(fd.get('pin') || '');
   if (!/^\d{4}$/.test(pin)) { showGate(step, 'Your PIN must be exactly 4 digits.'); return; }
   if (step === 'setup' && pin !== fd.get('pin2')) { showGate('setup', 'Those two PINs don’t match. Try again.'); return; }
@@ -2365,17 +2435,22 @@ async function gateSubmit(form) {
   try {
     const res = await api('POST', step === 'setup' ? 'api/auth/setup' : 'api/auth/login', { name, pin });
     store.set('lastName', name);
+    if (res.token) saveToken(res.token, res.mediaKey, false);   // signed in from another site (GitHub Pages)
     me = res.user;
     showGate('remember');
   } catch (e) { showGate(step === 'setup' ? 'setup' : 'login', e.message); }
 }
 async function chooseRemember(yes) {
-  try { const res = await api('POST', 'api/auth/remember', { remember: yes }); store.set('auth', res.user); } catch (e) {}
+  try {
+    const res = await api('POST', 'api/auth/remember', { remember: yes });
+    store.set('auth', res.user);
+    if (yes && remote.token) saveToken(remote.token, remote.mediaKey, true);   // keep the sign-in after the browser closes
+  } catch (e) {}
   location.reload();
 }
 async function signOut() {
   try { await api('POST', 'api/auth/logout'); } catch (e) {}
-  store.set('auth', null);
+  store.set('auth', null); saveToken(null);
   location.reload();
 }
 const roleLabel = u => u.role === 'owner' ? 'Owner' : u.canEdit ? 'Can add, edit and delete music' : 'Listen and download only';
@@ -2387,11 +2462,13 @@ function ago(ms) {
 function openAccount() {
   if (!me) return;
   const until = me.remembered ? `Remembered on this computer until <b>${when(me.expiresAt)}</b>.` : 'Signed in for this visit only. You’ll need your PIN again after 12 hours or when the browser closes.';
-  openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>
+  const where = remote.base ? `<p>Server: <b>${esc(remote.base)}</b></p>` : '';
+  openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}
     <div class="acct-actions">
       ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>Manage people</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
+      ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Use a different server</span></button>` : ''}
     </div>`, onSubmit: () => {} });
 }
 function openChangeMyPin() {
@@ -2453,8 +2530,8 @@ async function addPerson(form) {
   buildShell();
   $('#main').addEventListener('scroll', closeMenu, { passive: true });
   const mode = await checkAuth();
-  if (server.auth && 'serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {} }
-  if (['setup', 'login', 'expired', 'offline-expired'].includes(mode)) { showGate(mode); return; }
+  if ((server.auth || cfg) && 'serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {} }
+  if (['setup', 'login', 'expired', 'offline-expired', 'connect', 'unreachable'].includes(mode)) { showGate(mode); return; }
   $('#acctBtn').hidden = !me;
   if (me) $('#acctBtn').textContent = me.name.slice(0, 1).toUpperCase();
   if (mode === 'ok') await connectServer();
@@ -2479,7 +2556,7 @@ async function addPerson(form) {
   if (mode === 'ok') {
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState !== 'visible') return;
-      try { const r = await fetch('api/auth/status', { cache: 'no-store' }); const st = await r.json(); if (st && st.setup && !st.user) showGate('expired'); } catch (e) {}
+      try { const st = await getStatus(remote.base); if (st.setup && !st.user) { saveToken(null); showGate('expired'); } } catch (e) {}
     });
   }
 })();

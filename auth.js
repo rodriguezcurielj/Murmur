@@ -10,7 +10,9 @@ const REMEMBER_MS = 90 * DAY;   // "Remember this computer"
 const SESSION_MS = 12 * HOUR;   // everyone else
 const COOKIE = 'murmur_session';
 
-module.exports = function createAuth(file) {
+module.exports = function createAuth(file, opts = {}) {
+  // Sites (like the GitHub Pages copy) that may use this server from another address.
+  const allowedOrigins = new Set((opts.allowedOrigins || []).map(o => o.replace(/\/+$/, '')));
   let db = { users: [], sessions: [] };
   try { db = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* first run */ }
   db.users = db.users || []; db.sessions = db.sessions || [];
@@ -58,8 +60,16 @@ module.exports = function createAuth(file) {
 
   /* --- cookies & sessions --- */
   function readToken(req) {
+    const h = req.headers.authorization || '';
+    if (h.startsWith('Bearer ')) return h.slice(7).trim() || null;
     const m = (req.headers.cookie || '').split(/;\s*/).map(c => c.split('=')).find(([k]) => k === COOKIE);
     return m ? decodeURIComponent(m.slice(1).join('=')) : null;
+  }
+  // True when the request comes from the player hosted on another site (e.g. GitHub Pages).
+  function crossSite(req) {
+    const o = req.headers.origin;
+    if (!o) return false;
+    try { return new URL(o).host !== req.headers.host; } catch { return true; }
   }
   function secure(req) { return req.secure || req.headers['x-forwarded-proto'] === 'https'; }
   function setCookie(req, res, token, maxAgeMs) {
@@ -75,30 +85,49 @@ module.exports = function createAuth(file) {
   }
   function startSession(req, res, user) {
     const token = crypto.randomBytes(32).toString('base64url'), now = Date.now();
-    const s = { id: id(6), tokenHash: sha(token), userId: user.id, createdAt: now, expiresAt: now + SESSION_MS, remember: false, device: deviceName(req.headers['user-agent']), lastSeen: now };
+    const s = { id: id(6), tokenHash: sha(token), mediaKey: id(16), userId: user.id, createdAt: now, expiresAt: now + SESSION_MS, remember: false, device: deviceName(req.headers['user-agent']), lastSeen: now };
     db.sessions.push(s); save();
-    setCookie(req, res, token);   // session cookie: gone when the browser closes
-    return s;
+    if (!crossSite(req)) setCookie(req, res, token);   // session cookie: gone when the browser closes
+    return { session: s, token };
   }
-  function current(req) {
-    const token = readToken(req); if (!token) return null;
-    const h = sha(token), s = db.sessions.find(x => x.tokenHash === h);
+  function current(req, mediaKey) {
+    let s;
+    if (mediaKey) s = db.sessions.find(x => x.mediaKey && x.mediaKey === mediaKey);
+    else { const token = readToken(req); if (!token) return null; const h = sha(token); s = db.sessions.find(x => x.tokenHash === h); }
     if (!s) return null;
     if (s.expiresAt <= Date.now()) { db.sessions = db.sessions.filter(x => x !== s); save(); return null; }
     const u = db.users.find(x => x.id === s.userId); if (!u) return null;
     if (Date.now() - s.lastSeen > 60e3) { s.lastSeen = Date.now(); save(); }
-    return { user: u, session: s, token };
+    return { user: u, session: s, token: mediaKey ? null : readToken(req) };
   }
   const publicUser = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), expiresAt: s ? s.expiresAt : null, remembered: s ? s.remember : false });
+  // A player on another site can't use our cookie, so it gets the token, plus a read-only key for audio and cover URLs.
+  const creds = (req, s, token) => crossSite(req) ? { token, mediaKey: s.mediaKey } : {};
   const personView = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), createdAt: u.createdAt,
     sessions: db.sessions.filter(x => x.userId === u.id).map(x => ({ id: x.id, device: x.device, createdAt: x.createdAt, expiresAt: x.expiresAt, remember: x.remember, lastSeen: x.lastSeen, current: !!s && x.id === s.id })) });
 
   /* --- middleware --- */
   const PUBLIC = new Set(['/auth/status', '/auth/login', '/auth/setup', '/health']);
+  function cors(req, res, next) {
+    const o = (req.headers.origin || '').replace(/\/+$/, '');
+    if (o && allowedOrigins.has(o)) {
+      res.setHeader('Access-Control-Allow-Origin', o);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length');
+      if (req.method === 'OPTIONS') {
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
+        res.setHeader('Access-Control-Max-Age', '600');
+        if (req.headers['access-control-request-private-network']) res.setHeader('Access-Control-Allow-Private-Network', 'true');
+        return res.status(204).end();
+      }
+    }
+    next();
+  }
   function sameOrigin(req, res, next) {
-    if (req.method === 'GET' || req.method === 'HEAD') return next();
-    const o = req.headers.origin;
-    if (o) { try { if (new URL(o).host !== req.headers.host) throw new Error(); } catch { return res.status(403).json({ error: 'Blocked a request from another website.' }); } }
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    const o = (req.headers.origin || '').replace(/\/+$/, '');
+    if (o && crossSite(req) && !allowedOrigins.has(o)) return res.status(403).json({ error: 'Blocked a request from another website.' });
     next();
   }
   function requireUser(req, res, next) {
@@ -109,7 +138,7 @@ module.exports = function createAuth(file) {
     next();
   }
   function requireUserFiles(req, res, next) {
-    const a = current(req);
+    const a = (typeof req.query.k === 'string' && current(req, req.query.k)) || current(req);
     if (!a) return res.status(401).type('text').send('Please sign in.');
     next();
   }
@@ -126,7 +155,7 @@ module.exports = function createAuth(file) {
   function routes(app) {
     app.get('/api/auth/status', (req, res) => {
       const a = current(req);
-      res.json({ setup: db.users.some(u => u.role === 'owner'), user: a ? publicUser(a.user, a.session) : null });
+      res.json({ setup: db.users.some(u => u.role === 'owner'), user: a ? { ...publicUser(a.user, a.session), ...(crossSite(req) ? { mediaKey: a.session.mediaKey } : {}) } : null });
     });
 
     app.post('/api/auth/setup', (req, res) => {
@@ -136,9 +165,9 @@ module.exports = function createAuth(file) {
       if (!validPin(pin)) return res.status(400).json({ error: 'Your PIN must be exactly 4 digits.' });
       const u = { id: id(), name, role: 'owner', canEdit: true, createdAt: Date.now() };
       setPin(u, pin); db.users.push(u);
-      const s = startSession(req, res, u);
+      const { session: s, token } = startSession(req, res, u);
       console.log(`Owner account created for ${name}`);
-      res.json({ user: publicUser(u, s) });
+      res.json({ user: publicUser(u, s), ...creds(req, s, token) });
     });
 
     app.post('/api/auth/login', (req, res) => {
@@ -152,8 +181,8 @@ module.exports = function createAuth(file) {
         return res.status(401).json({ error: 'That name and PIN don’t match.' });
       }
       keys.forEach(k => fails.delete(k));
-      const s = startSession(req, res, u);
-      res.json({ user: publicUser(u, s) });
+      const { session: s, token } = startSession(req, res, u);
+      res.json({ user: publicUser(u, s), ...creds(req, s, token) });
     });
 
     app.post('/api/auth/remember', (req, res) => {
@@ -161,7 +190,7 @@ module.exports = function createAuth(file) {
         req.session.remember = true;
         req.session.expiresAt = Date.now() + REMEMBER_MS;
         save();
-        setCookie(req, res, req.token, REMEMBER_MS);
+        if (!crossSite(req)) setCookie(req, res, req.token, REMEMBER_MS);
       }
       res.json({ user: publicUser(req.user, req.session) });
     });
@@ -242,5 +271,5 @@ module.exports = function createAuth(file) {
     });
   }
 
-  return { sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes };
+  return { cors, sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes };
 };

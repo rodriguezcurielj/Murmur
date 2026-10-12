@@ -60,9 +60,15 @@ function guessFromName(name) {
 
 const app = express();
 app.disable('x-powered-by');
-app.use('/api', express.json({ limit: '1mb' }));
-const auth = createAuth(path.join(DATA, 'auth.json'));
+// Behind the tunnel every request arrives from the tunnel container; trust its
+// X-Forwarded-* headers so wrong-PIN limits apply per real visitor and cookies get Secure.
+app.set('trust proxy', 'loopback, uniquelocal');
+// Players hosted elsewhere (GitHub Pages) that may sign in to this server. Comma-separated.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://rodriguezcurielj.github.io').split(',').map(s => s.trim()).filter(Boolean);
+const auth = createAuth(path.join(DATA, 'auth.json'), { allowedOrigins: ALLOWED_ORIGINS });
+app.use(auth.cors);
 app.use(auth.sameOrigin);
+app.use('/api', express.json({ limit: '1mb' }));
 app.use('/api', auth.requireUser);
 auth.routes(app);
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
@@ -196,4 +202,4 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong on the server.' });
 });
 
-app.listen(PORT, () => console.log(`Murmur is running at http://localhost:${PORT} (data in ${DATA})`));
+app.listen(PORT, () => console.log(`Murmur is running at http://localhost:${PORT} (data in ${DATA}). Players allowed from: ${ALLOWED_ORIGINS.join(', ')}`));
