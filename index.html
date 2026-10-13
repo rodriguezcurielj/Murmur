@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013135002">
+<meta name="murmur-build" content="20261013160906">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -349,6 +349,15 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate{position:fixed;inset:0;z-index:100;overflow:auto;display:grid;place-items:center;padding:24px 16px;background:radial-gradient(120% 80% at 50% 0%,color-mix(in srgb,var(--accent) 14%,var(--bg)) 0%,var(--bg) 60%)}
 .gate-card{width:min(400px,100%);display:flex;flex-direction:column;gap:6px}
 .gate-brand{padding:0 0 22px}
+.srv-list{display:grid;gap:8px;margin:0 0 6px}
+.srv-pick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:inherit;font:inherit;cursor:pointer}
+.srv-pick:hover{background:rgba(255,255,255,.08)}
+.srv-pick.on{border-color:var(--accent)}
+.srv-pick b{display:block}
+.srv-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#7a6f86}
+.srv-dot.ok{background:#3ecf6e}
+.srv-or{margin:10px 0 0}
+.link-btn{background:none;border:0;padding:0;color:var(--accent);font:inherit;cursor:pointer;text-decoration:underline}
 .gate h1{font:800 clamp(28px,6vw,36px)/1.05 var(--font-display);letter-spacing:-.02em;margin:0;text-wrap:balance}
 .gate-sub{color:var(--muted);margin:6px 0 18px;max-width:46ch}
 .gate-form{display:flex;flex-direction:column;gap:14px}
@@ -877,21 +886,35 @@ let me = null;   // the signed-in person when running on the Murmur server
    address in config.js (the GitHub Pages copy) or one typed in on the connect screen. */
 const cfg = window.MURMUR_CONFIG || null;
 const remote = { base: '', token: null, mediaKey: null };
-const savedServer = () => store.get('server', null) || (cfg && cfg.server) || '';
+/* config.js can list several servers, e.g. the laptop and the Azure one. People pick one on the
+   connect screen; if it can't be reached, Murmur quietly uses another one from the list. */
+const SERVERS = ((cfg && Array.isArray(cfg.servers) && cfg.servers.length) ? cfg.servers
+  : (cfg && cfg.server ? [{ name: 'My server', url: cfg.server }] : [])).filter(x => x && x.url).map(x => ({ name: String(x.name || x.url), url: x.url }));
+const namedServer = () => { const n = store.get('serverName', null); return n ? SERVERS.find(x => x.name === n) || null : null; };
+const savedServer = () => { const n = namedServer(); return n ? n.url : store.get('server', null) || (SERVERS[0] && SERVERS[0].url) || ''; };
+const serverLabel = base => { const x = SERVERS.find(v => normalizeServer(v.url) === normalizeServer(base)); return x ? x.name : base; };
 const joinUrl = (base, u) => base ? base.replace(/\/+$/, '') + '/' + u : u;
 const apiUrl = u => joinUrl(remote.base, u);
 const fileUrl = u => remote.base ? apiUrl(u) + (remote.mediaKey ? '?k=' + encodeURIComponent(remote.mediaKey) : '') : u;
 const authHeaders = (extra = {}) => remote.token ? { ...extra, Authorization: 'Bearer ' + remote.token } : extra;
+const tokKey = k => 'murmur:' + k + (remote.base ? '@' + remote.base : '');
 function loadToken() {
   try {
-    remote.token = localStorage.getItem('murmur:token') || sessionStorage.getItem('murmur:token');
-    remote.mediaKey = localStorage.getItem('murmur:mkey') || sessionStorage.getItem('murmur:mkey');
+    const get = k => localStorage.getItem(tokKey(k)) || sessionStorage.getItem(tokKey(k));
+    remote.token = get('token'); remote.mediaKey = get('mkey');
+    // Sign-ins saved before there were several servers belong to the first one used.
+    if (!remote.token && !localStorage.getItem('murmur:tokmigrated')) {
+      remote.token = localStorage.getItem('murmur:token') || sessionStorage.getItem('murmur:token');
+      remote.mediaKey = localStorage.getItem('murmur:mkey') || sessionStorage.getItem('murmur:mkey');
+      if (remote.token) { const st = localStorage.getItem('murmur:token') ? localStorage : sessionStorage; st.setItem(tokKey('token'), remote.token); st.setItem(tokKey('mkey'), remote.mediaKey || ''); }
+    }
   } catch (e) {}
 }
 function saveToken(token, mediaKey, persist) {
   try {
-    for (const st of [localStorage, sessionStorage]) { st.removeItem('murmur:token'); st.removeItem('murmur:mkey'); }
-    if (token) { const st = persist ? localStorage : sessionStorage; st.setItem('murmur:token', token); st.setItem('murmur:mkey', mediaKey || ''); }
+    for (const st of [localStorage, sessionStorage]) { st.removeItem(tokKey('token')); st.removeItem(tokKey('mkey')); st.removeItem('murmur:token'); st.removeItem('murmur:mkey'); }
+    localStorage.setItem('murmur:tokmigrated', '1');
+    if (token) { const st = persist ? localStorage : sessionStorage; st.setItem(tokKey('token'), token); st.setItem(tokKey('mkey'), mediaKey || ''); }
   } catch (e) {}
   remote.token = token || null; remote.mediaKey = mediaKey || null;
 }
@@ -1106,7 +1129,7 @@ async function pumpDownloads() {
       const blob = await fetchWithProgress(t.src, p => { dlq.cur.pct = p; renderUploadStatus(); });
       let cover = null;
       if (t.cover) { try { const r = await fetch(t.cover); if (r.ok) cover = await r.blob(); } catch (e) {} }
-      await Offline.put({ id, blob, cover, meta: t.raw, savedAt: Date.now() });
+      await Offline.put({ id, blob, cover, meta: t.raw, server: remote.base, savedAt: Date.now() });
       offline.set(id, { size: blob.size });
       if (cover) offlineCovers[id] = URL.createObjectURL(cover);
       saved++;
@@ -2974,6 +2997,7 @@ function act(el, e) {
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); showGate('connect'); break;
+    case 'pick-server': pickServer(d.name); break;
     case 'yt-view': store.set('ytFullVideo', d.v === 'video'); placeYtBox(); syncVideoSwitch(); break;
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
@@ -3547,12 +3571,18 @@ async function checkAuth() {
       if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
       return c ? 'offline-expired' : 'demo';
     }
-    remote.base = normalizeServer(base); loadToken();
-    try { st = await getStatus(remote.base); } catch (e) {
+    const tries = [normalizeServer(base), ...SERVERS.map(x => normalizeServer(x.url))].filter((v, i, a) => v && a.indexOf(v) === i);
+    for (const b of tries) {
+      remote.base = b; loadToken();
+      try { st = await getStatus(b); break; } catch (e) { st = null; }
+    }
+    if (!st) {
+      remote.base = tries[0]; loadToken();
       const c = store.get('auth', null);
       if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
       return 'unreachable';
     }
+    if (remote.base !== tries[0]) setTimeout(() => toast(`${serverLabel(tries[0])} isn’t reachable, so you’re on ${serverLabel(remote.base)}`), 1500);
   }
   server.auth = true;
   if (!st.setup) return 'setup';
@@ -3582,10 +3612,14 @@ function showGate(step, msg = '') {
        <button class="text-btn gate-alt" data-act="gate-remember" data-v="0">No, just this time</button></div>`);
   } else if (step === 'connect' || step === 'unreachable') {
     const addr = remote.base || savedServer();
-    html = card(step === 'connect' ? 'Connect to your Murmur' : 'Can’t reach your Murmur server',
-      step === 'connect' ? 'Enter the address of the Murmur server that holds your music. You’ll sign in with your name and PIN next.'
-        : `Murmur couldn’t connect to <b>${esc(addr)}</b>. Check that the server is running and the address is right, then try again.`,
-      `<form id="gForm" data-step="server" class="gate-form">
+    const cur = normalizeServer(addr);
+    const picks = SERVERS.length ? `<div class="srv-list" role="list">${SERVERS.map(x => `<button type="button" class="srv-pick${normalizeServer(x.url) === cur ? ' on' : ''}" data-act="pick-server" data-name="${esc(x.name)}" role="listitem">
+        <span class="srv-dot" data-srv="${esc(normalizeServer(x.url))}"></span><span><b>${esc(x.name)}</b><span class="small" data-srv-state="${esc(normalizeServer(x.url))}">Checking…</span></span></button>`).join('')}</div>
+        <p class="small srv-or">Or type another address:</p>` : '';
+    html = card(step === 'connect' ? 'Choose your server' : 'Can’t reach your Murmur server',
+      step === 'connect' ? (SERVERS.length ? 'Pick which Murmur server to use. Each one keeps its own music and sign-ins.' : 'Enter the address of the Murmur server that holds your music. You’ll sign in with your name and PIN next.')
+        : `Murmur couldn’t connect to <b>${esc(serverLabel(addr))}</b>. Pick another server, or check that it’s running and try again.`,
+      `${picks}<form id="gForm" data-step="server" class="gate-form">
         <div class="field"><label for="gServer">Server address</label><input id="gServer" name="server" required autocomplete="url" inputmode="url" placeholder="https://murmur.example.com" value="${esc(addr)}"></div>
         ${err}<button class="m-ok gate-ok" type="submit">Connect</button></form>`);
   } else if (step === 'offline-expired') {
@@ -3601,15 +3635,33 @@ function showGate(step, msg = '') {
         <p class="small">Don’t have a PIN? Ask the person who runs this Murmur to add you.</p></form>`);
   }
   g.innerHTML = html; g.hidden = false;
+  if (step === 'connect' || step === 'unreachable') checkServerList();
   const f = (lastName && $('#gPin')) || $('#gName') || g.querySelector('button');
   if (f) setTimeout(() => f.focus(), 0);
+}
+function checkServerList() {
+  SERVERS.forEach(x => {
+    const b = normalizeServer(x.url);
+    const show = ok => {
+      document.querySelectorAll(`[data-srv="${CSS.escape(b)}"]`).forEach(d => d.classList.toggle('ok', ok));
+      document.querySelectorAll(`[data-srv-state="${CSS.escape(b)}"]`).forEach(d => { d.textContent = ok ? 'Online' : 'Off or unreachable'; });
+    };
+    Promise.race([getStatus(b), new Promise((_, no) => setTimeout(no, 6000))]).then(() => show(true), () => show(false));
+  });
+}
+function pickServer(name) {
+  const x = SERVERS.find(v => v.name === name); if (!x) return;
+  store.set('serverName', x.name); store.set('server', null); store.set('auth', null);
+  location.reload();
 }
 async function gateSubmit(form) {
   const fd = new FormData(form), step = form.dataset.step;
   if (step === 'server') {
     const addr = normalizeServer(fd.get('server'));
     if (!addr) { showGate('connect', 'Enter the server address.'); return; }
-    store.set('server', addr); saveToken(null); store.set('auth', null);
+    const named = SERVERS.find(x => normalizeServer(x.url) === addr);
+    if (named) { pickServer(named.name); return; }
+    store.set('serverName', null); store.set('server', addr); store.set('auth', null);
     location.reload(); return;
   }
   const name = String(fd.get('name') || '').trim(), pin = String(fd.get('pin') || '');
@@ -3646,7 +3698,8 @@ function ago(ms) {
 function openAccount() {
   if (!me) return;
   const until = me.remembered ? `Remembered on this computer until <b>${when(me.expiresAt)}</b>.` : 'Signed in for this visit only. You’ll need your PIN again after 12 hours or when the browser closes.';
-  const where = remote.base ? `<p>Server: <b>${esc(remote.base)}</b></p>` : '';
+  const others = SERVERS.filter(x => normalizeServer(x.url) !== remote.base);
+  const where = remote.base ? `<p>Server: <b>${esc(serverLabel(remote.base))}</b>${others.map(x => ` · <button type="button" class="link-btn" data-act="pick-server" data-name="${esc(x.name)}">Switch to ${esc(x.name)}</button>`).join('')}</p>` : '';
   // YouTube ad blocker status: built into the phone apps, or the Murmur Ad Blocker extension in a desktop browser.
   const adOn = window.MurmurAndroid ? 'On (built into the app)' : document.documentElement.dataset.murmurAdblock ? 'On (Murmur Ad Blocker extension)' : '';
   const adLine = !yt.enabled ? '' : adOn ? `<p>YouTube ad blocker: <b>${adOn}</b></p>`
@@ -3656,7 +3709,7 @@ function openAccount() {
       ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
-      ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Use a different server</span></button>` : ''}
+      ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Choose server</span></button>` : ''}
     </div>
     ${appsSectionHTML()}`, onSubmit: () => {} });
 }
@@ -3775,7 +3828,7 @@ async function addPerson(form) {
   const saved = mode === 'demo' ? [] : await loadOffline();
   if (server.on) {
     // Downloads of songs that were deleted from the server are no longer needed.
-    for (const r of saved) if (!TRACKS[r.id]) await dropDownload(r.id);
+    for (const r of saved) if (!TRACKS[r.id] && (r.server || remote.base) === remote.base) await dropDownload(r.id);
   } else if (saved.length) {
     // Server unreachable: show what's saved on this device.
     server.offlineMode = true;

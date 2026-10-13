@@ -4,6 +4,12 @@
 // Cloudflare Tunnel or Tailscale Funnel address). People can also type a different
 // address on the "Connect to your Murmur" screen.
 window.MURMUR_CONFIG = {
-  // Current address from `docker logs murmur-tunnel` on this PC. It changes if the tunnel restarts.
-  server: 'https://arguments-salad-wireless-produced.trycloudflare.com'
+  // Servers people can pick from on the "Choose your server" screen. The first is the default;
+  // if the chosen one can't be reached, Murmur uses another one from this list.
+  servers: [
+    // This laptop. The address comes from `docker logs murmur-tunnel` and changes if the tunnel restarts.
+    { name: 'Laptop', url: 'https://arguments-salad-wireless-produced.trycloudflare.com' },
+    // The always-on Azure server (Tailscale Funnel). This address doesn't change.
+    { name: 'Azure', url: 'https://murmur.tail05789d.ts.net' }
+  ]
 };
