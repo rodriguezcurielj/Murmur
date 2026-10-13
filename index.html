@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261012230734">
+<meta name="murmur-build" content="20261013135002">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -12,7 +12,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <script src="config.js"></script>
 </head>
-<body>
 <title>Murmur Player</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -53,6 +52,7 @@ svg.i{width:20px;height:20px;flex:none}
 
 .nav{padding:18px 12px 10px;display:flex;flex-direction:column;gap:2px}
 .brand{display:flex;align-items:center;gap:10px;padding:0 12px 14px;font:800 23px/1 var(--font-display);letter-spacing:-.02em}
+[data-act="logo-home"]{cursor:pointer;-webkit-tap-highlight-color:transparent}
 .brand svg,.m-brand svg{width:26px;height:26px;color:var(--accent)}
 .nav-btn{display:flex;align-items:center;gap:14px;padding:10px 12px;border-radius:8px;font-weight:700;color:var(--muted)}
 .nav-btn:hover,.nav-btn.on{color:var(--fg)}
@@ -1217,7 +1217,7 @@ function saveResume() {
   if (!state.current || !TRACKS[state.current]) return;
   try {
     store.set('resume', { current: state.current, ctx: state.ctx, list: state.list.slice(0, 2000), order: state.order.slice(0, 2000), pos: state.pos,
-      manual: state.manual.slice(0, 200), at: Math.floor(Engine.position() || 0), saved: Date.now() });
+      manual: state.manual.slice(0, 200), at: Math.floor(Engine.position() || 0), playing: !!Engine.playing, saved: Date.now() });
   } catch (e) {}
 }
 function restoreResume() {
@@ -1234,7 +1234,26 @@ function restoreResume() {
   if (TRACKS[r.current].sp) state.resumeAt = r.at > 2 ? r.at : 0;   // its audio source is found after loading
   loadAndPlay(r.current, false);
   if (r.at > 2 && !TRACKS[r.current].sp) Engine.seek(r.at);
+  // It was playing when the page was refreshed or closed a moment ago: keep playing.
+  if (r.playing && Date.now() - (r.saved || 0) < 10 * 60e3) keepPlayingAfterReload(r.current);
   return true;
+}
+/* Browsers may block sound until you touch the page after a refresh. Try right away; if blocked,
+   start on the first tap anywhere (unless that tap is on a button, which does its own thing). */
+function keepPlayingAfterReload(tid) {
+  const go = () => { if (state.current === tid && !Engine.playing) { Engine.play(); updatePlayIcons(); highlight(); } };
+  setTimeout(() => {
+    go();
+    setTimeout(() => {
+      if (Engine.playing || state.current !== tid) { updatePlayIcons(); highlight(); return; }
+      const onTap = e => {
+        document.removeEventListener('pointerdown', onTap, true); document.removeEventListener('keydown', onTap, true);
+        if (e.target.closest && e.target.closest('button, input, a, [data-act]')) return;
+        go();
+      };
+      document.addEventListener('pointerdown', onTap, true); document.addEventListener('keydown', onTap, true);
+    }, 1500);
+  }, TRACKS[tid] && TRACKS[tid].sp ? 1200 : 300);
 }
 setInterval(() => { if (Engine.playing) saveResume(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveResume(); });
@@ -2161,7 +2180,7 @@ function submitSearch(value) {
   const q = String(value || '').trim();
   closeDrop();
   state.search = q;
-  if (state.view.name !== 'search') navigate({ name: 'search' }); else { state.sel = null; refreshSearch(); }
+  if (state.view.name !== 'search') navigate({ name: 'search' }); else { state.sel = null; refreshSearch(); histSave(); }
   if (q) runCatalogSearch(q);
 }
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
@@ -2282,7 +2301,7 @@ function buildShell() {
   $('#app').innerHTML = `
   <aside class="sidebar">
     <nav class="panel nav" aria-label="Main">
-      <div class="brand">${LOGO}<span>Murmur</span></div>
+      <div class="brand" data-act="logo-home" role="link" tabindex="0" title="Home">${LOGO}<span>Murmur</span></div>
       <button class="nav-btn" data-act="nav" data-to="home">${icon('home')}Home</button>
       <button class="nav-btn" data-act="nav" data-to="search">${icon('search')}Search</button>
     </nav>
@@ -2296,7 +2315,7 @@ function buildShell() {
     <div class="topbar">
       <button class="icon-btn" data-act="back" id="backBtn" aria-label="Go back">${icon('back')}</button>
       <button class="icon-btn" data-act="fwd" id="fwdBtn" aria-label="Go forward">${icon('fwd')}</button>
-      <div class="m-brand">${LOGO}<span>Murmur</span></div>
+      <div class="m-brand" data-act="logo-home" role="link" tabindex="0" title="Home">${LOGO}<span>Murmur</span></div>
       <div class="top-search" role="search">
         ${icon('search')}
         <label class="vh" for="tq">Search your music and YouTube</label>
@@ -2381,7 +2400,7 @@ function render() {
   }
   syncDownloads();
   $$('[data-act="nav"]').forEach(b => b.classList.toggle('on', b.dataset.to === v.name));
-  $('#backBtn').disabled = !state.back.length; $('#fwdBtn').disabled = !state.fwd.length;
+  $('#backBtn').disabled = hist.i <= 0; $('#fwdBtn').disabled = hist.i >= hist.top;
   renderSidebar(); highlight(); updateToggles(); syncSel();
 }
 function renderSidebar() {
@@ -2389,11 +2408,42 @@ function renderSidebar() {
   $('#sideLib').innerHTML = libEntries().map(e => libItem(e, false)).join('');
   highlight();
 }
+/* Each page gets its own address (#/album/…, #/search/…), so the browser's Back and Forward move between
+   pages and a refresh opens the same page, scrolled to the same spot. */
+const hist = { i: 0, top: 0 };
+try { hist.top = +sessionStorage.getItem('murmur:histTop') || 0; } catch (e) {}
+function viewHash(v) {
+  if (!v || v.name === 'home') return location.pathname + location.search;
+  if (v.name === 'collection') return '#/' + v.type + '/' + encodeURIComponent(v.id);
+  if (v.name === 'search') return '#/search' + (state.search ? '/' + encodeURIComponent(state.search) : '');
+  return '#/' + v.name;
+}
+function viewFromHash() {
+  const p = location.hash.replace(/^#\/?/, '').split('/');
+  const name = p[0], rest = p.slice(1).join('/');
+  let arg = ''; try { arg = decodeURIComponent(rest); } catch (e) { arg = rest; }
+  if (name === 'search') return { view: { name: 'search' }, q: arg };
+  if (['library', 'queue', 'people'].includes(name)) return { view: { name } };
+  if (name && rest) {
+    const v = { name: 'collection', type: name, id: arg };
+    if (getCollection(v.type, v.id)) return { view: v };
+  }
+  return { view: { name: 'home' } };
+}
+function histSave(extra) {
+  const st = Object.assign({}, history.state || {}, { murmurView: state.view, i: hist.i, search: state.search || '' }, extra || {});
+  try { history.replaceState(st, '', viewHash(state.view)); } catch (e) {}
+}
+function setHistTop(n) { hist.top = n; try { sessionStorage.setItem('murmur:histTop', String(n)); } catch (e) {} }
 function navigate(view, push = true) {
   closeMenu(); $('#full').hidden = true;
   state.sel = null; state.libSel = null;
-  if (push) { state.back.push(state.view); state.fwd = []; }
+  if (push) histSave({ scroll: $('#main').scrollTop });   // remember where you were on the page you're leaving
   state.view = view;
+  if (push) {
+    hist.i++; setHistTop(hist.i);
+    try { history.pushState({ murmurView: view, i: hist.i, search: state.search || '', scroll: 0 }, '', viewHash(view)); } catch (e) {}
+  }
   render(); $('#main').scrollTop = 0;
   if (view.name === 'search') { const q = $('#tq'); if (q && document.activeElement !== q) q.focus(); }
 }
@@ -2818,6 +2868,12 @@ function act(el, e) {
   const d = el.dataset;
   switch (d.act) {
     case 'nav': navigate({ name: d.to }); break;
+    case 'logo-home': {
+      state.search = ''; const q = $('#tq'); if (q) { q.value = ''; const c = $('#tqClear'); if (c) c.hidden = true; }
+      if (state.view.name === 'home') { closeMenu(); $('#full').hidden = true; render(); $('#main').scrollTop = 0; }
+      else navigate({ name: 'home' });
+      break;
+    }
     case 'open':
       if (!d.id) return;
       navigate({ name: 'collection', type: d.type, id: d.id }); break;
@@ -2996,8 +3052,8 @@ function act(el, e) {
     case 'new-pl': { const p = createPlaylist(); navigate({ name: 'collection', type: 'playlist', id: p.id }); setTimeout(() => { const i = $('#plName'); if (i) i.select(); }, 0); break; }
     case 'pl-add': addToPlaylist(state.view.id, [d.tid]); break;
     case 'lib-filter': state.libFilter = d.k; if (state.view.name === 'library') render(); else renderSidebar(); break;
-    case 'back': if (state.back.length) { state.fwd.push(state.view); navigate(state.back.pop(), false); } break;
-    case 'fwd': if (state.fwd.length) { state.back.push(state.view); navigate(state.fwd.pop(), false); } break;
+    case 'back': if (hist.i > 0) history.back(); break;
+    case 'fwd': if (hist.i < hist.top) history.forward(); break;
     case 'q-jump': {
       const i = +d.i;
       if (d.kind === 'manual') { const [tid] = state.manual.splice(i, 1); loadAndPlay(tid, true); }
@@ -3022,6 +3078,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (el && !el.disabled) act(el, e);
 });
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.dataset && e.target.dataset.act === 'logo-home') { e.preventDefault(); e.target.click(); } });
 document.addEventListener('submit', async e => {
   if (e.target.id === 'gForm') { e.preventDefault(); gateSubmit(e.target); return; }
   if (e.target.id === 'addPerson') { e.preventDefault(); addPerson(e.target); return; }
@@ -3264,7 +3321,7 @@ function spSaveToken(j) {
 async function spFinishLogin() {
   const p = new URLSearchParams(location.search);
   if (!p.has('state') || (!p.has('code') && !p.has('error'))) return false;
-  history.replaceState(null, '', spRedirect());
+  history.replaceState(history.state, '', spRedirect());
   let saved = null; try { saved = JSON.parse(sessionStorage.getItem('murmur:spauth') || 'null'); } catch (e) {}
   sessionStorage.removeItem('murmur:spauth');
   if (p.get('error')) { toast(p.get('error') === 'access_denied' ? 'Spotify sign-in was cancelled.' : 'Spotify said: ' + p.get('error')); return true; }
@@ -3610,9 +3667,13 @@ function appsSectionHTML() {
   const inApp = window.MurmurAndroid && typeof window.MurmurAndroid.version === 'function' ? String(window.MurmurAndroid.version()) : '';
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   const android = /Android/.test(ua);
-  const link = (href, iconName, label, sub, dl) => `<a class="app-link" href="${href}" target="_blank" rel="noopener"${dl ? ' download' : ''}>${icon(iconName)}<span><b>${label}</b><span class="small">${sub}</span></span></a>`;
+  const androidApp = !!inApp && !inApp.startsWith('ios');
+  const tgt = androidApp ? '' : ' target="_blank" rel="noopener"';
+  const link = (href, iconName, label, sub, dl) => `<a class="app-link" href="${href}"${tgt}${dl ? ' download' : ''}>${icon(iconName)}<span><b>${label}</b><span class="small">${sub}</span></span></a>`;
   const items = {
-    android: link(APPS_PAGE + 'Murmur.apk', 'download', 'Android app', 'Download Murmur.apk and open it to install', true),
+    android: androidApp
+      ? link(APPS_PAGE + '#and', 'download', 'Android app', 'Opens the download page in your browser', false)
+      : link(APPS_PAGE + 'Murmur.apk', 'download', 'Android app', 'Download Murmur.apk and open it to install', true),
     ios: link(APPS_PAGE + '#ios', 'download', 'iPhone app', 'Add to Home Screen, or sideload Murmur.ipa', false),
     ext: link(APPS_PAGE + '#extension', 'download', 'Ad blocker for computers', 'Removes YouTube ads in Chrome, Edge or Brave', false)
   };
@@ -3620,7 +3681,7 @@ function appsSectionHTML() {
   return `<div class="apps-box"><div class="eyebrow">Get the apps</div>
     ${inApp ? `<p class="small">You’re using the Murmur app (version ${esc(inApp.replace(/^ios-/, ''))}).</p>` : ''}
     <div class="app-links">${order.map(k => items[k]).join('')}</div>
-    <a class="small" href="${APPS_PAGE}" target="_blank" rel="noopener">All downloads and install steps</a></div>`;
+    <a class="small" href="${APPS_PAGE}"${tgt}>All downloads and install steps</a></div>`;
 }
 function openChangeMyPin() {
   openModal({ title: 'Change my PIN', confirm: 'Save PIN', html: `<p>Your other devices will be signed out.</p>
@@ -3726,7 +3787,30 @@ async function addPerson(form) {
   state.recent = state.recent.filter(k => k !== 'album:uploads' || server.on);
   $('#upBtn').hidden = !canEditMusic();
   if (!restoreResume()) resetPlayback();
+  {
+    const hs = history.state || {}, fromHash = viewFromHash();
+    state.view = fromHash.view;
+    if (state.view.name === 'search') { state.search = fromHash.q || hs.search || ''; const q = $('#tq'); if (q) { q.value = state.search; const c = $('#tqClear'); if (c) c.hidden = !state.search; } }
+    hist.i = hs.i || 0; if (hist.top < hist.i) setHistTop(hist.i);
+    histSave();
+  }
   render();
+  if (history.state && history.state.scroll) { const y = history.state.scroll; requestAnimationFrame(() => { $('#main').scrollTop = y; }); }
+  if (state.view.name === 'search' && state.search) runCatalogSearch(state.search);
+  window.addEventListener('popstate', e => {
+    const st = e.state || {};
+    hist.i = st.i || 0;
+    let v = st.murmurView || viewFromHash().view;
+    if (v.name === 'collection' && !getCollection(v.type, v.id)) v = { name: 'home' };
+    state.search = v.name === 'search' ? (st.search || '') : '';
+    const q = $('#tq'); if (q) { q.value = state.search; const c = $('#tqClear'); if (c) c.hidden = !state.search; }
+    closeDrop(); if (!$('#modal').hidden) closeModal();
+    navigate(v, false);
+    if (st.scroll) requestAnimationFrame(() => { $('#main').scrollTop = st.scroll; });
+    if (v.name === 'search' && state.search) runCatalogSearch(state.search);
+  });
+  let scrollTimer = null;
+  $('#main').addEventListener('scroll', () => { clearTimeout(scrollTimer); scrollTimer = setTimeout(() => histSave({ scroll: $('#main').scrollTop }), 200); }, { passive: true });
   requestAnimationFrame(frame);
   loadSuggestions();
   if (mode === 'ok') { spFinishLogin(); loadDiscover(); }   // coming back from the Spotify sign-in page
@@ -3765,7 +3849,9 @@ window.murmurBack = () => {
   if (!$('#full').hidden) { $('#full').hidden = true; return true; }
   if (state.sel || state.libSel) { clearSel(); return true; }
   if (!$('#gate').hidden) return false;
-  // Anywhere but Home: back goes straight to Home. On Home the app asks for a second swipe to exit.
+  // Back goes to the previous page, like a browser. With nothing before it, back goes to Home,
+  // and on Home the app asks for a second swipe to exit.
+  if (hist.i > 0) { history.back(); return true; }
   if (state.view.name !== 'home' || state.search) {
     state.search = ''; const q = $('#tq'); if (q) { q.value = ''; const c = $('#tqClear'); if (c) c.hidden = true; }
     navigate({ name: 'home' }); return true;
