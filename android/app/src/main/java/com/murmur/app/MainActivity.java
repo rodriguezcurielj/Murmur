@@ -175,6 +175,9 @@ public class MainActivity extends Activity {
         String host = u.getHost() == null ? "" : u.getHost();
         String scheme = u.getScheme() == null ? "" : u.getScheme();
         if (scheme.equals("blob") || scheme.equals("data") || scheme.equals("about")) return true;
+        // The download page and app files open in the phone's browser, where downloads work.
+        String path = u.getPath() == null ? "" : u.getPath();
+        if (path.startsWith("/Murmur/apps")) return false;
         return host.equals("rodriguezcurielj.github.io")
                 || host.endsWith(".trycloudflare.com")
                 || host.endsWith(".ts.net")
@@ -258,7 +261,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.4"; }
+        public String version() { return "1.5"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }

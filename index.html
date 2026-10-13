@@ -354,6 +354,13 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent);color:var(--accent-ink);font:800 15px var(--font-display)}
 .acct-btn:hover{filter:brightness(1.08)}
 .acct-actions{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.apps-box{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.app-links{display:flex;flex-direction:column;gap:6px}
+.app-link{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:var(--raise);color:var(--fg);text-decoration:none}
+.app-link:hover{background:var(--hover)}
+.app-link>svg{color:var(--accent);width:20px;height:20px}
+.app-link>span{display:flex;flex-direction:column;min-width:0}
+.apps-box>a.small{color:var(--accent)}
 .badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
 .person-add{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px;padding:16px;margin:18px 0 22px;background:var(--raise);border-radius:12px}
 .person-add .field{min-width:0}
@@ -3343,7 +3350,27 @@ function openAccount() {
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Use a different server</span></button>` : ''}
-    </div>`, onSubmit: () => {} });
+    </div>
+    ${appsSectionHTML()}`, onSubmit: () => {} });
+}
+/* "Get the apps": downloads live on the GitHub Pages download page. The device you're on is listed first. */
+const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
+function appsSectionHTML() {
+  const ua = navigator.userAgent;
+  const inApp = window.MurmurAndroid && typeof window.MurmurAndroid.version === 'function' ? String(window.MurmurAndroid.version()) : '';
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const android = /Android/.test(ua);
+  const link = (href, iconName, label, sub, dl) => `<a class="app-link" href="${href}" target="_blank" rel="noopener"${dl ? ' download' : ''}>${icon(iconName)}<span><b>${label}</b><span class="small">${sub}</span></span></a>`;
+  const items = {
+    android: link(APPS_PAGE + 'Murmur.apk', 'download', 'Android app', 'Download Murmur.apk and open it to install', true),
+    ios: link(APPS_PAGE + '#ios', 'download', 'iPhone app', 'Add to Home Screen, or sideload Murmur.ipa', false),
+    ext: link(APPS_PAGE + '#extension', 'download', 'Ad blocker for computers', 'Removes YouTube ads in Chrome, Edge or Brave', false)
+  };
+  const order = android ? ['android', 'ios', 'ext'] : ios ? ['ios', 'android', 'ext'] : ['ext', 'android', 'ios'];
+  return `<div class="apps-box"><div class="eyebrow">Get the apps</div>
+    ${inApp ? `<p class="small">You’re using the Murmur app (version ${esc(inApp.replace(/^ios-/, ''))}).</p>` : ''}
+    <div class="app-links">${order.map(k => items[k]).join('')}</div>
+    <a class="small" href="${APPS_PAGE}" target="_blank" rel="noopener">All downloads and install steps</a></div>`;
 }
 function openChangeMyPin() {
   openModal({ title: 'Change my PIN', confirm: 'Save PIN', html: `<p>Your other devices will be signed out.</p>

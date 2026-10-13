@@ -30,7 +30,7 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
             window.webkit.messageHandlers.saveFile.postMessage({ name: name, mime: mime, data: data });
             return true;
           },
-          version: function () { return 'ios-1.3'; }
+          version: function () { return 'ios-1.4'; }
         };
         """
         config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -64,6 +64,8 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
     /// Murmur, its server and the Spotify sign-in stay inside the app; everything else opens in Safari or its own app.
     static func staysInApp(_ url: URL) -> Bool {
         if ["blob", "data", "about"].contains(url.scheme ?? "") { return true }
+        // The download page and app files open in Safari, where downloads work.
+        if url.path.hasPrefix("/Murmur/apps") { return false }
         let host = url.host ?? ""
         return host == "rodriguezcurielj.github.io"
             || host.hasSuffix(".trycloudflare.com")

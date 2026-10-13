@@ -2,7 +2,7 @@
 // Downloaded songs are stored separately in IndexedDB by the page, so audio
 // (/media) and the library API (/api) are never cached here: when the server
 // is unreachable the page falls back to what's saved on the device.
-const SHELL_CACHE = 'murmur-shell-v17';
+const SHELL_CACHE = 'murmur-shell-v18';
 const RUNTIME_CACHE = 'murmur-runtime-v1';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const BASE = new URL(self.registration.scope).pathname;
