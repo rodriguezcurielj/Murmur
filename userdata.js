@@ -55,5 +55,11 @@ module.exports = function createUserData(dir, auth, opts = {}) {
   // When a person is deleted, their library goes with them.
   function removeUser(id) { if (all[id]) { delete all[id]; save(); } }
 
-  return { routes, removeUser };
+  // For server-to-server sync: one record per person per part of their library ("<id>/liked", "<id>/playlists", ...).
+  const syncCollection = {
+    get: () => { const o = {}; for (const [uid, doc] of Object.entries(all)) for (const [k, v] of Object.entries(doc)) o[uid + '/' + k] = v; return o; },
+    set: o => { const next = {}; for (const [id, v] of Object.entries(o)) { const i = id.indexOf('/'); (next[id.slice(0, i)] = next[id.slice(0, i)] || {})[id.slice(i + 1)] = v; } all = next; save(); }
+  };
+
+  return { routes, removeUser, syncCollection };
 };

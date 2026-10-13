@@ -47,6 +47,16 @@ By hand: download `Docker/server.yml`, then `docker compose -f server.yml up -d`
 
 For a Raspberry Pi, use **Raspberry Pi OS (64-bit)** on a Pi 4 or 5, and keep the music on an SSD or a big, fast SD card.
 
+## Keeping two servers in sync
+
+Two or more Murmur servers can hold the same accounts, sign-ins, songs (including the audio files), everyone's libraries, Spotify imports and settings, in both directions (`sync.js`). For each item, the newest change wins; deletions sync too.
+
+1. Put the same secret in a `.env` file next to the compose file on every server: `MURMUR_SYNC_KEY=some-long-random-text`.
+2. On the server that can reach the others (for example a laptop on a changing tunnel address), also add `MURMUR_PEERS=https://address-of-the-other-server`. It pushes its changes there and pulls the other server's changes about every 30 seconds, and right after anything changes.
+3. Restart Murmur (`docker compose up -d`).
+
+The `.env` file is ignored by git. Without a key, sync is off and the sync endpoints answer 404.
+
 ## Sign-in and people
 
 - **First visit:** Murmur asks you to set up the owner account (your name + a 4-digit PIN). Do this right away. Until you do, anyone who can reach the server could claim it.

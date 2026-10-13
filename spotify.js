@@ -199,5 +199,13 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
       res.json({ match: m });
     });
   }
-  return { routes, importsFor: id => imports[id] || [] };
+  // For server-to-server sync. These objects are shared with the routes above, so they're refilled in place.
+  const refill = (target, o) => { for (const k of Object.keys(target)) delete target[k]; Object.assign(target, o); };
+  const syncCollections = {
+    imports: { get: () => ({ ...imports }), set: o => { refill(imports, o); save('imports', imports); } },
+    matches: { get: () => ({ ...matches }), set: o => { refill(matches, o); save('matches', matches); } },
+    spotifyApp: { get: () => (Object.keys(cfg).length ? { cfg: { ...cfg } } : {}), set: o => { refill(cfg, o.cfg || {}); appToken = null; save('cfg', cfg); } }
+  };
+
+  return { routes, importsFor: id => imports[id] || [], syncCollections };
 };

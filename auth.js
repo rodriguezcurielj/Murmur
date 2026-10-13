@@ -271,5 +271,12 @@ module.exports = function createAuth(file, opts = {}) {
     });
   }
 
-  return { cors, sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes };
+  // For server-to-server sync: people and sign-ins, by id. "lastSeen" changes on every visit, so it isn't compared.
+  const syncCollections = {
+    users: { get: () => Object.fromEntries(db.users.map(u => [u.id, u])), set: o => { db.users = Object.values(o); save(); } },
+    sessions: { get: () => Object.fromEntries(db.sessions.map(s => [s.id, s])), set: o => { db.sessions = Object.values(o); save(); },
+      strip: s => ({ ...s, lastSeen: 0 }) }
+  };
+
+  return { cors, sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes, syncCollections };
 };

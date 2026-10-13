@@ -17,6 +17,12 @@ services:
     volumes:
       # Your music, accounts and settings. Back up this folder to keep everything.
       - ./music-data:/data
+    environment:
+      # Two-way sync with other Murmur servers (sync.js). Put these in a .env file next to this file (keep it private):
+      #   MURMUR_SYNC_KEY=the same secret on every server
+      #   MURMUR_PEERS=https://address-of-another-server   (only on a server that can reach the others)
+      - MURMUR_SYNC_KEY=${MURMUR_SYNC_KEY:-}
+      - MURMUR_PEERS=${MURMUR_PEERS:-}
     restart: unless-stopped
 
   # Optional: a free Cloudflare "quick tunnel" gives the server a public https:// address so phones

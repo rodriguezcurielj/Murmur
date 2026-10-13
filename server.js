@@ -13,6 +13,7 @@ const createYouTube = require('./youtube');
 const createSpotify = require('./spotify');
 const createDiscover = require('./discover');
 const createUserData = require('./userdata');
+const createSync = require('./sync');
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -72,6 +73,13 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://rodriguezcuriel
 const auth = createAuth(path.join(DATA, 'auth.json'), { allowedOrigins: ALLOWED_ORIGINS });
 app.use(auth.cors);
 app.use(auth.sameOrigin);
+// Server-to-server sync (see sync.js). Its endpoints use their own key instead of a sign-in.
+const deferred = {};   // what to keep in sync; filled in below, once every part of the server exists
+const sync = createSync(DATA, deferred, {
+  files: () => library.flatMap(t => ['music/' + t.file, ...(t.cover ? ['covers/' + t.cover] : [])])
+});
+sync.routes(app);
+app.use(sync.middleware);
 app.use('/api', express.json({ limit: '10mb' }));   // imported Spotify playlists can be large
 app.use('/api', auth.requireUser);
 const spotify = createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id) });
@@ -83,7 +91,8 @@ app.delete('/api/users/:id', auth.requireOwner, (req, res, next) => {
   next();
 });
 auth.routes(app);
-createYouTube(path.join(DATA, 'settings.json'), auth).routes(app);
+const youtube = createYouTube(path.join(DATA, 'settings.json'), auth);
+youtube.routes(app);
 createDiscover().routes(app);
 spotify.routes(app);
 userData.routes(app);
@@ -228,5 +237,30 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on the server.' });
 });
+
+// What sync keeps the same on every server.
+Object.assign(deferred, {
+  users: auth.syncCollections.users,
+  sessions: auth.syncCollections.sessions,
+  tracks: {
+    get: () => Object.fromEntries(library.map(t => [t.id, t])),
+    set: o => {
+      const keep = new Set(Object.keys(o));
+      // Songs deleted on another server: delete their files here too.
+      for (const t of library) if (!keep.has(t.id)) {
+        fs.rm(path.join(DIRS.music, t.file), { force: true }, () => {});
+        if (t.cover) fs.rm(path.join(DIRS.covers, t.cover), { force: true }, () => {});
+      }
+      library = Object.values(o).sort((a, b) => String(a.addedAt).localeCompare(String(b.addedAt)));
+      save();
+    }
+  },
+  library: userData.syncCollection,
+  imports: spotify.syncCollections.imports,
+  matches: spotify.syncCollections.matches,
+  spotifyApp: spotify.syncCollections.spotifyApp,
+  youtube: youtube.syncCollection
+});
+sync.start();
 
 app.listen(PORT, () => console.log(`Murmur is running at http://localhost:${PORT} (data in ${DATA}). Players allowed from: ${ALLOWED_ORIGINS.join(', ')}`));

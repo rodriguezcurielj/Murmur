@@ -73,6 +73,12 @@ module.exports = function createYouTube(file, auth) {
     return items;
   }
 
+  // For server-to-server sync: the YouTube key and other settings.
+  const syncCollection = {
+    get: () => (Object.keys(settings).length ? { settings: { ...settings } } : {}),
+    set: o => { settings = { ...(o.settings || {}) }; save().catch(err => console.error('Could not save settings.json:', err)); }
+  };
+
   function routes(app) {
     app.get('/api/youtube/status', (req, res) => res.json({ enabled: !!settings.youtubeKey }));
 
@@ -116,5 +122,5 @@ module.exports = function createYouTube(file, auth) {
       res.json({ enabled: false });
     });
   }
-  return { routes };
+  return { syncCollection, routes };
 };

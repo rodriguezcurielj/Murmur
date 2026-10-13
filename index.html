@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013181140">
+<meta name="murmur-build" content="20261013184220">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -369,6 +369,18 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate-ok:disabled{opacity:.6}
 .gate-alt{justify-content:center;padding:12px}
 .gate-err{margin:0;color:#ff9a9a;font-size:14px}
+.gate-notyou{align-self:flex-start;margin-top:-6px;font-size:14px}
+.gate-col{width:min(400px,100%);display:flex;flex-direction:column;gap:28px}
+.gate-apps{border-top:1px solid rgba(255,255,255,.1);padding-top:20px}
+.gate-apps h2{font:700 17px var(--font-display);margin:0 0 12px}
+.gd-tabs{display:flex;gap:6px;margin:0 0 12px}
+.gd-tab{flex:1;padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:transparent;color:inherit;font:inherit;font-size:14px;cursor:pointer}
+.gd-tab.on{background:var(--accent);border-color:var(--accent);color:#1b1522;font-weight:600}
+.gd-panel .steps{margin:0 0 10px;padding-left:20px;display:grid;gap:6px}
+.gd-panel .steps svg{width:15px;height:15px;vertical-align:-2px}
+.gd-panel p{margin:0 0 12px}
+.gd-btn{display:inline-flex;align-items:center;gap:8px;justify-content:center;width:100%;margin:0 0 12px;text-decoration:none}
+.gd-btn svg{width:18px;height:18px}
 .pin{letter-spacing:.6em;font-size:22px!important;font-variant-numeric:tabular-nums;text-align:center;max-width:12rem}
 .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent);color:var(--accent-ink);font:800 15px var(--font-display)}
 .acct-btn:hover{filter:brightness(1.08)}
@@ -676,6 +688,7 @@ const STROKE = {
   upload: 'M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
+  share: 'M12 15V3M8 7l4-4 4 4M7 11H5v10h14V11h-2',
   cloudOff: 'M3 3l18 18M17.5 17.5H7a4.5 4.5 0 0 1-.9-8.9M9.5 5.4A6 6 0 0 1 18 10a4 4 0 0 1 2.4 6.9',
   save: 'M5 3h11l3 3v15H5zM8 3v5h7V3M8 21v-7h8v7',
   edit: 'M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4'
@@ -1012,6 +1025,8 @@ async function removeTracks(ids) {
     catch (e) { toast("Couldn't delete the files. Check that the Murmur server is running."); return false; }
   }
   demo.forEach(id => state.hidden.add(id)); store.set('hidden', [...state.hidden]);
+  // Removed the last suggestion in Discover: find new ones right away.
+  if (demo.some(id => TRACKS[id] && TRACKS[id].disc) && disc.ids.length && !disc.ids.some(visible)) setTimeout(() => loadDiscover(true), 300);
   for (const id of files) if (offline.has(id)) await dropDownload(id);
   purge(demo);
   forgetTracks(files);
@@ -2247,7 +2262,7 @@ function viewCollection(type, id) {
     : `<h1>${esc(col.title)}</h1>`;
   let body;
   if (type === 'discover' && !n) {
-    body = `<div class="empty"><h2>${disc.loading ? 'Finding new songs…' : 'No suggestions yet'}</h2>${disc.error ? esc(disc.error) : 'Like a few songs or play some music, then tap Get new suggestions.'}</div>`;
+    body = `<div class="empty"><h2>${disc.loading ? 'Finding new songs…' : 'No suggestions right now'}</h2>${disc.error ? esc(disc.error) : disc.loading ? '' : 'Tap Get new suggestions to find more. Liking and playing songs makes them fit your taste.'}</div>`;
   } else if (type === 'downloads' && !n) {
     body = `<div class="empty"><h2>Nothing downloaded yet</h2>Open an album, playlist or Uploads and tap the download button, or pick songs with Select and choose Download. Downloaded songs play here with no connection.</div>`;
   } else if (col.uploadsAll && !server.on && !server.offlineMode) {
@@ -3034,6 +3049,8 @@ function act(el, e) {
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); showGate('connect'); break;
     case 'pick-server': pickServer(d.name); break;
+    case 'gate-notyou': forgetUser(); store.set('auth', null); showGate('login'); setTimeout(() => { const n = $('#gName'); if (n) { n.value = ''; n.focus(); } }, 0); break;
+    case 'gate-dev': { gateDev = d.k; const a = $('.gate-apps'); if (a) a.outerHTML = gateAppsHTML(); break; }
     case 'p-lib': navigate({ name: 'member', id: d.id }); break;
     case 'admin-exit': navigate({ name: 'people' }); break;
     case 'yt-view': store.set('ytFullVideo', d.v === 'video'); placeYtBox(); syncVideoSwitch(); break;
@@ -3578,7 +3595,15 @@ function ownedKeys() {
   Object.values(TRACKS).forEach(t => { if (!t.disc) keys.add(normKey(cleanArtist(t.artist)) + '|' + normKey(t.title)); });
   return keys;
 }
-async function loadDiscover(force) {
+// Songs already suggested that you removed (and, when asking for new ones, the ones showing now): never again.
+function discoverExclude(includeShown) {
+  const keys = new Set();
+  const add = id => { const t = TRACKS[id]; if (t && t.disc) keys.add(cleanArtist(t.artist) + '|' + t.title); };
+  state.hidden.forEach(add);
+  if (includeShown) disc.ids.forEach(add);
+  return [...keys];
+}
+async function loadDiscover(force, retried) {
   if (!server.on || disc.loading) return;
   const seeds = discoverSeeds();
   const cached = store.get('discover', null);
@@ -3587,7 +3612,7 @@ async function loadDiscover(force) {
   else {
     disc.loading = true; if (state.view.name === 'home' || state.view.type === 'discover') render();
     try {
-      const res = await api('GET', 'api/discover?artists=' + encodeURIComponent(seeds.join('|')));
+      const res = await api('POST', 'api/discover', { artists: seeds, exclude: discoverExclude(!!force) });
       items = res.items || [];
       try { store.set('discover', { at: Date.now(), seeds, items }); } catch (e) {}
       disc.error = '';
@@ -3600,6 +3625,8 @@ async function loadDiscover(force) {
     .map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
   DISCALBUM.trackIds = disc.ids;
   if (state.view.name === 'home' || (state.view.name === 'collection' && state.view.type === 'discover')) render(); else renderSidebar();
+  // Everything in the list was removed already: get a fresh batch.
+  if (!retried && !disc.error && !disc.ids.some(visible)) loadDiscover(true, true);
 }
 /* ---------- song catalog (Deezer): free search; YouTube is only used when a song is first played ---------- */
 const cat = { results: new Map(), loading: new Set() };
@@ -3712,15 +3739,55 @@ function showGate(step, msg = '') {
     const expired = step === 'expired';
     html = card(expired ? 'Please sign in again' : 'Sign in', expired ? 'Your sign-in ended, or the owner changed your access. Enter your name and PIN to keep using Murmur.' : 'Enter your name and 4-digit PIN.',
       `<form id="gForm" data-step="login" class="gate-form">
-        <div class="field"><label for="gName">Name</label><input id="gName" name="name" maxlength="40" required autocomplete="username" value="${esc(lastName)}"></div>
+        <div class="field"><label for="gName">Name</label><input id="gName" name="name" maxlength="40" required autocomplete="off" autocapitalize="words" spellcheck="false" value="${esc(lastName)}"></div>
+        ${lastName ? `<button type="button" class="link-btn gate-notyou" data-act="gate-notyou">Not ${esc(lastName)}?</button>` : ''}
         <div class="field"><label for="gPin">PIN</label><input id="gPin" name="pin" ${PIN_ATTRS}></div>
         ${err}<button class="m-ok gate-ok" type="submit">Sign in</button>
         <p class="small">Don’t have a PIN? Ask the person who runs this Murmur to add you.</p></form>`);
   }
+  if (['setup', 'login', 'expired', 'connect', 'unreachable'].includes(step)) html = `<div class="gate-col">${html}${gateAppsHTML()}</div>`;
   g.innerHTML = html; g.hidden = false;
   if (step === 'connect' || step === 'unreachable') checkServerList();
   const f = (lastName && $('#gPin')) || $('#gName') || g.querySelector('button');
   if (f) setTimeout(() => f.focus(), 0);
+}
+/* Setup steps for each kind of device, shown under the sign-in form. iPhone uses Safari's
+   "Add to Home Screen" (no app file to sideload). Hidden when Murmur is already installed. */
+const PAGES_URL = (cfg && cfg.pagesUrl) || 'https://rodriguezcurielj.github.io/Murmur/';
+function deviceKind() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+  if (/Android/.test(ua)) return 'android';
+  return 'web';
+}
+const installedApp = () => !!window.MurmurAndroid || navigator.standalone === true
+  || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+let gateDev = null;
+function gateAppsHTML() {
+  if (installedApp()) return '';
+  const k = gateDev || deviceKind();
+  const tab = (id, label) => `<button type="button" class="gd-tab${k === id ? ' on' : ''}" data-act="gate-dev" data-k="${id}" aria-pressed="${k === id}">${label}</button>`;
+  const panels = {
+    ios: `<ol class="steps small">
+        <li>Open <b>${esc(PAGES_URL.replace(/^https:\/\//, ''))}</b> in <b>Safari</b>. (Other browsers on iPhone can’t add it.)</li>
+        <li>Tap the <b>Share</b> button ${icon('share')}. On newer iPhones it’s under the <b>⋯</b> button next to the address.</li>
+        <li>Scroll down, tap <b>Add to Home Screen</b>, keep <b>Open as Web App</b> on, then tap <b>Add</b>.</li>
+        <li>Open <b>Murmur</b> from your Home Screen and sign in. It runs full screen like an app.</li></ol>`,
+    android: `<a class="m-ok gd-btn" href="${APPS_PAGE}Murmur.apk" download>${icon('download')}<span>Download the Android app</span></a>
+      <ol class="steps small">
+        <li>Open the downloaded <b>Murmur.apk</b>. If Android asks, <b>allow installing apps</b> from your browser.</li>
+        <li>If Play Protect warns about an unknown developer, tap <b>More details → Install anyway</b>.</li>
+        <li>Open Murmur and sign in.</li></ol>
+      <p class="small">Motorola Razr: to use it on the outside screen, turn it on in <b>Settings → External display → Apps</b>.</p>`,
+    web: `<ol class="steps small">
+        <li>On any computer, open <a href="${PAGES_URL}" target="_blank" rel="noopener">${esc(PAGES_URL.replace(/^https:\/\//, ''))}</a> and sign in.</li>
+        <li>Chrome or Edge: click the <b>Install</b> icon at the right end of the address bar (or <b>⋮ → Cast, save and share → Install page as app</b>) to open Murmur in its own window.</li>
+        <li>Optional: the <a href="${APPS_PAGE}#extension" target="_blank" rel="noopener">Murmur Ad Blocker</a> removes ads from YouTube songs.</li></ol>`
+  };
+  return `<section class="gate-apps" aria-labelledby="gaTitle"><h2 id="gaTitle">Get Murmur on your devices</h2>
+    <div class="gd-tabs" role="group" aria-label="Device">${tab('ios', 'iPhone')}${tab('android', 'Android')}${tab('web', 'Computer')}</div>
+    <div class="gd-panel">${panels[k]}</div>
+    <p class="small">Sign in with the same name and PIN everywhere. Your music and playlists follow you.</p></section>`;
 }
 function checkServerList() {
   SERVERS.forEach(x => {
@@ -3768,9 +3835,21 @@ async function chooseRemember(yes) {
   location.reload();
 }
 async function signOut() {
+  try { await pushUserData(true); } catch (e) {}   // save any last changes to their library first
   try { await api('POST', 'api/auth/logout'); } catch (e) {}
-  store.set('auth', null); saveToken(null);
+  forgetUser();
   location.reload();
+}
+function forgetUser() {
+  userSync.ready = false;
+  const prefix = store.uid ? 'murmur:u:' + store.uid + ':' : null;
+  try {
+    Object.keys(localStorage).forEach(k => {
+      if ((prefix && k.startsWith(prefix)) || ['murmur:lastName', 'murmur:auth', 'murmur:resume'].includes(k)) localStorage.removeItem(k);
+    });
+  } catch (e) {}
+  saveToken(null);
+  store.uid = '';
 }
 const roleLabel = u => u.role === 'owner' ? 'Owner' : u.canEdit ? 'Can add, edit and delete music' : 'Listen and download only';
 const when = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -3810,7 +3889,7 @@ function appsSectionHTML() {
     android: androidApp
       ? link(APPS_PAGE + '#and', 'download', 'Android app', 'Opens the download page in your browser', false)
       : link(APPS_PAGE + 'Murmur.apk', 'download', 'Android app', 'Download Murmur.apk and open it to install', true),
-    ios: link(APPS_PAGE + '#ios', 'download', 'iPhone app', 'Add to Home Screen, or sideload Murmur.ipa', false),
+    ios: link(PAGES_URL, 'download', 'iPhone', 'Open in Safari → Share → Add to Home Screen', false),
     ext: link(APPS_PAGE + '#extension', 'download', 'Ad blocker for computers', 'Removes YouTube ads in Chrome, Edge or Brave', false)
   };
   const order = android ? ['android', 'ios', 'ext'] : ios ? ['ios', 'android', 'ext'] : ['ext', 'android', 'ios'];

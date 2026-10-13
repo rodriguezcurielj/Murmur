@@ -16,3 +16,5 @@ android/*.jks
 ios/build/
 ios/Murmur.xcodeproj/
 Payload/
+Docker/.env
+.env
