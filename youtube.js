@@ -69,6 +69,23 @@ module.exports = function createYouTube(file, auth) {
       catch (e) { res.status(e.status || 502).json({ error: e.message }); }
     });
 
+    // Search-as-you-type previews: YouTube's autocomplete phrases. Free, and doesn't use the API quota.
+    const sugCache = new Map();
+    app.get('/api/youtube/suggest', async (req, res) => {
+      const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 80).toLowerCase();
+      if (!q) return res.json({ items: [] });
+      const hit = sugCache.get(q);
+      if (hit && Date.now() - hit.at < 3600e3) return res.json({ items: hit.items });
+      try {
+        const r = await fetch('https://suggestqueries.google.com/complete/search?' + new URLSearchParams({ client: 'firefox', ds: 'yt', hl: 'en', q }), { signal: AbortSignal.timeout(3000) });
+        const j = await r.json();
+        const items = Array.isArray(j[1]) ? j[1].slice(0, 8).map(String) : [];
+        sugCache.set(q, { at: Date.now(), items });
+        if (sugCache.size > 500) sugCache.delete(sugCache.keys().next().value);
+        res.json({ items });
+      } catch { res.json({ items: [] }); }
+    });
+
     app.put('/api/settings/youtube', auth.requireOwner, async (req, res) => {
       const key = String((req.body && req.body.key) || '').trim();
       if (!/^[\w-]{20,60}$/.test(key)) return res.status(400).json({ error: 'That doesn’t look like a YouTube API key. It should be one long code with no spaces.' });

@@ -88,6 +88,28 @@ svg.i{width:20px;height:20px;flex:none}
 .topbar .icon-btn{background:var(--bg)}
 .topbar .icon-btn:disabled{opacity:.4;cursor:default}
 .m-brand{display:none;margin-left:auto;align-items:center;gap:8px;font:800 19px var(--font-display)}
+.top-search{flex:1;max-width:460px;min-width:0;display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:0 6px 0 14px;margin-left:6px}
+.top-search:focus-within{border-color:var(--fg)}
+.top-search>svg{color:var(--muted);width:18px;height:18px}
+.top-search input{flex:1;min-width:0;background:none;border:0;color:var(--fg);font:inherit;font-size:15px;padding:9px 0;outline:none}
+.top-search input::-webkit-search-cancel-button{display:none}
+.tq-clear{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;color:var(--muted)}
+.tq-clear:hover{color:var(--fg);background:var(--hover)}
+.tq-clear svg{width:16px;height:16px}
+.search-title{font-size:clamp(22px,3vw,28px);overflow-wrap:anywhere}
+.top-search{position:relative}
+.tq-drop{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:30;background:var(--raise);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.55);padding:6px;max-height:min(70vh,520px);overflow:auto}
+.drop-h{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:8px 8px 4px}
+.drop-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 8px;border-radius:8px;font-size:14px;min-width:0}
+.drop-item:hover,.drop-item.on{background:var(--hover)}
+.drop-item img{width:38px;height:38px;border-radius:4px;object-fit:cover;flex:none}
+.drop-item>svg{width:16px;height:16px;color:var(--muted);flex:none}
+.drop-tx{display:flex;flex-direction:column;min-width:0;flex:1}
+.drop-tx span{font-size:12px;color:var(--muted)}
+.drop-item>.ell{flex:1}
+.drop-all{border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:4px;padding-top:10px}
+.drop-item kbd{font:600 11px var(--font-body);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 6px;flex:none}
+.yt-wait{margin:0}
 .view{padding:4px 24px 48px}
 
 /* ---------- home ---------- */
@@ -436,6 +458,10 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .tracks.selecting .row{grid-template-columns:26px minmax(0,1fr) 34px 34px}
   .tracks.selecting .row .num{display:flex}
   .m-brand{margin-left:0}
+  .m-brand span{display:none}
+  .topbar #backBtn,.topbar #fwdBtn{display:none}
+  .top-search{margin-left:0}
+  .top-right .up-btn span{display:none}
   .up-btn{padding:6px 10px}
 }
 @media (hover:none){.row .like,.row .more{opacity:1}}
@@ -1665,10 +1691,24 @@ function viewHome() {
   ${shelf('New albums', visAlbums().map(a => card('album', a.id)))}
   ${shelf('Artists', visArtists().map(a => card('artist', a)))}`;
 }
+/* Search uses the bar at the top of the screen; this view only shows results. */
 function viewSearch() {
-  return `<label class="vh" for="q">Search songs, artists and albums</label>
-  <div class="search-box">${icon('search')}<input id="q" type="search" autocomplete="off" placeholder="What do you want to hear?" value="${esc(state.search)}"></div>
-  <div id="results">${searchResultsHTML()}</div>`;
+  return `<div id="results">${searchResultsHTML()}</div>`;
+}
+function ytResultsHTML(q) {
+  if (!server.on) return '';
+  if (!yt.enabled) {
+    return me && me.role === 'owner'
+      ? `<div class="yt-setup"><span>${icon('search')}</span><div><b>Search YouTube here too</b><p class="small">Connect a free YouTube API key and results from YouTube show up under your music.</p></div><button class="text-btn" data-act="go-settings">Set up YouTube</button></div>` : '';
+  }
+  const key = q.toLowerCase(), ids = yt.results.get(key);
+  if (!ids) {
+    return `<div class="shelf-head"><h2>From YouTube</h2></div>
+      <p class="small yt-wait">${yt.loading.has(key) ? 'Searching YouTube…' : 'Press Enter in the search bar to search YouTube.'}</p>`;
+  }
+  const shown = ids.filter(visible);
+  return `<div class="shelf-head"><h2>From YouTube</h2>${shown.length ? `<div class="head-actions"><p>${plural(shown.length, 'song')}</p>${selBtn('ytq', key)}</div>` : ''}</div>
+    ${shown.length ? trackList(shown, 'ytq', key, { head: false }) : '<p class="small">YouTube found no songs for that.</p>'}`;
 }
 function searchResultsHTML() {
   const q = state.search.trim();
@@ -1678,36 +1718,86 @@ function searchResultsHTML() {
       const a = ALBUMS.find(x => x.genre === k && x.trackIds.some(visible));
       return `<div class="gt" style="background:${a.colors[1]}" data-act="open" data-type="genre" data-id="${k}" role="button" tabindex="0"><span>${g.label}</span><small>${g.blurb}</small><img src="${a.cover}" alt=""></div>`;
     }).join('');
-    return tiles ? `<div class="shelf-head"><h2>Browse all</h2></div><div class="genres">${tiles}</div>` : '';
+    return `<h1 class="greet">Search</h1><p class="small" style="margin:-8px 0 8px">Use the search bar at the top to find songs in your library${yt.enabled ? ' and on YouTube' : ''}.</p>`
+      + (tiles ? `<div class="shelf-head"><h2>Browse all</h2></div><div class="genres">${tiles}</div>` : '');
   }
   const ql = q.toLowerCase();
-  const tracks = searchTracks(q);
+  const tracks = searchTracks(q).filter(id => !id.startsWith('yt-'));   // YouTube songs are listed in their own section
   const albums = [...visAlbums(), ...upAlbums()].filter(a => a.title.toLowerCase().includes(ql) || a.artist.toLowerCase().includes(ql) || gLabel(a.genre).toLowerCase().includes(ql));
   const artists = visArtists().filter(a => a.toLowerCase().includes(ql));
-  let ytPart = '';
-  if (server.on && yt.enabled) {
-    const key = q.toLowerCase(), ids = yt.results.get(key);
-    ytPart = ids
-      ? `<div class="shelf-head"><h2>From YouTube</h2>${ids.length ? `<div class="head-actions"><p>${plural(ids.length, 'song')}</p>${selBtn('ytq', key)}</div>` : ''}</div>
-         ${ids.length ? trackList(ids.filter(visible), 'ytq', key, { head: false }) : '<p class="small">YouTube found no songs for that.</p>'}`
-      : `<div class="yt-search-row"><button class="text-btn" data-act="yt-search" data-q="${esc(q)}">${icon('search')}<span>${yt.loading.has(key) ? 'Searching YouTube…' : `Search YouTube for “${esc(q)}”`}</span></button><span class="small">or press Enter</span></div>`;
-  }
-  if (!tracks.length && !albums.length && !artists.length) {
-    return `${ytPart}${ytPart ? '' : `<div class="empty"><h2>No results for “${esc(q)}”</h2>Check the spelling, or try an artist like Halden or a style like synthwave.</div>`}`;
-  }
-  return `${artists.length ? `<div class="shelf-head"><h2>Artists</h2></div><div class="artist-chips">${artists.map(a => `<button class="ac" data-act="open" data-type="artist" data-id="${esc(a)}"><img src="${ALBUMS.find(x => x.artist === a).cover}" alt="">${esc(a)}</button>`).join('')}</div>` : ''}
-  ${tracks.length ? `<div class="shelf-head"><h2>Songs</h2><div class="head-actions"><p>${tracks.length} match${tracks.length > 1 ? 'es' : ''}</p>${selBtn('search', q)}</div></div>${trackList(tracks, 'search', q, { head: false })}` : ''}
-  ${shelf('Albums', albums.map(a => card('album', a.id)))}
-  ${ytPart}`;
+  const mine = tracks.length
+    ? `<div class="shelf-head"><h2>Your music</h2><div class="head-actions"><p>${plural(tracks.length, 'song')}</p>${selBtn('search', q)}</div></div>${trackList(tracks, 'search', q, { head: false })}`
+    : `<div class="shelf-head"><h2>Your music</h2></div><p class="small">No songs in your library match “${esc(q)}”.</p>`;
+  return `<h1 class="greet search-title">Results for “${esc(q)}”</h1>
+  ${mine}
+  ${ytResultsHTML(q)}
+  ${artists.length ? `<div class="shelf-head"><h2>Artists</h2></div><div class="artist-chips">${artists.map(a => `<button class="ac" data-act="open" data-type="artist" data-id="${esc(a)}"><img src="${ALBUMS.find(x => x.artist === a).cover}" alt="">${esc(a)}</button>`).join('')}</div>` : ''}
+  ${shelf('Albums', albums.map(a => card('album', a.id)))}`;
 }
 async function runYtSearch(q) {
-  q = String(q || '').trim(); if (!q || !yt.enabled) return;
+  q = String(q || '').trim(); if (q.length < 2 || !yt.enabled || !server.on) return;
   const key = q.toLowerCase();
-  if (yt.loading.has(key)) return;
+  if (yt.loading.has(key) || yt.results.has(key)) return;
   yt.loading.add(key); refreshSearch();
   try { yt.results.set(key, await ytSearch(key, '')); }
-  catch (e) { toast(e.message); }
+  catch (e) { yt.results.set(key, []); toast(e.message); }
   yt.loading.delete(key); refreshSearch();
+}
+/* ---------- search bar: previews while typing, full search (incl. YouTube) on Enter ---------- */
+const drop = { sugg: new Map(), timer: null, idx: -1, items: [] };
+function onSearchInput(value) {
+  const clear = $('#tqClear'); if (clear) clear.hidden = !value;
+  drop.idx = -1;
+  renderDrop();
+  clearTimeout(drop.timer);
+  const q = value.trim().toLowerCase();
+  if (q && server.on && !drop.sugg.has(q)) {
+    // YouTube's autocomplete phrases: free, they don't use the daily search quota.
+    drop.timer = setTimeout(async () => {
+      try { drop.sugg.set(q, (await api('GET', 'api/youtube/suggest?q=' + encodeURIComponent(q))).items || []); }
+      catch (e) { drop.sugg.set(q, []); }
+      if ($('#tq').value.trim().toLowerCase() === q) renderDrop();
+    }, 200);
+  }
+}
+function renderDrop() {
+  const input = $('#tq'), el = $('#tqDrop'), q = input.value.trim();
+  if (!q || document.activeElement !== input) { closeDrop(); return; }
+  const songs = searchTracks(q).slice(0, 5);
+  const sugg = (drop.sugg.get(q.toLowerCase()) || []).filter(s => s.toLowerCase() !== q.toLowerCase()).slice(0, 6);
+  drop.items = [...songs.map((id, i) => ({ kind: 'song', id, i })), ...sugg.map(s => ({ kind: 'sugg', s })), { kind: 'all' }];
+  let k = 0;
+  const opt = (inner, cls = '') => `<button type="button" class="drop-item ${cls}${drop.idx === k ? ' on' : ''}" role="option" aria-selected="${drop.idx === k}" data-act="drop-pick" data-k="${k++}">${inner}</button>`;
+  let html = '';
+  if (songs.length) {
+    html += `<div class="drop-h">Songs</div>` + songs.map(id => { const t = TRACKS[id];
+      return opt(`<img src="${esc(tCover(id))}" alt=""><span class="drop-tx"><b class="ell">${esc(t.title)}</b><span class="ell">${esc(t.artist)}${t.yt ? ' · YouTube' : ''}</span></span>${icon('play')}`); }).join('');
+  }
+  if (sugg.length) {
+    html += `<div class="drop-h">Suggestions from YouTube</div>` + sugg.map(s => opt(`${icon('search')}<span class="ell">${esc(s)}</span>`, 'drop-sugg')).join('');
+  }
+  html += opt(`${icon('search')}<span class="ell">Search for <b>“${esc(q)}”</b>${yt.enabled ? ' in your music and on YouTube' : ''}</span><kbd>Enter</kbd>`, 'drop-all');
+  el.innerHTML = html; el.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
+function closeDrop() {
+  const el = $('#tqDrop'); if (el) el.hidden = true;
+  const input = $('#tq'); if (input) input.setAttribute('aria-expanded', 'false');
+  drop.idx = -1;
+}
+function pickDrop(k) {
+  const it = drop.items[k], input = $('#tq'); if (!it) return;
+  if (it.kind === 'song') { closeDrop(); input.blur(); playFrom('search', input.value.trim(), it.i); return; }
+  if (it.kind === 'sugg') input.value = it.s;
+  submitSearch(input.value);
+}
+/* The real search: shows results for your music and searches YouTube (one search from the daily quota). */
+function submitSearch(value) {
+  const q = String(value || '').trim();
+  closeDrop();
+  state.search = q;
+  if (state.view.name !== 'search') navigate({ name: 'search' }); else { state.sel = null; refreshSearch(); }
+  if (q) runYtSearch(q);
 }
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
 function viewCollection(type, id) {
@@ -1836,7 +1926,14 @@ function buildShell() {
     <div class="topbar">
       <button class="icon-btn" data-act="back" id="backBtn" aria-label="Go back">${icon('back')}</button>
       <button class="icon-btn" data-act="fwd" id="fwdBtn" aria-label="Go forward">${icon('fwd')}</button>
-      <div class="m-brand">${LOGO}Murmur</div>
+      <div class="m-brand">${LOGO}<span>Murmur</span></div>
+      <div class="top-search" role="search">
+        ${icon('search')}
+        <label class="vh" for="tq">Search your music and YouTube</label>
+        <input id="tq" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search songs, artists, YouTube…" role="combobox" aria-autocomplete="list" aria-controls="tqDrop" aria-expanded="false">
+        <button class="tq-clear" id="tqClear" data-act="tq-clear" aria-label="Clear search" hidden>${icon('close')}</button>
+        <div class="tq-drop" id="tqDrop" role="listbox" aria-label="Search previews" hidden></div>
+      </div>
       <div class="top-right">
         <button class="text-btn up-btn" data-act="install" id="installBtn" hidden title="Install Murmur as an app on this device">${icon('download')}<span>Install app</span></button>
         <button class="text-btn up-btn" data-act="upload" id="upBtn" hidden>${icon('upload')}<span>Upload</span></button>
@@ -1919,7 +2016,7 @@ function navigate(view, push = true) {
   if (push) { state.back.push(state.view); state.fwd = []; }
   state.view = view;
   render(); $('#main').scrollTop = 0;
-  if (view.name === 'search' && matchMedia('(hover:hover)').matches) { const q = $('#q'); if (q) q.focus(); }
+  if (view.name === 'search') { const q = $('#tq'); if (q && document.activeElement !== q) q.focus(); }
 }
 function refreshQueueView() { if (state.view.name === 'queue') render(); }
 
@@ -2405,6 +2502,8 @@ function act(el, e) {
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
     case 'yt-search': runYtSearch(d.q); break;
+    case 'tq-clear': { const q = $('#tq'); q.value = ''; onSearchInput(''); q.focus(); if (state.view.name === 'search') { state.search = ''; refreshSearch(); } break; }
+    case 'drop-pick': pickDrop(+d.k); break;
     case 'go-settings': people = null; navigate({ name: 'people' }); break;
     case 'yt-key-remove':
       api('DELETE', 'api/settings/youtube').then(() => { yt.enabled = false; yt.shelves = []; toast('YouTube disconnected'); render(); }).catch(err => toast(err.message));
@@ -2521,8 +2620,8 @@ document.addEventListener('input', e => {
   } else if (t.matches('[data-vol]')) {
     state.volume = t.value / 100; state.muted = false; store.set('volume', state.volume);
     Engine.setVolume(); updateToggles();
-  } else if (t.id === 'q') {
-    state.search = t.value; state.sel = null; $('#results').innerHTML = searchResultsHTML(); highlight(); syncSel();
+  } else if (t.id === 'tq') {
+    onSearchInput(t.value);
   }
 });
 document.addEventListener('change', e => {
@@ -2536,11 +2635,16 @@ document.addEventListener('change', e => {
     else t.value = p.name;
   }
 });
+// Search previews: open while the search bar has focus, close when it loses it.
+document.addEventListener('focusin', e => { if (e.target.id === 'tq') renderDrop(); });
+document.addEventListener('focusout', e => { if (e.target.id === 'tq') setTimeout(() => { if (document.activeElement !== $('#tq')) closeDrop(); }, 120); });
+document.addEventListener('mousedown', e => { if (e.target.closest('#tqDrop')) e.preventDefault(); });   // keep focus in the bar while clicking a preview
 document.addEventListener('pointerup', () => { if (seeking) setTimeout(() => { seeking = false; }, 50); });
 document.addEventListener('keydown', e => {
   const tag = e.target.tagName;
   if (e.key === 'Escape') {
-    if (!$('#dropOverlay').hidden) hideDrop();
+    if (!$('#tqDrop').hidden) closeDrop();
+    else if (!$('#dropOverlay').hidden) hideDrop();
     else if (!$('#modal').hidden) closeModal();
     else if (!menuEl.hidden) closeMenu();
     else if (!$('#full').hidden) $('#full').hidden = true;
@@ -2549,7 +2653,16 @@ document.addEventListener('keydown', e => {
   }
   if (!$('#modal').hidden || !$('#gate').hidden) return;
   if (e.target.id === 'plName' && e.key === 'Enter') { e.target.blur(); return; }
-  if (e.target.id === 'q' && e.key === 'Enter') { e.preventDefault(); runYtSearch(e.target.value); return; }
+  if (e.target.id === 'tq') {
+    if (e.key === 'Enter') { e.preventDefault(); if (drop.idx >= 0 && !$('#tqDrop').hidden) pickDrop(drop.idx); else submitSearch(e.target.value); return; }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !$('#tqDrop').hidden) {
+      e.preventDefault();
+      const n = drop.items.length;
+      drop.idx = e.key === 'ArrowDown' ? (drop.idx + 1) % n : (drop.idx <= 0 ? n - 1 : drop.idx - 1);
+      renderDrop(); return;
+    }
+    return;
+  }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"]')) { e.preventDefault(); e.target.click(); return; }
   if (e.key === ' ' && !['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(tag)) { e.preventDefault(); togglePlay(); }
 });
