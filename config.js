@@ -4,6 +4,6 @@
 // Cloudflare Tunnel or Tailscale Funnel address). People can also type a different
 // address on the "Connect to your Murmur" screen.
 window.MURMUR_CONFIG = {
-  // Current address from `docker logs murmur-tunnel`. It changes if the tunnel restarts.
-  server: 'https://puzzle-saver-cookie-talking.trycloudflare.com'
+  // Current address from `docker logs murmur-tunnel` on this PC. It changes if the tunnel restarts.
+  server: 'https://arguments-salad-wireless-produced.trycloudflare.com'
 };
