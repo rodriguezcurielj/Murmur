@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="murmur-build" content="20261012223917">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -1146,6 +1147,26 @@ function restoreResume() {
 setInterval(() => { if (Engine.playing) saveResume(); }, 5000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveResume(); });
 window.addEventListener('pagehide', saveResume);
+/* ---------- updates: the apps keep the page open for a long time, so look for a newer version ---------- */
+const BUILD = (document.querySelector('meta[name="murmur-build"]') || {}).content || '';
+let updateWaiting = false, lastUpdateCheck = 0;
+async function checkForUpdate() {
+  if (!BUILD || Date.now() - lastUpdateCheck < 60e3) return;
+  lastUpdateCheck = Date.now();
+  try {
+    const html = await (await fetch('index.html', { cache: 'no-store' })).text();
+    const m = html.match(/<meta name="murmur-build" content="([^"]+)"/);
+    if (m && m[1] !== BUILD) { updateWaiting = true; applyUpdateIfIdle(); }
+  } catch (e) {}
+}
+/* Reload only when nothing is playing; the song and spot come back through resume. */
+function applyUpdateIfIdle() {
+  if (!updateWaiting || Engine.playing || !$('#modal').hidden || server.busy || dlq.busy) return;
+  saveResume();
+  location.reload();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+setInterval(checkForUpdate, 30 * 60e3);
 function resetPlayback() {
   const opts = [['playlist', 'deep-focus'], ['album', 'uploads'], ...ALBUMS.map(a => ['album', a.id])];
   for (const [t, i] of opts) {
@@ -2209,6 +2230,7 @@ function updatePlayIcons() {
   $$('[data-play-icon]').forEach(b => { b.innerHTML = icon(Engine.playing ? 'pause' : 'play'); b.setAttribute('aria-label', Engine.playing ? 'Pause' : 'Play'); });
   notifyApp();
   saveResume();
+  if (updateWaiting && !Engine.playing) setTimeout(applyUpdateIfIdle, 1500);   // a paused moment is a good time to update
 }
 /* Android app: tell it what's playing so it can keep music going in the background
    and show the notification with play/pause/next buttons. */
