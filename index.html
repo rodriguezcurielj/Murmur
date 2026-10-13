@@ -1119,6 +1119,33 @@ function purge(ids) {
     else { Engine.pause(); state.current = null; }
   }
 }
+/* ---------- resume: this device remembers the last song and where you were in it ---------- */
+function saveResume() {
+  if (!state.current || !TRACKS[state.current]) return;
+  try {
+    store.set('resume', { current: state.current, ctx: state.ctx, list: state.list.slice(0, 2000), order: state.order.slice(0, 2000), pos: state.pos,
+      manual: state.manual.slice(0, 200), at: Math.floor(Engine.position() || 0), saved: Date.now() });
+  } catch (e) {}
+}
+function restoreResume() {
+  const r = store.get('resume', null);
+  if (!r || !r.current || !TRACKS[r.current] || !visible(r.current)) return false;
+  const keep = new Set((r.list || []).filter(id => TRACKS[id] && visible(id)));
+  state.ctx = r.ctx || null;
+  state.list = (r.list || []).filter(id => keep.has(id));
+  if (!state.list.includes(r.current)) state.list.unshift(r.current);
+  const sameList = state.list.length === (r.list || []).length && Array.isArray(r.order) && r.order.length === state.list.length;
+  if (sameList) { state.order = r.order.slice(); state.pos = Math.max(0, state.order.indexOf(state.list.indexOf(r.current))); }
+  else buildOrder(state.list.indexOf(r.current));
+  state.manual = (r.manual || []).filter(id => TRACKS[id] && visible(id));
+  if (TRACKS[r.current].sp) state.resumeAt = r.at > 2 ? r.at : 0;   // its audio source is found after loading
+  loadAndPlay(r.current, false);
+  if (r.at > 2 && !TRACKS[r.current].sp) Engine.seek(r.at);
+  return true;
+}
+setInterval(() => { if (Engine.playing) saveResume(); }, 5000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveResume(); });
+window.addEventListener('pagehide', saveResume);
 function resetPlayback() {
   const opts = [['playlist', 'deep-focus'], ['album', 'uploads'], ...ALBUMS.map(a => ['album', a.id])];
   for (const [t, i] of opts) {
@@ -1358,7 +1385,10 @@ const FileEng = {
       a.addEventListener('ended', () => this.onEnd && this.onEnd());
       a.addEventListener('play', () => { updatePlayIcons(); highlight(); });
       a.addEventListener('pause', () => { updatePlayIcons(); highlight(); });
-      a.addEventListener('loadedmetadata', () => $$('[data-dur]').forEach(s => s.textContent = fmt(this.duration)));
+      a.addEventListener('loadedmetadata', () => {
+        $$('[data-dur]').forEach(s => s.textContent = fmt(this.duration));
+        if (this.pendingSeek) { try { a.currentTime = clamp(this.pendingSeek, 0, this.duration); } catch (e) {} this.pendingSeek = 0; }
+      });
       a.addEventListener('error', () => {
         if (!this.track || !a.getAttribute('src')) return;
         toast(offline.has(this.track.id) ? `Couldn't play ${this.track.title}. Try removing and re-downloading it.`
@@ -1395,7 +1425,11 @@ const FileEng = {
   },
   pause() { if (this.audio) this.audio.pause(); },
   restart() { try { this.el().currentTime = 0; } catch (e) {} this.play(); },
-  seek(t) { try { this.el().currentTime = clamp(t, 0, this.duration); } catch (e) {} },
+  seek(t) {
+    const a = this.el();
+    if (a.readyState < 1) { this.pendingSeek = t; return; }   // not loaded yet: apply when it is
+    try { a.currentTime = clamp(t, 0, this.duration); } catch (e) {}
+  },
   position() { return this.audio ? this.audio.currentTime || 0 : 0; },
   get duration() { const d = this.audio && this.audio.duration; return isFinite(d) && d > 0 ? d : (this.track ? this.track.duration : 0); }
 };
@@ -1438,7 +1472,8 @@ const YTEng = {
     $('#ytBox').hidden = false; placeYtBox();
     $('#ytOpen').href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(t.ytId);
     // Only cue (load without playing) if nothing asked to play; play() loads and starts in one step.
-    this.api().then(p => { if (this.track !== t || this.wantPlay) return; p.cueVideoById(t.ytId); this.cued = true; }).catch(e => toast(e.message));
+    this.startAt = 0;
+    this.api().then(p => { if (this.track !== t || this.wantPlay) return; p.cueVideoById({ videoId: t.ytId, startSeconds: this.startAt || 0 }); this.cued = true; }).catch(e => toast(e.message));
   },
   unload() {
     this.track = null;
@@ -1452,12 +1487,16 @@ const YTEng = {
     this.api().then(p => {
       if (this.track !== t) return;
       try { p.setVolume(Math.round(volGain() * 100)); } catch (e) {}
-      if (this.cued) p.playVideo(); else { p.loadVideoById(t.ytId); this.cued = true; }   // loadVideoById starts playing right away
+      if (this.cued) p.playVideo(); else { p.loadVideoById({ videoId: t.ytId, startSeconds: this.startAt || 0 }); this.cued = true; }   // loadVideoById starts playing right away
+      this.startAt = 0;
     }).catch(e => toast(e.message));
   },
   pause() { try { this.player && this.player.pauseVideo(); } catch (e) {} },
   restart() { this.seek(0); this.play(); },
-  seek(s) { try { this.player && this.player.seekTo(s, true); } catch (e) {} },
+  seek(s) {
+    if (!this.cued) { this.startAt = s; return; }   // not loaded yet: start there
+    try { this.player && this.player.seekTo(s, true); } catch (e) {}
+  },
   position() { try { return (this.player && this.player.getCurrentTime && this.player.getCurrentTime()) || 0; } catch (e) { return 0; } },
   get duration() { try { const d = this.player && this.player.getDuration && this.player.getDuration(); return d > 0 ? d : (this.track ? this.track.duration : 0); } catch (e) { return this.track ? this.track.duration : 0; } },
   setVolume() { try { this.player && this.player.setVolume(Math.round(volGain() * 100)); } catch (e) {} }
@@ -1626,6 +1665,7 @@ function loadAndPlay(tid, autoplay = true) {
       if (!p) { if (autoplay && ++spFails < 5) setTimeout(() => next(true), 400); return; }
       spFails = 0;
       Engine.load(p);
+      if (state.resumeAt) { Engine.seek(state.resumeAt); state.resumeAt = 0; }   // resuming where you left off
       if (autoplay) { Engine.play(); notePlay(tid); }
       updatePlayIcons(); highlight(); renderNP();
     });
@@ -1634,6 +1674,7 @@ function loadAndPlay(tid, autoplay = true) {
   Engine.load(TRACKS[tid]);
   if (autoplay) { Engine.play(); notePlay(tid); }
   updatePlayerUI();
+  saveResume();
 }
 
 /* ================= taste & YouTube suggestions ================= */
@@ -2167,6 +2208,7 @@ function highlight() {
 function updatePlayIcons() {
   $$('[data-play-icon]').forEach(b => { b.innerHTML = icon(Engine.playing ? 'pause' : 'play'); b.setAttribute('aria-label', Engine.playing ? 'Pause' : 'Play'); });
   notifyApp();
+  saveResume();
 }
 /* Android app: tell it what's playing so it can keep music going in the background
    and show the notification with play/pause/next buttons. */
@@ -3475,7 +3517,7 @@ async function addPerson(form) {
   state.playlists.forEach(p => { p.tracks = p.tracks.filter(visible); });
   state.recent = state.recent.filter(k => k !== 'album:uploads' || server.on);
   $('#upBtn').hidden = !canEditMusic();
-  resetPlayback();
+  if (!restoreResume()) resetPlayback();
   render();
   requestAnimationFrame(frame);
   loadSuggestions();

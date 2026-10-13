@@ -4,7 +4,10 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.MutableContextWrapper;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -13,6 +16,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.webkit.CookieManager;
@@ -38,18 +42,26 @@ import java.util.Set;
 
 /**
  * Murmur for Android: a full-screen WebView that opens the Murmur player.
- * Sign-in, music, YouTube and Spotify all come from the web app; this class adds the
- * phone pieces: file picking for uploads, saving songs to Downloads, the back button,
- * and keeping playback going in the background and across folds.
+ * Sign-in, music, YouTube and Spotify all come from the web app; this class adds the phone pieces:
+ * file picking for uploads, saving songs to Downloads, the back button, background playback,
+ * and keeping the page alive when the Razr flips between its big and cover screens.
  */
 public class MainActivity extends Activity {
     private static final int PICK_FILES = 1;
     private static final String HOME = BuildConfig.START_URL;
     private static final int BG = Color.parseColor("#120e17");
 
-    private WebView web;
-    private ValueCallback<Uri[]> pendingPick;
+    /*
+     * The WebView outlives the screen it's on. Flipping the Razr (or any screen change Android handles by
+     * rebuilding the activity) creates a new MainActivity; the same WebView, with the same page and the
+     * same music playing, is moved into it instead of loading Murmur again.
+     */
+    private static WebView keptWeb;
+    private static MutableContextWrapper keptContext;
+    private static ValueCallback<Uri[]> pendingPick;
     private static volatile MainActivity current;
+
+    private WebView web;
 
     /** Notification, lock-screen and headphone buttons: pass them to the page ("toggle", "play", "pause", "next", "prev"). */
     static void control(String action) {
@@ -64,17 +76,17 @@ public class MainActivity extends Activity {
      * which pauses media (and YouTube pauses itself); this keeps the music going in the background.
      */
     static class PlayingWebView extends WebView {
-        PlayingWebView(android.content.Context c) { super(c); }
+        PlayingWebView(Context c) { super(c); }
         @Override
         protected void onWindowVisibilityChanged(int visibility) {
             if (visibility != View.GONE) super.onWindowVisibilityChanged(View.VISIBLE);
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        current = this;
         Window w = getWindow();
         w.setStatusBarColor(BG);
         w.setNavigationBarColor(BG);
@@ -92,45 +104,65 @@ public class MainActivity extends Activity {
             return insets;
         });
 
-        current = this;
-        web = new PlayingWebView(this);
-        web.setBackgroundColor(BG);
+        if (keptWeb == null) {
+            keptContext = new MutableContextWrapper(this);
+            keptWeb = createWebView(keptContext);
+            keptWeb.loadUrl(HOME);
+        } else {
+            // Same page, new screen: re-attach it instead of reloading.
+            keptContext.setBaseContext(this);
+            ViewGroup oldParent = (ViewGroup) keptWeb.getParent();
+            if (oldParent != null) oldParent.removeView(keptWeb);
+        }
+        web = keptWeb;
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
 
-        WebSettings s = web.getSettings();
+        // Android 13+: ask once to show the "now playing" notification (music keeps playing either way).
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private static WebView createWebView(Context ctx) {
+        WebView v = new PlayingWebView(ctx);
+        v.setBackgroundColor(BG);
+
+        WebSettings s = v.getSettings();
         s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);                    // sign-in, likes, playlists
+        s.setDomStorageEnabled(true);                    // sign-in, likes, playlists, where you left off
         s.setDatabaseEnabled(true);                      // offline downloads (IndexedDB)
         s.setMediaPlaybackRequiresUserGesture(false);    // next song starts on its own
         s.setSupportMultipleWindows(false);
         s.setUserAgentString(s.getUserAgentString() + " MurmurAndroid/1.0");
         CookieManager.getInstance().setAcceptCookie(true);
 
-        web.addJavascriptInterface(new Bridge(), "MurmurAndroid");
+        v.addJavascriptInterface(new Bridge(ctx.getApplicationContext()), "MurmurAndroid");
 
         // Ad blocker, part 2: run the ad-removing script inside YouTube's player before YouTube's own code.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             Set<String> youtube = new HashSet<>(Arrays.asList(
                     "https://www.youtube-nocookie.com", "https://www.youtube.com", "https://youtube.com", "https://m.youtube.com"));
-            WebViewCompat.addDocumentStartJavaScript(web, YouTubeAdStrip.SCRIPT, youtube);
+            WebViewCompat.addDocumentStartJavaScript(v, YouTubeAdStrip.SCRIPT, youtube);
             // Background play: YouTube's player pauses when it thinks the page is hidden; make it always look visible.
-            WebViewCompat.addDocumentStartJavaScript(web, YouTubeAdStrip.ALWAYS_VISIBLE, youtube);
+            WebViewCompat.addDocumentStartJavaScript(v, YouTubeAdStrip.ALWAYS_VISIBLE, youtube);
         }
 
-        // Android 13+: ask once to show the "now playing" notification (music keeps playing either way).
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
-        }
-
-        web.setWebViewClient(new WebViewClient() {
+        v.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
                 if (!req.isForMainFrame()) return false;   // frames inside the page (YouTube's player) load normally
                 if (staysInApp(u)) return false;
-                // YouTube, Google Cloud, Spotify "open song" links etc. open in the phone's browser or app.
-                try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (ActivityNotFoundException e) { /* nothing can open it */ }
+                // YouTube, Google Cloud, Spotify "open song" links, downloads etc. open in the phone's browser or app.
+                MainActivity a = current;
+                Context c = a != null ? a : view.getContext();
+                try {
+                    Intent i = new Intent(Intent.ACTION_VIEW, u);
+                    if (a == null) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    c.startActivity(i);
+                } catch (ActivityNotFoundException e) { /* nothing can open it */ }
                 return true;
             }
 
@@ -145,10 +177,12 @@ public class MainActivity extends Activity {
             }
         });
 
-        web.setWebChromeClient(new WebChromeClient() {
+        v.setWebChromeClient(new WebChromeClient() {
             // "Upload" and "Bring into Murmur": open the phone's file picker.
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                MainActivity a = current;
+                if (a == null) return false;
                 if (pendingPick != null) pendingPick.onReceiveValue(null);
                 pendingPick = callback;
                 Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -157,7 +191,7 @@ public class MainActivity extends Activity {
                 i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"audio/*", "video/*"});
                 i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
                 try {
-                    startActivityForResult(i, PICK_FILES);
+                    a.startActivityForResult(i, PICK_FILES);
                 } catch (ActivityNotFoundException e) {
                     pendingPick = null;
                     return false;
@@ -165,9 +199,7 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-
-        if (saved != null) web.restoreState(saved);
-        else web.loadUrl(HOME);
+        return v;
     }
 
     /** Murmur itself, its server, and the Spotify sign-in stay inside the app. */
@@ -183,6 +215,12 @@ public class MainActivity extends Activity {
                 || host.endsWith(".ts.net")
                 || host.equals("accounts.spotify.com")
                 || host.equals("127.0.0.1") || host.equals("localhost");
+    }
+
+    /** Screen changes the manifest lists (flip, fold, rotation, size) land here: nothing to rebuild. */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
     }
 
     @Override
@@ -215,25 +253,35 @@ public class MainActivity extends Activity {
         });
     }
 
-    @Override
-    protected void onSaveInstanceState(Bundle out) {
-        super.onSaveInstanceState(out);
-        web.saveState(out);
-    }
-
     // Note: onPause deliberately doesn't pause the WebView, so music keeps playing in the background.
 
     @Override
     protected void onDestroy() {
+        // If a newer screen already took over (flip to the other display), this isn't a real close.
+        boolean replaced = current != null && current != this;
         if (current == this) current = null;
-        // Closing the app stops the music and its notification.
-        if (isFinishing()) startService(new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_STOP));
-        if (web != null) web.destroy();
+        if (isFinishing() && !isChangingConfigurations() && !replaced) {
+            // Really closing (not a screen change): stop the music and its notification, and let the page go.
+            startService(new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_STOP));
+            if (keptWeb != null) {
+                ViewGroup parent = (ViewGroup) keptWeb.getParent();
+                if (parent != null) parent.removeView(keptWeb);
+                keptWeb.destroy();
+                keptWeb = null;
+                keptContext = null;
+            }
+        } else if (keptContext != null) {
+            // Being rebuilt for another screen: point the WebView at the app for a moment so this screen can go.
+            keptContext.setBaseContext(getApplicationContext());
+        }
         super.onDestroy();
     }
 
-    /** Called from the page as window.MurmurAndroid. */
-    private class Bridge {
+    /** Called from the page as window.MurmurAndroid. Uses the app context, so it survives screen changes. */
+    private static class Bridge {
+        private final Context app;
+        Bridge(Context app) { this.app = app; }
+
         @JavascriptInterface
         public boolean saveFile(String name, String mime, String base64) {
             try {
@@ -244,24 +292,25 @@ public class MainActivity extends Activity {
                 Uri target;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Murmur");
-                    target = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                    target = app.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
                 } else {
-                    target = getContentResolver().insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, v);
+                    target = app.getContentResolver().insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, v);
                 }
                 if (target == null) return false;
-                try (OutputStream os = getContentResolver().openOutputStream(target)) {
+                try (OutputStream os = app.getContentResolver().openOutputStream(target)) {
                     if (os == null) return false;
                     os.write(bytes);
                 }
                 return true;
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Couldn't save the file", Toast.LENGTH_SHORT).show());
+                MainActivity a = current;
+                if (a != null) a.runOnUiThread(() -> Toast.makeText(a, "Couldn't save the file", Toast.LENGTH_SHORT).show());
                 return false;
             }
         }
 
         @JavascriptInterface
-        public String version() { return "1.5"; }
+        public String version() { return "1.6"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }
@@ -269,7 +318,7 @@ public class MainActivity extends Activity {
         /** The page reports what's playing; the background service keeps it going and shows the notification. */
         @JavascriptInterface
         public void setPlaying(boolean playing, String title, String artist) {
-            PlaybackService.update(getApplicationContext(), playing, title, artist);
+            PlaybackService.update(app, playing, title, artist);
         }
     }
 }
