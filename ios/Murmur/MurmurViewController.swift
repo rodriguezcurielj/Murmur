@@ -30,7 +30,7 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
             window.webkit.messageHandlers.saveFile.postMessage({ name: name, mime: mime, data: data });
             return true;
           },
-          version: function () { return 'ios-1.2'; }
+          version: function () { return 'ios-1.3'; }
         };
         """
         config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))

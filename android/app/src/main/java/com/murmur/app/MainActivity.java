@@ -27,8 +27,14 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
+
 import java.io.ByteArrayInputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Murmur for Android: a full-screen WebView that opens the Murmur player.
@@ -80,6 +86,13 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
 
         web.addJavascriptInterface(new Bridge(), "MurmurAndroid");
+
+        // Ad blocker, part 2: run the ad-removing script inside YouTube's player before YouTube's own code.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            Set<String> youtube = new HashSet<>(Arrays.asList(
+                    "https://www.youtube-nocookie.com", "https://www.youtube.com", "https://youtube.com", "https://m.youtube.com"));
+            WebViewCompat.addDocumentStartJavaScript(web, YouTubeAdStrip.SCRIPT, youtube);
+        }
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -213,7 +226,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.2"; }
+        public String version() { return "1.3"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }

@@ -14,8 +14,8 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: Murmur
-        CFBundleShortVersionString: "1.2"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "1.3"
+        CFBundleVersion: "4"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIStatusBarStyle: UIStatusBarStyleLightContent

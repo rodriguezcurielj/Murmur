@@ -27,8 +27,44 @@ enum AdBlock {
         return String(data: data, encoding: .utf8) ?? "[]"
     }
 
+    /// Runs inside YouTube's player and removes the ad entries from the data YouTube sends it
+    /// (same idea as uBlock Origin's "json-prune" rule). Keep in step with android/.../YouTubeAdStrip.java.
+    static let youtubeScript = """
+    (function () {
+      if (!/(^|\\.)youtube(-nocookie)?\\.com$/.test(location.hostname)) return;
+      if (window.__murmurAdStrip) return; window.__murmurAdStrip = true;
+      var KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams', 'adBreakParams'];
+      function strip(o, depth) {
+        try {
+          if (!o || typeof o !== 'object' || (depth || 0) > 4) return o;
+          if (Array.isArray(o)) { for (var i = 0; i < o.length; i++) strip(o[i], (depth || 0) + 1); return o; }
+          for (var k = 0; k < KEYS.length; k++) if (KEYS[k] in o) delete o[KEYS[k]];
+          if (o.playerResponse) strip(o.playerResponse, (depth || 0) + 1);
+          if (o.response) strip(o.response, (depth || 0) + 1);
+        } catch (e) {}
+        return o;
+      }
+      var parse = JSON.parse;
+      JSON.parse = function () { return strip(parse.apply(this, arguments)); };
+      if (window.Response && Response.prototype.json) {
+        var json = Response.prototype.json;
+        Response.prototype.json = function () { return json.apply(this, arguments).then(function (v) { return strip(v); }); };
+      }
+      var initial;
+      try {
+        Object.defineProperty(window, 'ytInitialPlayerResponse', {
+          configurable: true,
+          get: function () { return initial; },
+          set: function (v) { initial = strip(v); }
+        });
+      } catch (e) {}
+    })();
+    """
+
     /// Compiles the rules once and adds them to the web view's configuration, then calls `done`.
     static func install(into controller: WKUserContentController, done: @escaping () -> Void) {
+        // Runs in every frame, including YouTube's player; the script itself only acts on YouTube pages.
+        controller.addUserScript(WKUserScript(source: youtubeScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "murmur-adblock-1", encodedContentRuleList: rulesJSON) { list, _ in
             if let list = list { controller.add(list) }
             done()
