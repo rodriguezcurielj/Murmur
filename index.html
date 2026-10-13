@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261012224631">
+<meta name="murmur-build" content="20261012225643">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -29,7 +29,8 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html,body{height:100%}
+html,body{height:100%;max-width:100%;overflow-x:hidden}
+.app{max-width:100vw}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 var(--font-body);overflow:hidden;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit}
 button:focus-visible,[tabindex]:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
@@ -222,7 +223,7 @@ svg.i{width:20px;height:20px;flex:none}
 .seek-row span{min-width:34px;text-align:center}
 .p-right{display:flex;justify-content:flex-end;align-items:center;gap:2px}
 .vol{width:110px!important}
-.p-mini,.mini-bar{display:none}
+.p-mini,.p-mini-ctrl,.mini-bar{display:none}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:16px;background:transparent;cursor:pointer;margin:0;--p:0%}
 input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--fg) var(--p),var(--line) var(--p))}
 input[type=range]:hover::-webkit-slider-runnable-track{background:linear-gradient(to right,var(--accent) var(--p),var(--line) var(--p))}
@@ -476,7 +477,12 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .gt{font-size:17px;padding:12px}
   .player{grid-column:1;grid-template-columns:minmax(0,1fr) auto;margin:0 8px 6px;padding:6px;border-radius:8px;background:color-mix(in srgb,var(--tint,#5a3478) 45%,var(--raise));min-height:0;gap:8px;overflow:hidden}
   .p-center,.p-right{display:none}
-  .p-mini{display:flex;align-items:center;gap:2px}
+  .player{grid-template-columns:auto minmax(0,1fr) auto}
+  .p-mini-ctrl{display:flex;align-items:center;gap:0;grid-column:1;grid-row:1}
+  .p-left{grid-column:2;grid-row:1}
+  .p-mini{display:flex;align-items:center;gap:2px;grid-column:3;grid-row:1}
+  .mini-skip{width:34px;height:34px}
+  .mini-skip svg{width:20px;height:20px}
   .mini-play{width:40px;height:40px;display:grid;place-items:center}
   .mini-play svg{width:24px;height:24px}
   .p-cover{width:42px;height:42px}
@@ -536,6 +542,9 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .player{min-height:0}
   .p-cover{width:44px;height:44px}
   .drop{padding:12px;margin-bottom:12px}
+}
+/* Full-screen player side by side on short, wide screens. */
+@media (max-height:700px) and (min-aspect-ratio:1/1){
   /* Full-screen player side by side: cover on the left, everything else on the right. */
   .full{padding:calc(8px + env(safe-area-inset-top,0px)) 14px calc(8px + env(safe-area-inset-bottom,0px))}
   .full-in{max-width:none;min-height:100%;display:grid;grid-template-columns:auto minmax(0,1fr);
@@ -550,6 +559,20 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .controls.big .icon-btn{width:38px;height:38px}
   #fVideoSwitch{grid-area:switch;justify-self:start}
   #viz{grid-area:viz;height:34px}
+  #fFacts{display:none}
+}
+/* Short and taller-than-wide (the Razr cover screen held normally): a compact stacked player. */
+@media (max-height:700px) and (max-aspect-ratio:1/1){
+  .full{padding:calc(6px + env(safe-area-inset-top,0px)) 14px calc(6px + env(safe-area-inset-bottom,0px))}
+  .full-in{gap:8px}
+  .full-cover{width:min(100%,max(110px,calc(100vh - 300px)))}
+  .full-title{font-size:19px}
+  .full-artist{font-size:13px}
+  .controls.big .play-btn{width:52px;height:52px}
+  .controls.big .play-btn svg{width:22px;height:22px}
+  .controls.big .icon-btn{width:38px;height:38px}
+  .controls.big .icon-btn svg{width:22px;height:22px}
+  #viz{height:26px}
   #fFacts{display:none}
 }
 /* Short AND narrow: the cover screen itself. */
@@ -2212,9 +2235,13 @@ function buildShell() {
       <input type="range" class="vol" data-vol id="vol" min="0" max="100" aria-label="Volume">
       <button class="icon-btn" data-act="expand" aria-label="Open full screen player">${icon('expand')}</button>
     </div>
+    <div class="p-mini-ctrl">
+      <button class="icon-btn mini-skip" data-act="prev" aria-label="Previous">${icon('prev')}</button>
+      <button class="mini-play" data-act="toggle" data-play-icon aria-label="Play">${icon('play')}</button>
+      <button class="icon-btn mini-skip" data-act="next" aria-label="Next">${icon('next')}</button>
+    </div>
     <div class="p-mini">
       <button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button>
-      <button class="mini-play" data-act="toggle" data-play-icon aria-label="Play">${icon('play')}</button>
     </div>
     <div class="mini-bar"><span id="miniBar"></span></div>
   </footer>

@@ -150,6 +150,9 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);    // next song starts on its own
         s.setSupportMultipleWindows(false);
         s.setUserAgentString(s.getUserAgentString() + " MurmurAndroid/1.0");
+        s.setTextZoom(100);                              // Murmur sizes its own text; a big system font would push the layout off-screen
+        s.setUseWideViewPort(true);                      // follow the page's width=device-width
+        s.setLoadWithOverviewMode(false);
         CookieManager.getInstance().setAcceptCookie(true);
 
         v.addJavascriptInterface(new Bridge(ctx.getApplicationContext()), "MurmurAndroid");
@@ -231,10 +234,11 @@ public class MainActivity extends Activity {
                 || host.equals("127.0.0.1") || host.equals("localhost");
     }
 
-    /** Screen changes the manifest lists (flip, fold, rotation, size) land here: nothing to rebuild. */
+    /** Changes handled in place (dark mode, keyboard, font): make sure the page re-measures. */
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        if (web != null) { web.requestLayout(); web.evaluateJavascript("window.dispatchEvent(new Event('resize'))", null); }
     }
 
     @Override
@@ -338,7 +342,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.9"; }
+        public String version() { return "2.0"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }

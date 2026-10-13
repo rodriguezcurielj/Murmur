@@ -19,12 +19,13 @@
         android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true">
 
-        <!-- configChanges keeps the music going (no reload) when the Razr is flipped open or closed. -->
+        <!-- Screen-size changes (Razr flip, rotation) rebuild the window so it fits the new screen; MainActivity
+             keeps the same page and music alive across that, so nothing reloads. Other changes are handled in place. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|density|uiMode|fontScale|fontWeightAdjustment|layoutDirection|colorMode|touchscreen|locale|mcc|mnc|grammaticalGender"
+            android:configChanges="keyboard|keyboardHidden|navigation|uiMode|fontScale|fontWeightAdjustment|layoutDirection|colorMode|touchscreen|locale|mcc|mnc|grammaticalGender"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
