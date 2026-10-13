@@ -49,6 +49,27 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private ValueCallback<Uri[]> pendingPick;
+    private static volatile MainActivity current;
+
+    /** Notification, lock-screen and headphone buttons: pass them to the page ("toggle", "play", "pause", "next", "prev"). */
+    static void control(String action) {
+        MainActivity a = current;
+        if (a == null || a.web == null || action == null) return;
+        String safe = action.replaceAll("[^a-z]", "");
+        a.runOnUiThread(() -> a.web.evaluateJavascript("window.murmurControl && window.murmurControl('" + safe + "')", null));
+    }
+
+    /**
+     * A WebView that never tells the page it was hidden. Normally leaving the app marks the page hidden,
+     * which pauses media (and YouTube pauses itself); this keeps the music going in the background.
+     */
+    static class PlayingWebView extends WebView {
+        PlayingWebView(android.content.Context c) { super(c); }
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            if (visibility != View.GONE) super.onWindowVisibilityChanged(View.VISIBLE);
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -71,7 +92,8 @@ public class MainActivity extends Activity {
             return insets;
         });
 
-        web = new WebView(this);
+        current = this;
+        web = new PlayingWebView(this);
         web.setBackgroundColor(BG);
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
@@ -92,6 +114,13 @@ public class MainActivity extends Activity {
             Set<String> youtube = new HashSet<>(Arrays.asList(
                     "https://www.youtube-nocookie.com", "https://www.youtube.com", "https://youtube.com", "https://m.youtube.com"));
             WebViewCompat.addDocumentStartJavaScript(web, YouTubeAdStrip.SCRIPT, youtube);
+            // Background play: YouTube's player pauses when it thinks the page is hidden; make it always look visible.
+            WebViewCompat.addDocumentStartJavaScript(web, YouTubeAdStrip.ALWAYS_VISIBLE, youtube);
+        }
+
+        // Android 13+: ask once to show the "now playing" notification (music keeps playing either way).
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
         }
 
         web.setWebViewClient(new WebViewClient() {
@@ -193,6 +222,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (current == this) current = null;
+        // Closing the app stops the music and its notification.
+        if (isFinishing()) startService(new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_STOP));
         if (web != null) web.destroy();
         super.onDestroy();
     }
@@ -226,9 +258,15 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.3"; }
+        public String version() { return "1.4"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }
+
+        /** The page reports what's playing; the background service keeps it going and shows the notification. */
+        @JavascriptInterface
+        public void setPlaying(boolean playing, String title, String artist) {
+            PlaybackService.update(getApplicationContext(), playing, title, artist);
+        }
     }
 }

@@ -9,6 +9,21 @@ package com.murmur.app;
 final class YouTubeAdStrip {
     private YouTubeAdStrip() {}
 
+    /** Makes YouTube's player believe the page is always on screen, so it keeps playing in the background. */
+    static final String ALWAYS_VISIBLE =
+            "(function () {\n" +
+            "  try {\n" +
+            "    Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return false; } });\n" +
+            "    Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return 'visible'; } });\n" +
+            "    Object.defineProperty(document, 'webkitHidden', { configurable: true, get: function () { return false; } });\n" +
+            "    var stop = function (e) { e.stopImmediatePropagation(); };\n" +
+            "    ['visibilitychange', 'webkitvisibilitychange', 'pagehide', 'freeze'].forEach(function (t) {\n" +
+            "      window.addEventListener(t, stop, true); document.addEventListener(t, stop, true);\n" +
+            "    });\n" +
+            "    window.addEventListener('blur', stop, true);\n" +
+            "  } catch (e) {}\n" +
+            "})();";
+
     static final String SCRIPT =
             "(function () {\n" +
             "  if (window.__murmurAdStrip) return; window.__murmurAdStrip = true;\n" +

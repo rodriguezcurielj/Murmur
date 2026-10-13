@@ -2159,7 +2159,28 @@ function highlight() {
 }
 function updatePlayIcons() {
   $$('[data-play-icon]').forEach(b => { b.innerHTML = icon(Engine.playing ? 'pause' : 'play'); b.setAttribute('aria-label', Engine.playing ? 'Pause' : 'Play'); });
+  notifyApp();
 }
+/* Android app: tell it what's playing so it can keep music going in the background
+   and show the notification with play/pause/next buttons. */
+let lastAppState = '';
+function notifyApp() {
+  const app = window.MurmurAndroid;
+  if (!app || typeof app.setPlaying !== 'function') return;
+  const t = TRACKS[state.current];
+  const now = [!!Engine.playing, t ? t.title : '', t ? t.artist : ''].join('|');
+  if (now === lastAppState) return;
+  lastAppState = now;
+  try { app.setPlaying(!!Engine.playing, t ? t.title : '', t ? t.artist : ''); } catch (e) {}
+}
+/* Notification, lock-screen and headphone buttons call this. */
+window.murmurControl = action => {
+  if (action === 'toggle') togglePlay();
+  else if (action === 'play') { if (!Engine.playing) togglePlay(); }
+  else if (action === 'pause') { if (Engine.playing) togglePlay(); }
+  else if (action === 'next') next(false);
+  else if (action === 'prev') prev();
+};
 function updateToggles() {
   $$('[data-act="shuffle"]').forEach(b => { b.classList.toggle('on', state.shuffle); b.setAttribute('aria-pressed', state.shuffle); });
   $$('[data-act="repeat"]').forEach(b => {
@@ -2197,7 +2218,7 @@ function updatePlayerUI() {
     $$('[data-dur]').forEach(s => s.textContent = fmt(t.duration));
     renderNP();
   }
-  updatePlayIcons(); updateLikes(); updateToggles(); highlight();
+  updatePlayIcons(); updateLikes(); updateToggles(); highlight(); notifyApp();
 }
 function renderNP() {
   const t = TRACKS[state.current]; if (!t) { $('#np').innerHTML = ''; return; }
