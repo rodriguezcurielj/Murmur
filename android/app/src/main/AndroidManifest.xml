@@ -16,6 +16,7 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.Murmur"
         android:resizeableActivity="true"
+        android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true">
 
         <!-- configChanges keeps the music going (no reload) when the Razr is flipped open or closed. -->

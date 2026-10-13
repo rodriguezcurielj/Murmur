@@ -29,6 +29,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.window.OnBackInvokedDispatcher;
 import android.widget.Toast;
 
 import androidx.webkit.WebViewCompat;
@@ -117,6 +118,12 @@ public class MainActivity extends Activity {
         web = keptWeb;
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
+
+        // Android 13+ (and always on Android 16) delivers the back gesture only to a registered callback;
+        // without this, back closes the app instead of going to Murmur's Home.
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+        }
 
         // Android 13+: ask once to show the "now playing" notification (music keeps playing either way).
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -243,13 +250,17 @@ public class MainActivity extends Activity {
 
     private long lastBackOnHome = 0;
 
+    /** Older Android sends the back gesture here. Android 13+ uses the callback registered in onCreate. */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() { handleBack(); }
+
     /**
      * Back gesture: closes whatever is open, otherwise jumps to Murmur's Home. On Home, the first swipe
      * shows "Swipe back again to exit" and a second swipe within 2 seconds leaves the app (music keeps playing).
      */
-    @Override
-    @SuppressWarnings("deprecation")
-    public void onBackPressed() {
+    private void handleBack() {
+        if (web == null) { moveTaskToBack(true); return; }
         web.evaluateJavascript("(window.murmurBack ? window.murmurBack() : false)", handled -> {
             if ("true".equals(handled)) { lastBackOnHome = 0; return; }
             long now = System.currentTimeMillis();
@@ -320,7 +331,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.7"; }
+        public String version() { return "1.8"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }
