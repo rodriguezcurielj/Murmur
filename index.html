@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013164237">
+<meta name="murmur-build" content="20261013172525">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -349,6 +349,10 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate{position:fixed;inset:0;z-index:100;overflow:auto;display:grid;place-items:center;padding:24px 16px;background:radial-gradient(120% 80% at 50% 0%,color-mix(in srgb,var(--accent) 14%,var(--bg)) 0%,var(--bg) 60%)}
 .gate-card{width:min(400px,100%);display:flex;flex-direction:column;gap:6px}
 .gate-brand{padding:0 0 22px}
+.admin-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;padding:10px 14px;border-radius:12px;background:rgba(255,176,112,.12);border:1px solid rgba(255,176,112,.35)}
+.admin-banner svg{width:18px;height:18px;color:var(--accent);flex:none}
+.admin-banner span{flex:1;min-width:200px}
+.admin-plays{margin:0 0 18px;padding-left:22px;display:grid;gap:4px}
 .srv-list{display:grid;gap:8px;margin:0 0 6px}
 .srv-pick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:inherit;font:inherit;cursor:pointer}
 .srv-pick:hover{background:rgba(255,255,255,.08)}
@@ -626,9 +630,17 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 /* ================= utilities ================= */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+/* Things that belong to a person (not a device): saved per account on the server, cached here per account. */
+const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks'];
 const store = {
-  get(k, d) { try { const v = localStorage.getItem('murmur:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('murmur:' + k, JSON.stringify(v)); } catch (e) {} }
+  uid: '',          // the signed-in account (and its server) once known
+  onChange: null,   // called when a synced value changes, so it can be sent to the server
+  key(k) { return 'murmur:' + (this.uid && SYNC_KEYS.includes(k) ? 'u:' + this.uid + ':' : '') + k; },
+  get(k, d) { try { const v = localStorage.getItem(this.key(k)); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) {
+    try { localStorage.setItem(this.key(k), JSON.stringify(v)); } catch (e) {}
+    if (this.uid && this.onChange && SYNC_KEYS.includes(k)) this.onChange(k);
+  }
 };
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 function rnd(a, b) { let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; }
@@ -793,6 +805,10 @@ const UPLOADS = { id: 'uploads', title: 'Uploads', artist: 'You', year: 'Your fi
   colors: ['#8a76e0', '#241c3a', '#ffb070'], desc: 'Audio and video files stored on your Murmur server.', trackIds: [] };
 UPLOADS.cover = makeCover(UPLOADS);
 ALBUM_MAP.uploads = UPLOADS;
+const SHARED = { id: 'shared', title: 'From people on Murmur', artist: 'Everyone', year: 'Shared uploads', genre: 'upload', seed: 41,
+  colors: ['#5fb3a1', '#14302a', '#d6fff4'], desc: 'Songs other people uploaded to this Murmur. Play them, add them to your playlists, or download them.', trackIds: [] };
+SHARED.cover = makeCover(SHARED);
+ALBUM_MAP.shared = SHARED;
 /* ---------- YouTube songs ---------- */
 const YTALBUM = { id: 'youtube', title: 'From YouTube', artist: 'YouTube', year: 'Played in Murmur', genre: 'youtube', seed: 7,
   colors: ['#e0473f', '#2a1416', '#ffb070'], desc: 'YouTube songs you’ve played, liked or saved to playlists.', trackIds: [] };
@@ -812,6 +828,11 @@ function saveYtCache() {
   const keep = new Set([...state.liked, ...state.playlists.flatMap(p => p.tracks), ...state.manual, ...ytRecent(), state.current].filter(id => id && id.startsWith('yt-') && TRACKS[id]));
   store.set('ytTracks', [...keep].map(ytMeta));
   YTALBUM.trackIds = [...keep];
+}
+function saveSpCache() {
+  const keep = new Set([...state.liked, ...state.playlists.flatMap(p => p.tracks)].filter(id => id && id.startsWith('sp-') && TRACKS[id]));
+  store.set('spTracks', [...keep].map(id => { const t = TRACKS[id];
+    return { key: t.key, title: t.title, artist: t.artist, album: t.album, duration: t.duration, cover: /^https?:/.test(t.cover || '') ? t.cover : '', isrc: t.isrc, url: t.url }; }));
 }
 const ytRecent = () => store.get('ytRecent', []);
 function noteYtPlay(id) {
@@ -876,36 +897,42 @@ function normalizeServer(a) {
   return a;
 }
 const canEditMusic = () => server.on && !!me && (me.role === 'owner' || !!me.canEdit);
+// Songs uploaded before uploads had owners belong to the owner.
+const ownsUpload = r => !!me && !!r && (r.uploadedBy ? r.uploadedBy === me.id : me.role === 'owner');
+// Only the person who uploaded a song (or the owner) can edit or delete it. Everyone can play and download it.
+const canChange = id => canEditMusic() && !!TRACKS[id] && !!TRACKS[id].raw && (me.role === 'owner' || ownsUpload(TRACKS[id].raw));
 function addServerTrack(r) {
   const id = 'f-' + r.id;
-  TRACKS[id] = { id, sid: r.id, title: r.title || 'Untitled', artist: r.artist || 'Unknown artist', albumTag: r.album || '', genreTag: r.genre || '',album: r.album || 'Uploads',
-    albumId: 'uploads', trackNo: r.trackNo || 0, genre: 'upload', duration: r.duration || 0, src: fileUrl('media/' + encodeURIComponent(r.file)),
+  TRACKS[id] = { id, sid: r.id, title: r.title || 'Untitled', artist: r.artist || 'Unknown artist', albumTag: r.album || '', genreTag: r.genre || '',album: r.album || (ownsUpload(r) ? 'Uploads' : 'Uploaded by ' + (r.uploaderName || 'someone')),
+    albumId: ownsUpload(r) ? 'uploads' : 'shared', trackNo: r.trackNo || 0, genre: 'upload', duration: r.duration || 0, src: fileUrl('media/' + encodeURIComponent(r.file)),
     cover: r.cover ? fileUrl('covers/' + encodeURIComponent(r.cover)) : null, size: r.size || 0, format: r.format || '', fromVideo: !!r.fromVideo,
     addedAt: r.addedAt, seed: hashStr(id), raw: r };
-  if (!UPLOADS.trackIds.includes(id)) UPLOADS.trackIds.unshift(id);
+  const pool = ownsUpload(r) ? UPLOADS : SHARED;
+  if (!pool.trackIds.includes(id)) pool.trackIds.unshift(id);
   return id;
 }
 /* Uploaded songs that share an album tag become their own album. */
 function rebuildUploadAlbums() {
   Object.keys(ALBUM_MAP).forEach(k => { if (k.startsWith('ua-')) delete ALBUM_MAP[k]; });
   const groups = {};
-  UPLOADS.trackIds.forEach(id => {
+  [...UPLOADS.trackIds, ...SHARED.trackIds].forEach(id => {
     const t = TRACKS[id];
-    if (!t.albumTag) { t.albumId = 'uploads'; return; }
+    if (!t.albumTag) { t.albumId = UPLOADS.trackIds.includes(id) ? 'uploads' : 'shared'; return; }
     const key = 'ua-' + hashStr(t.albumTag.toLowerCase()).toString(36);
     (groups[key] = groups[key] || []).push(id); t.albumId = key;
   });
   Object.entries(groups).forEach(([key, ids]) => {
     ids.sort((a, b) => (TRACKS[a].trackNo || 9999) - (TRACKS[b].trackNo || 9999) || String(TRACKS[a].addedAt).localeCompare(String(TRACKS[b].addedAt)));
     const first = TRACKS[ids[0]], artists = new Set(ids.map(i => TRACKS[i].artist)), h = hashStr(key);
-    const a = { id: key, title: first.albumTag, artist: artists.size === 1 ? first.artist : 'Various artists', year: 'Your upload', genre: 'upload',
+    const mine = ids.every(i => UPLOADS.trackIds.includes(i));
+    const a = { id: key, title: first.albumTag, artist: artists.size === 1 ? first.artist : 'Various artists', year: mine ? 'Your upload' : 'Shared upload', genre: 'upload', mine,
       uploaded: true, seed: h, colors: UP_PALETTES[h % UP_PALETTES.length], desc: '', trackIds: ids };
     const withCover = ids.find(i => TRACKS[i].cover);
     a.cover = withCover ? tCover(withCover) : (coverCache[key] = coverCache[key] || makeCover(a));
     ALBUM_MAP[key] = a;
   });
 }
-const upAlbums = () => Object.values(ALBUM_MAP).filter(a => a.uploaded).sort((a, b) => a.title.localeCompare(b.title));
+const upAlbums = all => Object.values(ALBUM_MAP).filter(a => a.uploaded && (all || a.mine)).sort((a, b) => a.title.localeCompare(b.title));
 async function connectServer() {
   try {
     const res = await fetch(apiUrl('api/tracks'), { cache: 'no-store', headers: authHeaders() });
@@ -1001,6 +1028,7 @@ function forgetTracks(ids) {
   purge(ids);
   const gone = new Set(ids);
   UPLOADS.trackIds = UPLOADS.trackIds.filter(x => !gone.has(x));
+  SHARED.trackIds = SHARED.trackIds.filter(x => !gone.has(x));
   ids.forEach(id => { delete TRACKS[id]; });
   rebuildUploadAlbums();
   if (!state.current || !visible(state.current)) resetPlayback();
@@ -1186,6 +1214,55 @@ function purge(ids) {
     else { Engine.pause(); state.current = null; }
   }
 }
+/* ---------- your library on the server: liked songs, playlists, history. Separate for every account. ---------- */
+const userSync = { ready: false, dirty: new Set(), timer: null };
+store.onChange = k => {
+  if (!userSync.ready) return;
+  userSync.dirty.add(k);
+  clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 1500);
+};
+const SYNC_EMPTY = k => k === 'plays' ? {} : [];
+async function pushUserData(leaving) {
+  if (!userSync.dirty.size || !server.on) return;
+  const keys = [...userSync.dirty]; userSync.dirty.clear();
+  const data = {}; keys.forEach(k => { data[k] = store.get(k, SYNC_EMPTY(k)); });
+  const body = JSON.stringify({ data });
+  try {
+    const r = await fetch(apiUrl('api/me/data'), { method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body, keepalive: !!leaving && body.length < 60000 });
+    if (!r.ok) throw new Error('save failed');
+  } catch (e) {
+    keys.forEach(k => userSync.dirty.add(k));
+    if (!leaving) { clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 20000); }
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') pushUserData(true); });
+window.addEventListener('pagehide', () => pushUserData(true));
+function legacyGet(k) { try { const v = localStorage.getItem('murmur:' + k); return v == null ? null : JSON.parse(v); } catch (e) { return null; } }
+async function loadUserData() {
+  userSync.ready = false;
+  store.uid = (remote.base || location.origin) + '|' + me.id;
+  let data = null, fromServer = false;
+  if (server.on) { try { data = (await api('GET', 'api/me/data')).data; fromServer = true; } catch (e) {} }
+  if (fromServer) {
+    if (!data) {
+      // First time on this account. The owner keeps the library this device had before accounts were separate.
+      data = {};
+      if (me.role === 'owner') SYNC_KEYS.forEach(k => { const v = legacyGet(k); if (v != null) data[k] = v; });
+      if (data.playlists) data.playlists = data.playlists.filter(p => p && p.id !== 'u-sunday');
+      try { await api('PUT', 'api/me/data', { data }); } catch (e) {}
+    }
+    SYNC_KEYS.forEach(k => store.set(k, data[k] != null ? data[k] : SYNC_EMPTY(k)));   // cache for offline use
+  }
+  // Put this account's library in place of whatever the device showed before signing in.
+  store.get('ytTracks', []).forEach(v => { if (v && v.id) addYtTrack(v, v.genre); });
+  YTALBUM.trackIds = store.get('ytTracks', []).map(v => 'yt-' + v.id);
+  store.get('spTracks', []).forEach(x => { if (x && x.key) addSpTrack(x, 'discover'); });
+  state.liked = new Set(store.get('liked', []));
+  state.playlists = store.get('playlists', []).filter(p => p && p.id && Array.isArray(p.tracks));
+  state.hidden = new Set(store.get('hidden', [])); state.hiddenCols = new Set(store.get('hiddenCols', []));
+  state.recent = store.get('recent', []);
+  userSync.ready = true;
+}
 /* ---------- resume: this device remembers the last song and where you were in it ---------- */
 function saveResume() {
   if (!state.current || !TRACKS[state.current]) return;
@@ -1268,10 +1345,9 @@ function resetPlayback() {
 }
 
 /* ================= state ================= */
-const DEFAULT_LIKED = [T('paper-lanterns', 1), T('neon-causeway', 2), T('concrete-garden', 3), T('tide-tables', 1)];
 const state = {
   view: { name: 'home' }, back: [], fwd: [],
-  liked: new Set(store.get('liked', DEFAULT_LIKED)),
+  liked: new Set(store.get('liked', [])),
   playlists: store.get('playlists', []).filter(p => p.id !== 'u-sunday'),
   hidden: new Set(store.get('hidden', [])), hiddenCols: new Set(store.get('hiddenCols', [])),
   recent: store.get('recent', []),
@@ -1282,8 +1358,8 @@ const state = {
   sel: null,      // { type, id, idx: Set<number>, last } while selecting songs in a list
   libSel: null    // Set of 'type:id' while selecting items in Your Library
 };
-const saveLiked = () => { store.set('liked', [...state.liked]); saveYtCache(); };
-const savePlaylists = () => { store.set('playlists', state.playlists); saveYtCache(); };
+const saveLiked = () => { store.set('liked', [...state.liked]); saveYtCache(); saveSpCache(); };
+const savePlaylists = () => { store.set('playlists', state.playlists); saveYtCache(); saveSpCache(); };
 const volGain = () => state.muted ? 0 : Math.pow(state.volume, 2);
 const visible = id => !!TRACKS[id] && !state.hidden.has(id);
 const visAlbums = () => ALBUMS.filter(a => a.trackIds.some(visible));
@@ -1762,7 +1838,7 @@ function getCollection(type, id) {
     const tracks = a.trackIds.filter(visible);
     if (!tracks.length && !a.uploaded && id !== 'uploads') return null;
     return { type, id, kind: 'Album', title: a.title, desc: a.desc, sub: `<b>${esc(a.artist)}</b> · ${a.year}`, tracks, cover: a.cover, color: a.colors[0],
-      artist: a.artist, uploaded: !!a.uploaded, demo: !a.uploaded && id !== 'uploads' && id !== 'youtube', uploadsAll: id === 'uploads' };
+      artist: a.artist, uploaded: !!a.uploaded, mine: !!a.mine, demo: !a.uploaded && !['uploads', 'youtube', 'shared'].includes(id), uploadsAll: id === 'uploads' };
   }
   if (type === 'playlist') {
     const cur = state.hiddenCols.has(id) ? null : CURATED.find(p => p.id === id), user = state.playlists.find(p => p.id === id), p = cur || user;
@@ -1808,6 +1884,7 @@ function getCollection(type, id) {
       desc: 'Greyed-out songs aren’t in Murmur yet. They play from YouTube, or use ⋯ → Bring into Murmur to upload your own copy.',
       sub: `<b>${esc(imp.owner || 'Spotify')}</b> · ${inM} of ${tracks.length} in Murmur`, tracks, cover: imp.cover || SPALBUM.cover, color: '#2fa36b', imported: true };
   }
+  if (type === 'mlist') return memberCollection(id);
   if (type === 'catq') {
     return { type, id, kind: 'Songs', title: id.replace(/^genre:/, ''), sub: '<b>Song catalog</b>', tracks: (cat.results.get(id) || []).filter(visible), color: '#5d8bf4' };
   }
@@ -2033,6 +2110,7 @@ function viewHome() {
     return `<div class="qt" data-act="open" data-type="${t}" data-id="${i}" data-col-key="${t}:${i}" role="button" tabindex="0">${coverHTML(col, '')}<span class="nm ell">${esc(col.title)}</span>${col.tracks.length ? playFab(t, i) : ''}</div>`;
   }).join('')}</div>
   ${shelf('Your albums', upAlbums().map(a => card('album', a.id)), 'Grouped from the album tags on your uploads')}
+  ${shelf('From people on Murmur', [SHARED.trackIds.some(visible) ? card('album', 'shared') : '', ...upAlbums(true).filter(a => !a.mine).map(a => card('album', a.id))], 'Songs other people uploaded. Play them or download them.')}
   ${discoverShelfHTML()}
   ${ytShelvesHTML()}
   ${shelf('Made for you', visCurated().map(p => card('playlist', p.id)), 'Mixes built from your listening')}
@@ -2081,7 +2159,7 @@ function searchResultsHTML() {
   }
   const ql = q.toLowerCase();
   const tracks = searchTracks(q).filter(id => !id.startsWith('yt-'));   // YouTube songs are listed in their own section
-  const albums = [...visAlbums(), ...upAlbums()].filter(a => a.title.toLowerCase().includes(ql) || a.artist.toLowerCase().includes(ql) || gLabel(a.genre).toLowerCase().includes(ql));
+  const albums = [...visAlbums(), ...upAlbums(true)].filter(a => a.title.toLowerCase().includes(ql) || a.artist.toLowerCase().includes(ql) || gLabel(a.genre).toLowerCase().includes(ql));
   const artists = visArtists().filter(a => a.toLowerCase().includes(ql));
   const mine = tracks.length
     ? `<div class="shelf-head"><h2>Your music</h2><div class="head-actions"><p>${plural(tracks.length, 'song')}</p>${selBtn('search', q)}</div></div>${trackList(tracks, 'search', q, { head: false })}`
@@ -2180,7 +2258,7 @@ function viewCollection(type, id) {
       : col.uploadsAll ? ''
       : `<div class="empty"><h2>Your playlist is empty</h2>Add songs from the list below, or use the ⋯ menu on any song.</div>`;
   } else body = trackList(col.tracks, type, id);
-  if ((col.uploadsAll || col.uploaded) && canEditMusic()) {
+  if ((col.uploadsAll || (col.uploaded && col.mine)) && canEditMusic()) {
     body = `<label class="drop" for="fileGlobal" tabindex="0" role="button">${icon('upload')}<span><b>Drop audio or video files here, or click to choose</b>
       <span class="small">MP3, M4A, FLAC, WAV, OGG, MP4, MOV, MKV, WEBM and more. Songs with the same album tag are grouped into albums.</span></span></label>` + body;
   }
@@ -2189,13 +2267,14 @@ function viewCollection(type, id) {
     const pool = Object.keys(TRACKS).filter(t => visible(t) && !col.tracks.includes(t)).sort((a, b) => TRACKS[a].seed - TRACKS[b].seed).slice(0, 6);
     if (pool.length) rec = `<div class="shelf-head"><h2>Recommended</h2><p>Based on what's in this playlist</p></div><div class="tracks">${pool.map((t, i) => trackRow(t, i, { add: true })).join('')}</div>`;
   }
-  const delLabel = col.imported ? 'Delete import' : col.editable ? 'Delete playlist' : col.uploaded ? (canEditMusic() ? 'Delete album' : '') : (col.demo || col.curated) ? 'Remove from library' : '';
+  const albumOk = col.uploaded && canEditMusic() && (col.mine || me.role === 'owner');
+  const delLabel = col.imported ? 'Delete import' : col.editable ? 'Delete playlist' : col.uploaded ? (albumOk ? 'Delete album' : '') : (col.demo || col.curated) ? 'Remove from library' : '';
   const del = delLabel ? `<button class="text-btn" data-act="col-delete" data-type="${type}" data-id="${esc(id)}">${icon('trash')}<span>${delLabel}</span></button>` : '';
   const hasUploads = col.tracks.some(canDownload);
   const dlBtn = hasUploads && (server.on || col.tracks.some(t => offline.has(t)))
     ? `<button class="icon-btn dl-btn" data-act="col-dl" data-type="${type}" data-id="${esc(id)}" aria-label="Download for offline">${icon('download')}</button>` : '';
   const clearDl = type === 'downloads' && n ? `<button class="text-btn" data-act="dl-clear">${icon('trash')}<span>Remove all downloads</span></button>` : '';
-  const editAlbum = col.uploaded && canEditMusic() ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '';
+  const editAlbum = albumOk ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '';
   return `<header class="hero" style="--tint:${col.color}">
     ${coverHTML(col, 'hero-cover')}
     <div class="hero-meta"><span class="eyebrow">${col.kind}</span>${title}
@@ -2213,6 +2292,7 @@ function viewCollection(type, id) {
 function libEntries() {
   const out = [{ type: 'liked', id: 'liked', name: 'Liked Songs', sub: `Playlist · ${plural(getCollection('liked').tracks.length, 'song')}`, k: 'playlist' }];
   if (server.on || server.offlineMode) out.push({ type: 'album', id: 'uploads', name: 'Uploads', sub: `Your files · ${plural(UPLOADS.trackIds.length, 'song')}`, k: 'playlist' });
+  if (SHARED.trackIds.some(visible)) out.push({ type: 'album', id: 'shared', name: 'From people on Murmur', sub: `Shared · ${plural(SHARED.trackIds.filter(visible).length, 'song')}`, k: 'playlist' });
   if (server.on && (disc.ids.length || disc.loading)) out.push({ type: 'discover', id: 'mix', name: 'Discover', sub: `Made for you · ${plural(disc.ids.filter(visible).length, 'song')}`, k: 'playlist' });
   sp.imports.forEach(imp => out.push({ type: 'import', id: imp.id, name: imp.name, sub: `Spotify playlist · ${plural((imp.trackIds || []).length, 'song')}`, k: 'playlist', sel: true }));
   const ytCount = YTALBUM.trackIds.filter(visible).length;
@@ -2369,6 +2449,7 @@ function render() {
   else if (v.name === 'library') el.innerHTML = viewLibrary();
   else if (v.name === 'queue') el.innerHTML = viewQueue();
   else if (v.name === 'people') el.innerHTML = viewPeople();
+  else if (v.name === 'member') el.innerHTML = viewMember(v.id);
   else if (v.name === 'collection') el.innerHTML = viewCollection(v.type, v.id);
   if (server.offlineMode) {
     el.insertAdjacentHTML('afterbegin', `<div class="offline-banner" role="status">${icon('cloudOff')}<span><b>Offline.</b> Can’t reach your Murmur server, so only downloaded songs can play.</span><button class="text-btn" data-act="retry">Try again</button></div>`);
@@ -2390,6 +2471,7 @@ try { hist.top = +sessionStorage.getItem('murmur:histTop') || 0; } catch (e) {}
 function viewHash(v) {
   if (!v || v.name === 'home') return location.pathname + location.search;
   if (v.name === 'collection') return '#/' + v.type + '/' + encodeURIComponent(v.id);
+  if (v.name === 'member') return '#/member/' + encodeURIComponent(v.id);
   if (v.name === 'search') return '#/search' + (state.search ? '/' + encodeURIComponent(state.search) : '');
   return '#/' + v.name;
 }
@@ -2399,6 +2481,8 @@ function viewFromHash() {
   let arg = ''; try { arg = decodeURIComponent(rest); } catch (e) { arg = rest; }
   if (name === 'search') return { view: { name: 'search' }, q: arg };
   if (['library', 'queue', 'people'].includes(name)) return { view: { name } };
+  if (name === 'member' && arg) return { view: { name: 'member', id: arg } };
+  if (name === 'mlist' && arg) return { view: { name: 'member', id: arg.split('~')[0] } };   // reopen their library after a refresh
   if (name && rest) {
     const v = { name: 'collection', type: name, id: arg };
     if (getCollection(v.type, v.id)) return { view: v };
@@ -2520,7 +2604,7 @@ function renderNP() {
   : t.src ? `<div class="np-card"><span class="eyebrow">Your file</span>
     <dl class="facts"><dt>Format</dt><dd>${esc(t.format.toUpperCase())}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Size</dt><dd>${fmtSize(t.size)}</dd>${t.addedAt ? `<dt>Added</dt><dd>${new Date(t.addedAt).toLocaleDateString()}</dd>` : ''}</dl>
     <p class="small">${t.fromVideo ? 'Audio extracted from a video file. ' : ''}Stored in the music-data folder of your Murmur server.</p>
-    ${canEditMusic() ? `<button class="text-btn" data-act="edit-one" data-tid="${t.id}">${icon('edit')}<span>Edit details</span></button>` : ''}</div>`
+    ${canChange(t.id) ? `<button class="text-btn" data-act="edit-one" data-tid="${t.id}">${icon('edit')}<span>Edit details</span></button>` : ''}</div>`
   : `<div class="np-card"><span class="eyebrow">Inside this track</span>
     <dl class="facts"><dt>Key</dt><dd>${NOTE[t.root % 12]} ${t.scale}</dd><dt>Tempo</dt><dd>${t.bpm} BPM</dd><dt>Form</dt><dd>${t.bars} bars</dd><dt>Style</dt><dd>${gLabel(t.genre)}</dd></dl>
     <p class="small">Synthesized live in your browser over the progression <span class="prog">${chordName(t)}</span>.</p></div>`}
@@ -2584,9 +2668,9 @@ function renderMenu() {
         + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
       + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '')
         + (server.on ? b('save', icon('save') + 'Save file to device') : '') : '')
-      + (t.src && canEditMusic() ? b('edit', icon('edit') + 'Edit details') : '')
+      + (t.src && canChange(t.id) ? b('edit', icon('edit') + 'Edit details') : '')
       + (editable ? '<hr>' + b('remove', icon('list') + 'Remove from this playlist') : '')
-      + (t.src && !canEditMusic() ? '' : '<hr>' + (t.src
+      + (t.src && !canChange(t.id) ? '' : '<hr>' + (t.src
         ? b('delete', icon('trash') + (m.confirm ? '<b class="danger-text">Click again to delete the file</b>' : 'Delete from server'))
         : b('hide', icon('trash') + 'Remove from library')));
   } else {
@@ -2683,8 +2767,8 @@ function renderSelBar() {
       <button class="sb" data-act="sel-queue"${dis}>${icon('queue')}<span>Add to queue</span></button>
       ${col && col.editable ? `<button class="sb" data-act="sel-remove"${dis}>${icon('list')}<span>Remove from playlist</span></button>` : ''}
       ${anyFile && (server.on || allDl) ? `<button class="sb" data-act="sel-dl"${dis}>${icon(allDl ? 'dlFill' : 'download')}<span>${allDl ? 'Remove download' : 'Download'}</span></button>` : ''}
-      ${allFiles && canEditMusic() ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
-      ${anyFile && !canEditMusic() ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
+      ${allFiles && ids.every(canChange) ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
+      ${anyFile && !ids.filter(id => TRACKS[id].src).every(canChange) ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
       <button class="sb done" data-act="sel-done">Done</button>`;
     bar.hidden = false; return;
   }
@@ -2950,6 +3034,8 @@ function act(el, e) {
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); showGate('connect'); break;
     case 'pick-server': pickServer(d.name); break;
+    case 'p-lib': navigate({ name: 'member', id: d.id }); break;
+    case 'admin-exit': navigate({ name: 'people' }); break;
     case 'yt-view': store.set('ytFullVideo', d.v === 'video'); placeYtBox(); syncVideoSwitch(); break;
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
@@ -3717,6 +3803,7 @@ function viewPeople() {
       <header class="person-head"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span>
         <div class="person-meta"><h3>${esc(u.name)}</h3><span class="small">${esc(roleLabel(u))} · added ${when(u.createdAt)}</span></div></header>
       <div class="person-actions">
+        <button class="text-btn" data-act="p-lib" data-id="${u.id}">${icon('library')}<span>${u.id === me.id ? 'My library (admin view)' : 'View library'}</span></button>
         <button class="text-btn" data-act="p-pin" data-id="${u.id}">${icon('edit')}<span>${u.id === me.id ? 'Change my PIN' : 'Set new PIN'}</span></button>
         ${u.role === 'owner' ? '' : `<label class="switch"><input type="checkbox" data-act="p-edit" data-id="${u.id}" ${u.canEdit ? 'checked' : ''}><span>Can add, edit and delete music</span></label>
         <button class="text-btn danger" data-act="p-del" data-id="${u.id}">${icon('trash')}<span>Delete</span></button>`}
@@ -3735,6 +3822,58 @@ function viewPeople() {
     <button class="m-ok" type="submit">Add person</button>
   </form>
   <div class="people">${people.map(person).join('')}</div>`;
+}
+const adminLib = new Map();   // person id -> { data, imports } while the owner looks at their library
+const personName = uid => { const p = (people || []).find(u => u.id === uid); return p ? p.name : (me && me.id === uid ? me.name : 'This person'); };
+async function loadMemberLib(uid) {
+  if (adminLib.has(uid)) return;
+  adminLib.set(uid, { loading: true });
+  try {
+    if (!people) { try { people = (await api('GET', 'api/users')).users; } catch (e) {} }
+    const r = await api('GET', 'api/admin/library/' + encodeURIComponent(uid));
+    const data = r.data || {};
+    (data.ytTracks || []).forEach(v => { if (v && v.id) addYtTrack(v, v.genre); });
+    (data.spTracks || []).forEach(x => { if (x && x.key) addSpTrack(x, 'discover'); });
+    (r.imports || []).forEach(imp => { imp.trackIds = (imp.tracks || []).map(t => addSpTrack(t)); });
+    adminLib.set(uid, { data, imports: r.imports || [] });
+  } catch (e) { adminLib.set(uid, { error: e.message }); }
+  if (state.view.name === 'member' && state.view.id === uid) render();
+}
+// Their uploads: songs they added (older songs without an uploader count as the owner's).
+const memberUploads = uid => { const owner = (people || []).find(u => u.role === 'owner'), ownerId = owner ? owner.id : (me && me.role === 'owner' ? me.id : '');
+  return Object.values(TRACKS).filter(t => t.raw && (t.raw.uploadedBy ? t.raw.uploadedBy === uid : uid === ownerId)).map(t => t.id); };
+function memberCollection(key) {
+  const [uid, part, sub] = String(key).split('~'), L = adminLib.get(uid);
+  if (!L || !L.data) return null;
+  const name = personName(uid), has = id => !!TRACKS[id], base = { type: 'mlist', id: key, sub: `<b>${esc(name)}</b> · admin view`, admin: true };
+  let col = null;
+  if (part === 'liked') col = { kind: 'Playlist', title: 'Liked Songs', tracks: (L.data.liked || []).filter(has).reverse(), color: '#7b4fd9' };
+  else if (part === 'up') col = { kind: 'Uploads', title: 'Uploads', tracks: memberUploads(uid), color: '#8a76e0' };
+  else if (part === 'pl') { const p = (L.data.playlists || []).find(x => x.id === sub); if (p) col = { kind: 'Playlist', title: p.name, tracks: (p.tracks || []).filter(has), color: '#6b5a7d' }; }
+  else if (part === 'imp') { const imp = L.imports.find(x => x.id === sub); if (imp) col = { kind: 'Imported from Spotify', title: imp.name, tracks: (imp.trackIds || []).filter(has), cover: imp.cover || SPALBUM.cover, color: '#2fa36b' }; }
+  if (!col) return null;
+  col.desc = '';
+  if (!col.cover) { col.mosaic = mosaicFor(col.tracks); col.cover = col.tracks[0] ? tCover(col.tracks[0]) : null; }
+  return { ...base, ...col };
+}
+function viewMember(uid) {
+  if (!me || me.role !== 'owner') return `<div class="empty"><h2>Only the owner can look at other people’s libraries</h2></div>`;
+  const L = adminLib.get(uid);
+  if (!L) { loadMemberLib(uid); return `<h1 class="greet">Loading…</h1>`; }
+  if (L.loading) return `<h1 class="greet">Loading…</h1>`;
+  const name = personName(uid);
+  const banner = `<div class="admin-banner" role="status">${icon('user')}<span><b>Admin view.</b> You’re looking at ${esc(name)}’s library. Nothing here is changed by looking.</span><button class="text-btn" data-act="admin-exit">Exit admin view</button></div>`;
+  if (L.error) return banner + `<div class="empty"><h2>Couldn’t load ${esc(name)}’s library</h2>${esc(L.error)}</div>`;
+  const d = L.data, k = (part, sub) => uid + '~' + part + (sub ? '~' + sub : '');
+  const lists = [k('liked'), k('up'), ...(d.playlists || []).map(p => k('pl', p.id)), ...L.imports.map(i => k('imp', i.id))].filter(key => memberCollection(key));
+  const recent = (d.recent || []).slice(0, 12).map(r => { const i = r.indexOf(':'); return getCollection(r.slice(0, i), r.slice(i + 1)); }).filter(Boolean).map(c => esc(c.title));
+  const plays = Object.entries(d.plays || {}).sort((a, b) => b[1] - a[1]).filter(([id]) => TRACKS[id]).slice(0, 10);
+  return `${banner}<h1 class="greet">${esc(name)}’s library</h1>
+    <p class="small">${plural((d.liked || []).length, 'liked song')} · ${plural((d.playlists || []).length, 'playlist')} · ${plural(memberUploads(uid).length, 'upload')} · ${plural(L.imports.length, 'Spotify import')}${d.updatedAt ? ' · last change ' + ago(d.updatedAt) : ''}</p>
+    ${shelf('Playlists and songs', lists.map(key => card('mlist', key)))}
+    ${plays.length ? `<div class="shelf-head"><h2>Most played</h2></div><ol class="admin-plays">${plays.map(([id, n]) => `<li><b>${esc(TRACKS[id].title)}</b> <span class="small">${esc(TRACKS[id].artist)} · ${plural(n, 'play')}</span></li>`).join('')}</ol>` : ''}
+    ${recent.length ? `<div class="shelf-head"><h2>Recently opened</h2></div><p class="small">${recent.join(' · ')}</p>` : ''}
+    ${!lists.length && !plays.length ? `<div class="empty"><h2>Nothing here yet</h2>${esc(name)} hasn’t liked, played or saved anything.</div>` : ''}`;
 }
 function ytSettingsHTML() {
   const status = yt.enabled ? 'Connected. YouTube search and suggestions are on for everyone who signs in.' : 'Not connected yet.';
@@ -3786,6 +3925,7 @@ async function addPerson(form) {
     server.offlineMode = true;
     saved.filter(r => r.meta).forEach(r => addServerTrack(r.meta));
   }
+  if (me) await loadUserData();
   rebuildUploadAlbums();
   state.liked = new Set([...state.liked].filter(visible));
   state.playlists.forEach(p => { p.tracks = p.tracks.filter(visible); });

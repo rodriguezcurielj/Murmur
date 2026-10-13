@@ -12,6 +12,7 @@ const createAuth = require('./auth');
 const createYouTube = require('./youtube');
 const createSpotify = require('./spotify');
 const createDiscover = require('./discover');
+const createUserData = require('./userdata');
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -73,10 +74,19 @@ app.use(auth.cors);
 app.use(auth.sameOrigin);
 app.use('/api', express.json({ limit: '10mb' }));   // imported Spotify playlists can be large
 app.use('/api', auth.requireUser);
+const spotify = createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id) });
+const userData = createUserData(DATA, auth, { importsFor: spotify.importsFor });
+// Deleting a person also deletes their library (liked songs, playlists, history).
+app.delete('/api/users/:id', auth.requireOwner, (req, res, next) => {
+  const id = req.params.id;
+  res.on('finish', () => { if (res.statusCode < 300) userData.removeUser(id); });
+  next();
+});
 auth.routes(app);
 createYouTube(path.join(DATA, 'settings.json'), auth).routes(app);
 createDiscover().routes(app);
-createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id) }).routes(app);
+spotify.routes(app);
+userData.routes(app);
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -138,6 +148,8 @@ app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res
       size: (await fsp.stat(outPath)).size,
       originalName: original,
       fromVideo: !!video,
+      uploadedBy: req.user.id,
+      uploaderName: req.user.name,
       addedAt: new Date().toISOString()
     };
     library.push(track);
@@ -151,6 +163,8 @@ app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res
   }
 });
 
+// Songs uploaded before uploads had owners belong to the owner.
+const mayChange = (user, t) => user.role === 'owner' || (!!t.uploadedBy && t.uploadedBy === user.id);
 async function deleteIds(ids) {
   const want = new Set(ids), gone = library.filter(t => want.has(t.id));
   library = library.filter(t => !want.has(t.id));
@@ -165,6 +179,8 @@ async function deleteIds(ids) {
 const idList = b => (b && Array.isArray(b.ids) ? b.ids.filter(x => typeof x === 'string') : []);
 
 app.delete('/api/tracks/:id', auth.requireEdit, async (req, res) => {
+  const t = library.find(x => x.id === req.params.id);
+  if (t && !mayChange(req.user, t)) return res.status(403).json({ error: 'You can only delete songs you uploaded.' });
   const deleted = await deleteIds([req.params.id]);
   if (!deleted.length) return res.status(404).json({ error: 'That file is already gone.' });
   res.json({ ok: true, deleted });
@@ -174,14 +190,18 @@ app.delete('/api/tracks/:id', auth.requireEdit, async (req, res) => {
 app.post('/api/tracks/delete', auth.requireEdit, async (req, res) => {
   const ids = idList(req.body);
   if (!ids.length) return res.status(400).json({ error: 'No songs were picked.' });
-  res.json({ ok: true, deleted: await deleteIds(ids) });
+  const mine = ids.filter(id => { const t = library.find(x => x.id === id); return !t || mayChange(req.user, t); });
+  if (!mine.length) return res.status(403).json({ error: 'You can only delete songs you uploaded.' });
+  res.json({ ok: true, deleted: await deleteIds(mine), skipped: ids.length - mine.length });
 });
 
 // Bulk edit: { ids: [...], title?, artist?, album? }. Fields left out are kept.
 app.patch('/api/tracks', auth.requireEdit, async (req, res) => {
   const ids = new Set(idList(req.body)), b = req.body || {};
-  const tracks = library.filter(t => ids.has(t.id));
-  if (!tracks.length) return res.status(404).json({ error: 'Those songs are no longer on the server.' });
+  const found = library.filter(t => ids.has(t.id));
+  if (!found.length) return res.status(404).json({ error: 'Those songs are no longer on the server.' });
+  const tracks = found.filter(t => mayChange(req.user, t));
+  if (!tracks.length) return res.status(403).json({ error: 'You can only edit songs you uploaded.' });
   const clean = v => String(v).replace(/\s+/g, ' ').trim().slice(0, 200);
   for (const t of tracks) {
     if (typeof b.title === 'string' && clean(b.title)) t.title = clean(b.title);

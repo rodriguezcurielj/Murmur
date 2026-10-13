@@ -95,5 +95,5 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
       res.json({ match: m });
     });
   }
-  return { routes };
+  return { routes, importsFor: id => imports[id] || [] };
 };
