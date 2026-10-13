@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Murmur Ad Blocker",
+  "version": "1.0",
+  "description": "Removes ads from YouTube songs played in Murmur. It only acts on YouTube players inside Murmur.",
+  "icons": { "128": "icon.png" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube-nocookie.com/embed/*", "https://www.youtube.com/embed/*"],
+      "js": ["youtube-strip.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://rodriguezcurielj.github.io/Murmur/*",
+        "https://*.trycloudflare.com/*",
+        "https://*.ts.net/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["murmur-flag.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

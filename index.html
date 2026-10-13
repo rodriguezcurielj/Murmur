@@ -3312,7 +3312,11 @@ function openAccount() {
   if (!me) return;
   const until = me.remembered ? `Remembered on this computer until <b>${when(me.expiresAt)}</b>.` : 'Signed in for this visit only. You’ll need your PIN again after 12 hours or when the browser closes.';
   const where = remote.base ? `<p>Server: <b>${esc(remote.base)}</b></p>` : '';
-  openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}
+  // YouTube ad blocker status: built into the phone apps, or the Murmur Ad Blocker extension in a desktop browser.
+  const adOn = window.MurmurAndroid ? 'On (built into the app)' : document.documentElement.dataset.murmurAdblock ? 'On (Murmur Ad Blocker extension)' : '';
+  const adLine = !yt.enabled ? '' : adOn ? `<p>YouTube ad blocker: <b>${adOn}</b></p>`
+    : `<p>YouTube ad blocker: <b>Off</b>. In a desktop browser, <a href="https://rodriguezcurielj.github.io/Murmur/apps/#extension" target="_blank" rel="noopener">install the Murmur Ad Blocker</a> to remove YouTube ads.</p>`;
+  openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}${adLine}
     <div class="acct-actions">
       ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}

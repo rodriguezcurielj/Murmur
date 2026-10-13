@@ -100,6 +100,7 @@ spotify.js            Spotify playlist import and the shared song-to-source matc
 discover.js           New-song suggestions from similar artists (Deezer catalog)
 android/              Native Android app (build-apk.ps1 rebuilds apps/Murmur.apk)
 ios/                  Native iPhone app (built by GitHub Actions into apps/Murmur.ipa)
+extension/            Murmur Ad Blocker browser extension (YouTube ads, desktop browsers)
 apps/                 Download page plus the built Murmur.apk and Murmur.ipa
 Docker/               Dockerfile and docker-compose.yml
 music-data/           Your music and accounts (not in git)
