@@ -377,6 +377,11 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .yt-frame iframe{width:100%;height:100%;display:block;border:0}
 .yt-bar{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--raise);cursor:grab;touch-action:none;user-select:none}
 .yt-box.dragging{opacity:.9;transition:none}
+/* In the bar: the video fills the cover-art spot. Clicks go through to the cover (open the full player). */
+.yt-box.in-bar{border:0;box-shadow:none;pointer-events:none;z-index:46}
+.yt-box.in-bar .yt-bar{display:none}
+.yt-box.in-bar .yt-frame{width:100%;height:100%;aspect-ratio:auto;overflow:hidden;position:relative}
+.yt-box.in-bar .yt-frame iframe{position:absolute;top:0;left:50%;width:177.78%;height:100%;transform:translateX(-50%)}
 .yt-box.dragging .yt-bar{cursor:grabbing}
 .yt-box.dragging iframe{pointer-events:none}
 /* Spotify imports */
@@ -1448,8 +1453,25 @@ const YTEng = {
   setVolume() { try { this.player && this.player.setVolume(Math.round(volGain() * 100)); } catch (e) {} }
 };
 /* The YouTube window can be dragged; it snaps to the nearest corner and remembers it. */
+/* By default the YouTube video sits inside the player bar where the cover art goes (and in the big
+   cover spot when the full-screen player is open). The account menu can switch to a movable window. */
+const ytInBar = () => !store.get('ytShowVideo', false);
+function dockYtBox() {
+  const box = $('#ytBox'); if (!box || box.hidden) return;
+  const target = !$('#full').hidden ? $('#fCover') : $('#pCover');
+  const r = target && target.getBoundingClientRect();
+  if (!r || !r.width) { box.style.visibility = 'hidden'; return; }
+  box.style.visibility = '';
+  box.style.left = r.left + 'px'; box.style.top = r.top + 'px';
+  box.style.width = r.width + 'px'; box.style.height = r.height + 'px';
+  box.style.right = box.style.bottom = 'auto';
+  box.style.borderRadius = getComputedStyle(target).borderRadius;
+}
 function placeYtBox() {
   const box = $('#ytBox'); if (!box) return;
+  box.classList.toggle('in-bar', ytInBar());
+  if (ytInBar()) { dockYtBox(); return; }
+  box.style.width = box.style.height = box.style.borderRadius = box.style.visibility = '';
   const c = store.get('ytCorner', 'br'), m = 16, bottom = matchMedia('(max-width:760px)').matches ? 138 : 100;
   box.style.left = box.style.right = box.style.top = box.style.bottom = '';
   if (c[0] === 't') box.style.top = (m + 56) + 'px'; else box.style.bottom = bottom + 'px';
@@ -1566,6 +1588,9 @@ function getCollection(type, id) {
       desc: 'Greyed-out songs aren’t in Murmur yet. They play from YouTube, or use ⋯ → Bring into Murmur to upload your own copy.',
       sub: `<b>${esc(imp.owner || 'Spotify')}</b> · ${inM} of ${tracks.length} in Murmur`, tracks, cover: imp.cover || SPALBUM.cover, color: '#2fa36b', imported: true };
   }
+  if (type === 'catq') {
+    return { type, id, kind: 'Songs', title: id.replace(/^genre:/, ''), sub: '<b>Song catalog</b>', tracks: (cat.results.get(id) || []).filter(visible), color: '#5d8bf4' };
+  }
   if (type === 'ytq') {
     return { type, id, kind: 'YouTube', title: id, sub: '<b>YouTube</b>', tracks: (yt.results.get(id) || []).filter(visible), color: '#e0473f' };
   }
@@ -1663,34 +1688,34 @@ async function ytSearch(q, genreTag) {
   return res.items.map(v => addYtTrack(v, genreTag));
 }
 async function loadSuggestions() {
-  if (!yt.enabled) return;
-  const { genres, artists } = tasteSeeds();
-  yt.shelves = [...genres.map(g => ({ kind: 'genre', value: g })), ...artists.map(a => ({ kind: 'artist', value: a }))].slice(0, 4);
-  await Promise.all(yt.shelves.map(async s => {
-    const q = ytQueryFor(s);
-    try { yt.results.set(q, await ytSearch(q, s.kind === 'genre' ? s.value : '')); yt.error = ''; }
-    catch (e) { yt.error = e.message; }
+  if (!server.on) return;
+  const { genres } = tasteSeeds();
+  yt.shelves = genres.slice(0, 3).map(g => ({ kind: 'genre', value: g }));
+  await Promise.all(yt.shelves.map(async sh => {
+    const key = 'genre:' + sh.value.toLowerCase();
+    try {
+      const cached = store.get('cat:' + key, null);
+      let items;
+      if (cached && Date.now() - cached.at < 24 * 3600e3) items = cached.items;
+      else {
+        items = (await api('GET', 'api/catalog/genre?name=' + encodeURIComponent(sh.value))).items || [];
+        try { store.set('cat:' + key, { at: Date.now(), items }); } catch (e) {}
+      }
+      cat.results.set(key, catIds(items));
+      yt.error = '';
+    } catch (e) { yt.error = e.message; }
   }));
   if (state.view.name === 'home') render();
 }
-function ytCard(id, q, i) {
-  const t = TRACKS[id];
-  return `<div class="card yt-card" data-act="yt-play" data-q="${esc(q)}" data-i="${i}" data-tid="${id}" role="button" tabindex="0" aria-label="Play ${esc(t.title)} from YouTube">
-    <div class="card-art"><img class="cover yt-thumb" src="${esc(t.cover)}" alt="" loading="lazy"><span class="yt-badge">YouTube</span></div>
-    <div><div class="nm ell">${esc(t.title)}</div><div class="sb ell">${esc(t.artist)} · ${fmt(t.duration)}</div></div></div>`;
-}
 function ytShelvesHTML() {
-  if (!server.on || !yt.enabled) {
-    return server.on && me && me.role === 'owner'
-      ? `<div class="yt-setup"><span>${icon('search')}</span><div><b>Get song suggestions from YouTube</b><p class="small">Murmur can suggest YouTube songs based on the genres and artists you like. Connect a free YouTube API key to turn it on.</p></div><button class="text-btn" data-act="go-settings">Set up YouTube</button></div>` : '';
-  }
-  const shelves = yt.shelves.map(s => {
-    const q = ytQueryFor(s), ids = (yt.results.get(q) || []).filter(id => TRACKS[id] && visible(id));
+  if (!server.on) return '';
+  const shelves = yt.shelves.map(sh => {
+    const key = 'genre:' + sh.value.toLowerCase(), ids = (cat.results.get(key) || []).filter(id => TRACKS[id] && visible(id));
     if (!ids.length) return '';
-    const title = s.kind === 'genre' ? `Because you like ${esc(s.value)}` : `If you like ${esc(s.value)}`;
-    return `<div class="shelf-head"><h2>${title}</h2><p>Suggested from YouTube</p></div><div class="shelf">${ids.slice(0, 12).map((id, i) => ytCard(id, q, i)).join('')}</div>`;
+    return `<div class="shelf-head"><h2>Because you like ${esc(sh.value)}</h2><p>Popular ${esc(sh.value)} songs</p></div><div class="shelf">${ids.slice(0, 12).map((id, i) => catCard(id, key, i)).join('')}</div>`;
   }).join('');
-  return shelves || (yt.error ? `<p class="small" style="margin-top:28px">${esc(yt.error)}</p>` : '');
+  if (!yt.enabled && me && me.role === 'owner') return shelves + `<div class="yt-setup"><span>${icon('search')}</span><div><b>Turn on YouTube playback</b><p class="small">Suggested songs play from YouTube. Connect a free YouTube API key to play them.</p></div><button class="text-btn" data-act="go-settings">Set up YouTube</button></div>`;
+  return shelves;
 }
 function togglePlay() {
   if (!state.current) { resetPlayback(); if (state.current) Engine.play(); updatePlayIcons(); highlight(); return; }
@@ -1796,6 +1821,14 @@ function viewHome() {
 function viewSearch() {
   return `<div id="results">${searchResultsHTML()}</div>`;
 }
+function catalogResultsHTML(q) {
+  if (!server.on) return '';
+  const key = q.toLowerCase(), ids = cat.results.get(key);
+  if (!ids) return `<div class="shelf-head"><h2>Songs</h2></div><p class="small yt-wait">${cat.loading.has(key) ? 'Searching songs…' : 'Press Enter in the search bar to search all songs.'}</p>`;
+  const shown = ids.filter(visible);
+  return `<div class="shelf-head"><h2>Songs</h2>${shown.length ? `<div class="head-actions"><p>${plural(shown.length, 'song')}</p>${selBtn('catq', key)}</div>` : ''}</div>
+    ${shown.length ? trackList(shown, 'catq', key, { head: false }) + '<p class="small cat-note">Grey songs play from YouTube. The first play of a song uses 1 YouTube search, then it’s free for everyone.</p>' : '<p class="small">No songs found for that.</p>'}`;
+}
 function ytResultsHTML(q) {
   if (!server.on) return '';
   if (!yt.enabled) {
@@ -1804,8 +1837,9 @@ function ytResultsHTML(q) {
   }
   const key = q.toLowerCase(), ids = yt.results.get(key);
   if (!ids) {
-    return `<div class="shelf-head"><h2>From YouTube</h2></div>
-      <p class="small yt-wait">${yt.loading.has(key) ? 'Searching YouTube…' : 'Press Enter in the search bar to search YouTube.'}</p>`;
+    // Only for things the catalog doesn't have (remixes, covers, live versions). Costs one of today's YouTube searches.
+    return yt.loading.has(key) ? `<div class="shelf-head"><h2>From YouTube</h2></div><p class="small yt-wait">Searching YouTube…</p>`
+      : `<div class="yt-search-row"><button class="text-btn" data-act="yt-search" data-q="${esc(q)}">${icon('search')}<span>Search YouTube too</span></button><span class="small">For remixes, covers and live versions. Uses 1 of today’s YouTube searches.</span></div>`;
   }
   const shown = ids.filter(visible);
   return `<div class="shelf-head"><h2>From YouTube</h2>${shown.length ? `<div class="head-actions"><p>${plural(shown.length, 'song')}</p>${selBtn('ytq', key)}</div>` : ''}</div>
@@ -1831,6 +1865,7 @@ function searchResultsHTML() {
     : `<div class="shelf-head"><h2>Your music</h2></div><p class="small">No songs in your library match “${esc(q)}”.</p>`;
   return `<h1 class="greet search-title">Results for “${esc(q)}”</h1>
   ${mine}
+  ${catalogResultsHTML(q)}
   ${ytResultsHTML(q)}
   ${artists.length ? `<div class="shelf-head"><h2>Artists</h2></div><div class="artist-chips">${artists.map(a => `<button class="ac" data-act="open" data-type="artist" data-id="${esc(a)}"><img src="${ALBUMS.find(x => x.artist === a).cover}" alt="">${esc(a)}</button>`).join('')}</div>` : ''}
   ${shelf('Albums', albums.map(a => card('album', a.id)))}`;
@@ -1877,7 +1912,7 @@ function renderDrop() {
   if (sugg.length) {
     html += `<div class="drop-h">Suggestions from YouTube</div>` + sugg.map(s => opt(`${icon('search')}<span class="ell">${esc(s)}</span>`, 'drop-sugg')).join('');
   }
-  html += opt(`${icon('search')}<span class="ell">Search for <b>“${esc(q)}”</b>${yt.enabled ? ' in your music and on YouTube' : ''}</span><kbd>Enter</kbd>`, 'drop-all');
+  html += opt(`${icon('search')}<span class="ell">Search for <b>“${esc(q)}”</b> in your music and the song catalog</span><kbd>Enter</kbd>`, 'drop-all');
   el.innerHTML = html; el.hidden = false;
   input.setAttribute('aria-expanded', 'true');
 }
@@ -1898,7 +1933,7 @@ function submitSearch(value) {
   closeDrop();
   state.search = q;
   if (state.view.name !== 'search') navigate({ name: 'search' }); else { state.sel = null; refreshSearch(); }
-  if (q) runYtSearch(q);
+  if (q) runCatalogSearch(q);
 }
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
 function viewCollection(type, id) {
@@ -2218,6 +2253,7 @@ function frame() {
   if (!seeking) $$('[data-pos]').forEach(s => s.textContent = fmt(state.current ? pos : 0));
   $('#miniBar').style.width = (pct * 100) + '%';
   if (!$('#full').hidden) drawViz();
+  if (YTEng.track && ytInBar()) dockYtBox();   // follow the cover art as the layout changes
   requestAnimationFrame(frame);
 }
 const vizData = new Uint8Array(64);
@@ -2621,9 +2657,16 @@ function act(el, e) {
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); showGate('connect'); break;
+    case 'yt-video-toggle': {
+      const show = !store.get('ytShowVideo', false);
+      store.set('ytShowVideo', show); placeYtBox(); closeModal();
+      toast(show ? 'YouTube videos show in a window you can drag' : 'YouTube videos show in the player bar');
+      break;
+    }
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
     case 'disc-play': playFrom('discover', 'mix', +d.i); break;
+    case 'cat-play': playFrom('catq', d.q, +d.i); break;
     case 'disc-refresh': loadDiscover(true); break;
     case 'sp-import': closeModal(); spAccess().then(tok => tok ? openImportPicker() : spLogin()); break;
     case 'sp-sync': syncImport(d.id); break;
@@ -3138,6 +3181,24 @@ async function loadDiscover(force) {
   DISCALBUM.trackIds = disc.ids;
   if (state.view.name === 'home' || (state.view.name === 'collection' && state.view.type === 'discover')) render(); else renderSidebar();
 }
+/* ---------- song catalog (Deezer): free search; YouTube is only used when a song is first played ---------- */
+const cat = { results: new Map(), loading: new Set() };
+const catIds = items => items.map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
+async function runCatalogSearch(q) {
+  q = String(q || '').trim(); if (!q || !server.on) return;
+  const key = q.toLowerCase();
+  if (cat.results.has(key) || cat.loading.has(key)) return;
+  cat.loading.add(key); refreshSearch();
+  try { cat.results.set(key, catIds((await api('GET', 'api/catalog/search?q=' + encodeURIComponent(key))).items || [])); }
+  catch (e) { cat.results.set(key, []); toast(e.message); }
+  cat.loading.delete(key); refreshSearch();
+}
+function catCard(id, key, i) {
+  const t = TRACKS[id];
+  return `<div class="card" data-act="cat-play" data-q="${esc(key)}" data-i="${i}" data-tid="${id}" role="button" tabindex="0" aria-label="Play ${esc(t.title)} by ${esc(t.artist)}">
+    <div class="card-art"><img class="cover" src="${esc(t.cover)}" alt="" loading="lazy"></div>
+    <div><div class="nm ell">${esc(t.title)}</div><div class="sb ell">${esc(t.artist)}</div></div></div>`;
+}
 function discCard(id, i) {
   const t = TRACKS[id];
   return `<div class="card" data-act="disc-play" data-i="${i}" data-tid="${id}" role="button" tabindex="0" aria-label="Play ${esc(t.title)} by ${esc(t.artist)}">
@@ -3278,6 +3339,7 @@ function openAccount() {
       ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
+      ${yt.enabled ? `<button type="button" class="text-btn" data-act="yt-video-toggle">${icon('expand')}<span>${store.get('ytShowVideo', false) ? 'Put YouTube videos back in the player bar' : 'Show YouTube videos in a bigger window'}</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Use a different server</span></button>` : ''}
     </div>`, onSubmit: () => {} });
 }

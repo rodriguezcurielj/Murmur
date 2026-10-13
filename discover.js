@@ -28,6 +28,30 @@ module.exports = function createDiscover() {
   });
 
   function routes(app) {
+    // Song search for the search bar (free; YouTube is only used when a song is first played).
+    app.get('/api/catalog/search', async (req, res) => {
+      const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+      if (!q) return res.json({ items: [] });
+      try {
+        const r = await dz('search?limit=30&q=' + encodeURIComponent(q.toLowerCase()));
+        res.json({ items: (r.data || []).filter(t => t.type === 'track' || !t.type).map(t => toTrack(t, '')) });
+      } catch (e) { res.status(502).json({ error: 'Couldn’t reach the song catalog. Try again in a moment.' }); }
+    });
+
+    // Popular songs for a genre name (for the "Because you like …" shelves on Home).
+    app.get('/api/catalog/genre', async (req, res) => {
+      const name = String(req.query.name || '').trim().toLowerCase().slice(0, 60);
+      if (!name) return res.json({ items: [] });
+      const simple = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+      try {
+        const genres = (await dz('genre')).data || [];
+        const want = simple(name);
+        const g = genres.find(x => x.id !== 0 && (simple(x.name) === want || simple(x.name).includes(want) || want.includes(simple(x.name))));
+        const r = g ? await dz(`chart/${g.id}/tracks?limit=30`) : await dz('search?limit=30&q=' + encodeURIComponent(name));
+        res.json({ items: (r.data || []).map(t => toTrack(t, '')), genre: g ? g.name : name });
+      } catch (e) { res.status(502).json({ error: 'Couldn’t reach the song catalog.' }); }
+    });
+
     app.get('/api/discover', async (req, res) => {
       const seeds = String(req.query.artists || '').split('|').map(s => s.trim()).filter(Boolean).slice(0, 5);
       const known = new Set(seeds.map(s => s.toLowerCase()));

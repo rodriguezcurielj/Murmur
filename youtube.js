@@ -5,15 +5,30 @@
 const fs = require('fs');
 const fsp = fs.promises;
 
+const path = require('path');
+
 const API = 'https://www.googleapis.com/youtube/v3';
-const CACHE_MS = 12 * 3600e3;
-const MAX_CACHE = 300;
+const CACHE_MS = 14 * 24 * 3600e3;   // a search is remembered for two weeks, for everyone
+const MAX_CACHE = 3000;
 
 module.exports = function createYouTube(file, auth) {
   let settings = {};
   try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { settings = {}; }
   const save = async () => { await fsp.writeFile(file + '.tmp', JSON.stringify(settings, null, 2), { mode: 0o600 }); await fsp.rename(file + '.tmp', file); };
+
+  // The search memory is saved to disk so it survives restarts (each saved search is one less from the daily limit).
+  const cacheFile = path.join(path.dirname(file), 'youtube-cache.json');
   const cache = new Map();
+  try { for (const [q, v] of Object.entries(JSON.parse(fs.readFileSync(cacheFile, 'utf8')))) if (Date.now() - v.at < CACHE_MS) cache.set(q, v); } catch { /* first run */ }
+  let cacheTimer = null;
+  function saveCache() {
+    clearTimeout(cacheTimer);
+    cacheTimer = setTimeout(() => {
+      fsp.writeFile(cacheFile + '.tmp', JSON.stringify(Object.fromEntries(cache)))
+        .then(() => fsp.rename(cacheFile + '.tmp', cacheFile))
+        .catch(err => console.error('Could not save youtube-cache.json:', err));
+    }, 2000);
+  }
 
   // "PT4M13S" -> 253
   function seconds(iso = '') {
@@ -53,7 +68,7 @@ module.exports = function createYouTube(file, auth) {
         duration: seconds(x.contentDetails && x.contentDetails.duration)
       })).filter(x => x.duration > 30 && x.duration < 20 * 60);   // skip shorts and hour-long mixes
     }
-    cache.set(q, { at: Date.now(), items });
+    cache.set(q, { at: Date.now(), items }); saveCache();
     if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
     return items;
   }
@@ -91,13 +106,13 @@ module.exports = function createYouTube(file, auth) {
       if (!/^[\w-]{20,60}$/.test(key)) return res.status(400).json({ error: 'That doesn’t look like a YouTube API key. It should be one long code with no spaces.' });
       try { await call('search', { part: 'snippet', type: 'video', maxResults: '1', q: 'music' }, key); }
       catch (e) { return res.status(400).json({ error: e.message }); }
-      settings.youtubeKey = key; cache.clear(); await save();
+      settings.youtubeKey = key; await save();
       console.log('YouTube connected');
       res.json({ enabled: true });
     });
 
     app.delete('/api/settings/youtube', auth.requireOwner, async (req, res) => {
-      delete settings.youtubeKey; cache.clear(); await save();
+      delete settings.youtubeKey; await save();
       res.json({ enabled: false });
     });
   }
