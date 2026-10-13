@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013162830">
+<meta name="murmur-build" content="20261013164237">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -3834,7 +3834,11 @@ window.murmurFit = () => {
   if (!app || typeof app.displayInfo !== 'function') return;
   let info; try { info = JSON.parse(app.displayInfo()); } catch (e) { return; }
   const meta = document.querySelector('meta[name="viewport"]');
-  if (!meta || !info.widthPx || !info.density || !info.target) return;
+  if (!meta || !info.widthPx || !info.target) return;
+  // Use the density the page is really drawn at. After a flip the page keeps the density of the screen it
+  // was opened on, even though Android reports the new screen's; scaling by Android's number made it too big.
+  info.density = window.devicePixelRatio || info.density;
+  if (!info.density) return;
   // The zoom is always pinned (minimum = maximum), so moving between screens can't leave the
   // previous screen's zoom behind: the inside screen gets exactly 1, the cover screen its own scale.
   let content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
