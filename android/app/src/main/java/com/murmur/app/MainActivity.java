@@ -20,12 +20,14 @@ import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import java.io.ByteArrayInputStream;
 import java.io.OutputStream;
 
 /**
@@ -83,10 +85,21 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
+                if (!req.isForMainFrame()) return false;   // frames inside the page (YouTube's player) load normally
                 if (staysInApp(u)) return false;
                 // YouTube, Google Cloud, Spotify "open song" links etc. open in the phone's browser or app.
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (ActivityNotFoundException e) { /* nothing can open it */ }
                 return true;
+            }
+
+            // Built-in ad blocker: ad and ad-tracking requests (including inside YouTube's player) get an empty answer.
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
+                if (AdBlock.isAd(req.getUrl())) {
+                    AdBlock.blocked++;
+                    return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
+                }
+                return null;
             }
         });
 
@@ -200,6 +213,9 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.0"; }
+        public String version() { return "1.2"; }
+
+        @JavascriptInterface
+        public int adsBlocked() { return AdBlock.blocked; }
     }
 }

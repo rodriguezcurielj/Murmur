@@ -30,7 +30,7 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
             window.webkit.messageHandlers.saveFile.postMessage({ name: name, mime: mime, data: data });
             return true;
           },
-          version: function () { return 'ios-1.0'; }
+          version: function () { return 'ios-1.2'; }
         };
         """
         config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -54,7 +54,11 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
             web.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor)
         ])
 
-        web.load(URLRequest(url: Self.startURL))
+        // Turn on the built-in ad blocker before the first page loads.
+        AdBlock.install(into: config.userContentController) { [weak self] in
+            guard let self = self else { return }
+            self.web.load(URLRequest(url: Self.startURL))
+        }
     }
 
     /// Murmur, its server and the Spotify sign-in stay inside the app; everything else opens in Safari or its own app.
