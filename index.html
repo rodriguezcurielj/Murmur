@@ -376,14 +376,17 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .yt-frame{aspect-ratio:16/9;width:100%}
 .yt-frame iframe{width:100%;height:100%;display:block;border:0}
 .yt-bar{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--raise);cursor:grab;touch-action:none;user-select:none}
-.yt-box.dragging{opacity:.9;transition:none}
 /* In the bar: the video fills the cover-art spot. Clicks go through to the cover (open the full player). */
-.yt-box.in-bar{border:0;box-shadow:none;pointer-events:none;z-index:46}
-.yt-box.in-bar .yt-bar{display:none}
-.yt-box.in-bar .yt-frame{width:100%;height:100%;aspect-ratio:auto;overflow:hidden;position:relative}
-.yt-box.in-bar .yt-frame iframe{position:absolute;top:0;left:50%;width:177.78%;height:100%;transform:translateX(-50%)}
-.yt-box.dragging .yt-bar{cursor:grabbing}
-.yt-box.dragging iframe{pointer-events:none}
+/* Big view: the video fills the cover-art spot in the full-screen player. */
+.yt-box.docked{position:fixed;border:0;box-shadow:0 22px 56px rgba(0,0,0,.55);z-index:41}
+.yt-box.docked .yt-frame{width:100%;height:100%;aspect-ratio:auto;overflow:hidden;position:relative}
+.yt-box.docked .yt-frame iframe{position:absolute;top:0;left:50%;width:177.78%;height:100%;transform:translateX(-50%)}
+/* Everywhere else: the player keeps a normal size so it plays, but it isn't shown. */
+.yt-box.audio-only{left:0!important;right:auto!important;top:auto!important;bottom:0!important;width:320px;opacity:0;pointer-events:none;z-index:-1;clip-path:inset(50%);border:0;box-shadow:none}
+.yt-box .yt-bar{display:none}
+.video-switch{display:flex;align-self:center;background:var(--raise);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px}
+.video-switch button{padding:6px 14px;border-radius:999px;font-size:13px;font-weight:700;color:var(--muted)}
+.video-switch button.on{background:var(--fg);color:var(--bg)}
 /* Spotify imports */
 .row.ghost .ti img{filter:grayscale(1);opacity:.5}
 .row.ghost .t,.row.ghost .a>button,.row.ghost .alb,.row.ghost .dur{opacity:.55}
@@ -478,7 +481,6 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .bottom-nav svg{width:24px;height:24px}
   .toast{bottom:150px}
   .up-status{bottom:140px}
-  .yt-box{right:8px;bottom:138px;width:calc(100vw - 16px)}
   .sel-bar{bottom:136px;width:calc(100vw - 16px);max-width:none;justify-content:center;padding:8px 6px}
   .sb span{display:none}
   .sb.done span{display:inline}
@@ -506,7 +508,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 <div class="sel-bar" id="selBar" role="toolbar" aria-label="Selected items" hidden></div>
 <div class="modal-back" id="modal" hidden></div>
 <div class="gate" id="gate" hidden></div>
-<div class="yt-box" id="ytBox" hidden><div class="yt-frame"><div id="ytFrame"></div></div><div class="yt-bar" title="Drag to move"><span class="small yt-grip">⠿ Playing from YouTube · drag to move</span><a id="ytOpen" class="small" href="https://www.youtube.com" target="_blank" rel="noopener">Open on YouTube</a></div></div>
+<div class="yt-box" id="ytBox" hidden><div class="yt-frame"><div id="ytFrame"></div></div><div class="yt-bar"><a id="ytOpen" class="small" href="https://www.youtube.com" target="_blank" rel="noopener">Open on YouTube</a></div></div>
 
 <script>
 (() => {
@@ -1452,56 +1454,31 @@ const YTEng = {
   get duration() { try { const d = this.player && this.player.getDuration && this.player.getDuration(); return d > 0 ? d : (this.track ? this.track.duration : 0); } catch (e) { return this.track ? this.track.duration : 0; } },
   setVolume() { try { this.player && this.player.setVolume(Math.round(volGain() * 100)); } catch (e) {} }
 };
-/* The YouTube window can be dragged; it snaps to the nearest corner and remembers it. */
-/* By default the YouTube video sits inside the player bar where the cover art goes (and in the big
-   cover spot when the full-screen player is open). The account menu can switch to a movable window. */
-const ytInBar = () => !store.get('ytShowVideo', false);
-function dockYtBox() {
-  const box = $('#ytBox'); if (!box || box.hidden) return;
-  const target = !$('#full').hidden ? $('#fCover') : $('#pCover');
-  const r = target && target.getBoundingClientRect();
-  if (!r || !r.width) { box.style.visibility = 'hidden'; return; }
-  box.style.visibility = '';
-  box.style.left = r.left + 'px'; box.style.top = r.top + 'px';
-  box.style.width = r.width + 'px'; box.style.height = r.height + 'px';
-  box.style.right = box.style.bottom = 'auto';
-  box.style.borderRadius = getComputedStyle(target).borderRadius;
-}
+/* YouTube video placement: no pop-up. The video only appears in the full-screen player, over the
+   cover art, and only when "Video" is picked there. Everywhere else YouTube songs play without a picture. */
+const ytVideoOn = () => store.get('ytFullVideo', true);
 function placeYtBox() {
-  const box = $('#ytBox'); if (!box) return;
-  box.classList.toggle('in-bar', ytInBar());
-  if (ytInBar()) { dockYtBox(); return; }
-  box.style.width = box.style.height = box.style.borderRadius = box.style.visibility = '';
-  const c = store.get('ytCorner', 'br'), m = 16, bottom = matchMedia('(max-width:760px)').matches ? 138 : 100;
-  box.style.left = box.style.right = box.style.top = box.style.bottom = '';
-  if (c[0] === 't') box.style.top = (m + 56) + 'px'; else box.style.bottom = bottom + 'px';
-  if (c[1] === 'l') box.style.left = m + 'px'; else box.style.right = m + 'px';
+  const box = $('#ytBox'); if (!box || box.hidden) return;
+  const full = !$('#full').hidden, target = $('#fCover');
+  const r = full && ytVideoOn() && target ? target.getBoundingClientRect() : null;
+  if (r && r.width) {
+    box.classList.add('docked'); box.classList.remove('audio-only');
+    box.style.left = r.left + 'px'; box.style.top = r.top + 'px';
+    box.style.width = r.width + 'px'; box.style.height = r.height + 'px';
+    box.style.borderRadius = getComputedStyle(target).borderRadius;
+  } else {
+    box.classList.add('audio-only'); box.classList.remove('docked');
+    box.style.left = box.style.top = box.style.width = box.style.height = box.style.borderRadius = '';
+  }
 }
-(function dragYtBox() {
-  let start = null;
-  document.addEventListener('pointerdown', e => {
-    const handle = e.target.closest('#ytBox .yt-bar'); if (!handle || e.target.closest('a')) return;
-    const box = $('#ytBox'), r = box.getBoundingClientRect();
-    start = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    box.classList.add('dragging'); handle.setPointerCapture(e.pointerId); e.preventDefault();
-  });
-  document.addEventListener('pointermove', e => {
-    if (!start) return;
-    const box = $('#ytBox');
-    box.style.right = box.style.bottom = '';
-    box.style.left = clamp(e.clientX - start.dx, 0, innerWidth - box.offsetWidth) + 'px';
-    box.style.top = clamp(e.clientY - start.dy, 0, innerHeight - box.offsetHeight) + 'px';
-  });
-  document.addEventListener('pointerup', e => {
-    if (!start) return;
-    start = null;
-    const box = $('#ytBox'), r = box.getBoundingClientRect();
-    box.classList.remove('dragging');
-    store.set('ytCorner', (r.top + r.height / 2 < innerHeight / 2 ? 't' : 'b') + (r.left + r.width / 2 < innerWidth / 2 ? 'l' : 'r'));
-    placeYtBox();
-  });
-  window.addEventListener('resize', placeYtBox);
-})();
+/* The Video / Album art switch in the full-screen player, shown while a YouTube song is playing. */
+function syncVideoSwitch() {
+  const sw = $('#fVideoSwitch'); if (!sw) return;
+  const isYt = Engine.mode === 'yt' && !!YTEng.track;
+  sw.hidden = !isYt;
+  if (isYt) $$('#fVideoSwitch button').forEach(b => { const on = (b.dataset.v === 'video') === ytVideoOn(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+}
+window.addEventListener('resize', placeYtBox);
 const Engine = {
   mode: 'synth',
   get e() { return this.mode === 'file' ? FileEng : this.mode === 'yt' ? YTEng : Synth; },
@@ -2121,6 +2098,10 @@ function buildShell() {
       <button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button>
     </div>
     <img class="cover full-cover" id="fCover" alt="">
+    <div class="video-switch" id="fVideoSwitch" role="group" aria-label="Show for YouTube songs" hidden>
+      <button type="button" data-act="yt-view" data-v="video">Video</button>
+      <button type="button" data-act="yt-view" data-v="art">Album art</button>
+    </div>
     <canvas id="viz" aria-hidden="true"></canvas>
     <div class="full-meta"><div><div class="full-title" id="fTitle"></div><button class="full-artist ell" id="fArtist" data-act="open" data-type="artist"></button></div>
       <button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
@@ -2253,7 +2234,8 @@ function frame() {
   if (!seeking) $$('[data-pos]').forEach(s => s.textContent = fmt(state.current ? pos : 0));
   $('#miniBar').style.width = (pct * 100) + '%';
   if (!$('#full').hidden) drawViz();
-  if (YTEng.track && ytInBar()) dockYtBox();   // follow the cover art as the layout changes
+  if (YTEng.track) placeYtBox();   // follow the big cover as the layout changes
+  syncVideoSwitch();
   requestAnimationFrame(frame);
 }
 const vizData = new Uint8Array(64);
@@ -2657,12 +2639,7 @@ function act(el, e) {
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); showGate('connect'); break;
-    case 'yt-video-toggle': {
-      const show = !store.get('ytShowVideo', false);
-      store.set('ytShowVideo', show); placeYtBox(); closeModal();
-      toast(show ? 'YouTube videos show in a window you can drag' : 'YouTube videos show in the player bar');
-      break;
-    }
+    case 'yt-view': store.set('ytFullVideo', d.v === 'video'); placeYtBox(); syncVideoSwitch(); break;
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
     case 'disc-play': playFrom('discover', 'mix', +d.i); break;
@@ -3339,7 +3316,6 @@ function openAccount() {
       ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
-      ${yt.enabled ? `<button type="button" class="text-btn" data-act="yt-video-toggle">${icon('expand')}<span>${store.get('ytShowVideo', false) ? 'Put YouTube videos back in the player bar' : 'Show YouTube videos in a bigger window'}</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Use a different server</span></button>` : ''}
     </div>`, onSubmit: () => {} });
 }
