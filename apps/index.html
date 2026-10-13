@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#120e17">
+<title>Get Murmur</title>
+<link rel="icon" type="image/png" href="../icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Figtree:wght@400;600;700&display=swap">
+<style>
+:root{
+  /* Layout: one narrow column of install cards, phone-first */
+  --bg:#120e17; --panel:#1b1522; --raise:#251d2e; --line:#3b3048; --fg:#f5eff9; --muted:#a798b4; --accent:#ffb070; --accent-ink:#2b1505;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif; --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--body);padding:calc(28px + env(safe-area-inset-top,0px)) 16px calc(40px + env(safe-area-inset-bottom,0px))}
+main{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.brand{display:flex;align-items:center;gap:12px;font:800 26px var(--display)}
+.brand img{width:44px;height:44px;border-radius:10px}
+h1{font:800 clamp(30px,7vw,42px)/1.05 var(--display);letter-spacing:-.02em;margin:8px 0 0;text-wrap:balance}
+.lede{color:var(--muted);margin:0;max-width:52ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.card h2{font:800 22px var(--display);margin:0;display:flex;align-items:center;gap:10px}
+.tag{font:700 11px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;align-self:flex-start;background:var(--accent);color:var(--accent-ink);font-weight:700;text-decoration:none;padding:12px 20px;border-radius:999px}
+.btn:focus-visible,a:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
+.btn.alt{background:var(--raise);color:var(--fg);border:1px solid var(--line)}
+ol{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px}
+li::marker{color:var(--accent);font-weight:700}
+.note{font-size:14px;color:var(--muted);margin:0}
+a{color:var(--accent)}
+code{background:var(--raise);padding:1px 6px;border-radius:4px;font-size:14px}
+.row{display:flex;flex-wrap:wrap;gap:10px}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><img src="../icons/icon-192.png" alt="">Murmur</div>
+  <h1>Get Murmur on your phone</h1>
+  <p class="lede">Same sign-in and music everywhere. You’ll need the name and 4-digit PIN the owner gave you.</p>
+
+  <section class="card" aria-labelledby="and">
+    <h2 id="and">Android <span class="tag">APK</span></h2>
+    <a class="btn" href="Murmur.apk" download>Download Murmur.apk</a>
+    <ol>
+      <li>Open the downloaded file. Android asks to <b>allow installing apps from this source</b>; allow it.</li>
+      <li>If Play Protect warns about an unknown developer, tap <b>More details → Install anyway</b>.</li>
+      <li>Open Murmur and sign in.</li>
+    </ol>
+    <p class="note">Motorola Razr: to use Murmur on the outside screen, turn it on in Settings → External display → Apps.</p>
+  </section>
+
+  <section class="card" aria-labelledby="ios">
+    <h2 id="ios">iPhone <span class="tag">Sideload</span></h2>
+    <p class="note" style="color:var(--fg)">Quickest way: open <a href="../">Murmur in Safari</a>, tap <b>Share → Add to Home Screen</b>. It works like an app, with no computer needed.</p>
+    <p class="note">For the real app file, you need a Windows PC or Mac and a USB cable:</p>
+    <div class="row"><a class="btn" href="Murmur.ipa" download>Download Murmur.ipa</a><a class="btn alt" href="https://sideloadly.io/" target="_blank" rel="noopener">Get Sideloadly</a></div>
+    <ol>
+      <li>On the computer, install <b>iTunes</b> (from apple.com, not the Microsoft Store) and <b>Sideloadly</b>.</li>
+      <li>Plug in the iPhone and tap <b>Trust</b> on the phone.</li>
+      <li>Open Sideloadly, drag in <code>Murmur.ipa</code>, type your Apple ID email, click <b>Start</b>, and enter your Apple ID password when asked.</li>
+      <li>On the iPhone: <b>Settings → General → VPN &amp; Device Management</b>, tap your Apple ID, then <b>Trust</b>.</li>
+      <li>iOS 16 or newer: <b>Settings → Privacy &amp; Security → Developer Mode</b>, turn it on, and restart when asked.</li>
+    </ol>
+    <p class="note">With a free Apple ID the app stops opening after 7 days. Plug in and click Start in Sideloadly again to renew it; your sign-in and songs stay.</p>
+  </section>
+
+  <p class="note">Already have it? Updates to Murmur show up in the apps automatically; you only reinstall when this page says there’s a new app version.</p>
+</main>
+</body>
+</html>

@@ -51,9 +51,14 @@ The free quota allows about 90 searches a day, so results are cached for 12 hour
 
 Home shows **New songs for you**, and Your Library has a **Discover** list. Murmur takes the artists you like and play most, finds similar artists in Deezer's public music catalog (free, no key), and suggests their top songs that aren't already in your library. Suggestions play from YouTube, and *Bring into Murmur* works on them too. The list refreshes daily, or tap **Get new suggestions**.
 
-## Android app
+## Phone apps
 
-`android/` has a small native app for Android phones. See `android/README.md` to build it. To install: copy `Murmur.apk` to the phone, open it, and allow installing from that source when asked.
+The download page is at **https://rodriguezcurielj.github.io/Murmur/apps/**, and the files live in `apps/`:
+
+- **Android:** `apps/Murmur.apk`. Rebuild it with `powershell -ExecutionPolicy Bypass -File android\build-apk.ps1`, which updates `apps/Murmur.apk`. See `android/README.md`.
+- **iPhone:** `apps/Murmur.ipa`, for sideloading with Sideloadly. iPhone apps can only be built on a Mac, so GitHub Actions builds it on GitHub's Macs (`.github/workflows/ios.yml`) whenever `ios/` changes, and commits the new `apps/Murmur.ipa`. To build it by hand, go to the Actions tab, open **Build iPhone app**, and click **Run workflow**. With a free Apple ID, sideloaded apps must be re-installed every 7 days.
+
+Both apps open the GitHub Pages copy, so most Murmur updates reach them without reinstalling.
 
 ## Where your music is stored
 
@@ -93,7 +98,9 @@ youtube.js            YouTube search and suggestions (official API)
 config.js             Server address used by the GitHub Pages copy
 spotify.js            Spotify playlist import and the shared song-to-source matches
 discover.js           New-song suggestions from similar artists (Deezer catalog)
-android/              Native Android app
+android/              Native Android app (build-apk.ps1 rebuilds apps/Murmur.apk)
+ios/                  Native iPhone app (built by GitHub Actions into apps/Murmur.ipa)
+apps/                 Download page plus the built Murmur.apk and Murmur.ipa
 Docker/               Dockerfile and docker-compose.yml
 music-data/           Your music and accounts (not in git)
 ```

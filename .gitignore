@@ -11,3 +11,8 @@ android/app/build/
 android/local.properties
 android/keystore.properties
 android/*.jks
+
+# iPhone build output (the Xcode project is generated from ios/project.yml)
+ios/build/
+ios/Murmur.xcodeproj/
+Payload/

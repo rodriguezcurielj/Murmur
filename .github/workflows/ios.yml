@@ -1,0 +1,64 @@
+# Builds the iPhone app on GitHub's Mac computers (iPhone apps can only be built on a Mac)
+# and saves it to apps/Murmur.ipa in the repo, ready to sideload with Sideloadly.
+# Runs when anything in ios/ changes, or by hand from the Actions tab ("Run workflow").
+name: Build iPhone app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create the Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build the app (unsigned; Sideloadly signs it with your Apple ID)
+        working-directory: ios
+        run: |
+          xcodebuild -project Murmur.xcodeproj -target Murmur -configuration Release -sdk iphoneos \
+            SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -n 30
+          test -d build/Release-iphoneos/Murmur.app
+
+      - name: Package Murmur.ipa
+        run: |
+          mkdir -p Payload apps
+          cp -R ios/build/Release-iphoneos/Murmur.app Payload/
+          rm -f apps/Murmur.ipa
+          zip -qry apps/Murmur.ipa Payload
+          ls -l apps/Murmur.ipa
+
+      - name: Keep a copy on this run (Actions tab → this run → Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Murmur-ipa
+          path: apps/Murmur.ipa
+
+      - name: Save Murmur.ipa into the repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/Murmur.ipa
+          if git diff --cached --quiet; then echo "No changes to the app"; exit 0; fi
+          git commit -m "Build iPhone app (Murmur.ipa)"
+          git pull --rebase origin main
+          git push origin HEAD:main

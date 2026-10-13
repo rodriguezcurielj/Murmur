@@ -1061,7 +1061,8 @@ async function saveToDevice(id) {
       const blob = rec && rec.blob ? rec.blob : await (await fetch(t.src)).blob();
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
       const ok = window.MurmurAndroid.saveFile(`${name}.${t.format || 'mp3'}`, blob.type || 'audio/mpeg', b64);
-      toast(ok ? `Saved “${t.title}” to Downloads` : `Couldn't save ${t.title}.`);
+      const ios = String((window.MurmurAndroid.version && window.MurmurAndroid.version()) || '').startsWith('ios');
+      toast(!ok ? `Couldn't save ${t.title}.` : ios ? 'Choose “Save to Files” to keep it' : `Saved “${t.title}” to Downloads`);
     } catch (e) { toast(`Couldn't save ${t.title}. Check your connection to the Murmur server.`); }
     return;
   }
