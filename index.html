@@ -375,7 +375,30 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .yt-box{position:fixed;right:16px;bottom:100px;z-index:45;width:min(356px,calc(100vw - 32px));background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--line);box-shadow:0 16px 40px rgba(0,0,0,.55)}
 .yt-frame{aspect-ratio:16/9;width:100%}
 .yt-frame iframe{width:100%;height:100%;display:block;border:0}
-.yt-bar{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--raise)}
+.yt-bar{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--raise);cursor:grab;touch-action:none;user-select:none}
+.yt-box.dragging{opacity:.9;transition:none}
+.yt-box.dragging .yt-bar{cursor:grabbing}
+.yt-box.dragging iframe{pointer-events:none}
+/* Spotify imports */
+.row.ghost .ti img{filter:grayscale(1);opacity:.5}
+.row.ghost .t,.row.ghost .a>button,.row.ghost .alb,.row.ghost .dur{opacity:.55}
+.row.ghost:hover .t{opacity:.85}
+.sp-chip{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:1px 7px;border-radius:999px;margin-right:6px;vertical-align:1px;border:1px solid var(--line);color:var(--muted)}
+.sp-chip.in{border-color:transparent;background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.sp-chip.yt{border-color:transparent;background:color-mix(in srgb,#e0473f 22%,transparent);color:#ff8f88}
+.sp-chip.none{border-color:color-mix(in srgb,#ff8e8e 40%,transparent);color:#ff9a9a}
+.sp-av{background:#2fa36b;color:#fff}
+.sp-av svg{width:16px;height:16px}
+.ver-list{display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow:auto;margin:0 -4px}
+.ver{display:flex;align-items:center;gap:10px;padding:6px;border-radius:8px;cursor:pointer;color:var(--fg)}
+.ver:hover{background:var(--hover)}
+.ver input{accent-color:var(--accent);width:16px;height:16px;flex:none}
+.ver img,.ver-ph{width:48px;height:48px;border-radius:4px;object-fit:cover;flex:none}
+.ver-ph{display:grid;place-items:center;background:linear-gradient(140deg,#5b35c9,#ffb070);color:#fff}
+.ver-ph svg{width:20px;height:20px}
+.ver>span:last-child{display:flex;flex-direction:column;min-width:0}
+.ver b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.steps code{font-size:12px;background:var(--bg);padding:1px 6px;border-radius:4px;user-select:all;word-break:break-all}
 .yt-bar a,.steps a{color:var(--accent)}
 .yt-badge{position:absolute;left:8px;top:8px;background:#e0473f;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:.02em}
 .yt-setup{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:28px;padding:16px;background:var(--raise);border-radius:12px}
@@ -477,7 +500,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 <div class="sel-bar" id="selBar" role="toolbar" aria-label="Selected items" hidden></div>
 <div class="modal-back" id="modal" hidden></div>
 <div class="gate" id="gate" hidden></div>
-<div class="yt-box" id="ytBox" hidden><div class="yt-frame"><div id="ytFrame"></div></div><div class="yt-bar"><span class="small">Playing from YouTube</span><a id="ytOpen" class="small" href="https://www.youtube.com" target="_blank" rel="noopener">Open on YouTube</a></div></div>
+<div class="yt-box" id="ytBox" hidden><div class="yt-frame"><div id="ytFrame"></div></div><div class="yt-bar" title="Drag to move"><span class="small yt-grip">⠿ Playing from YouTube · drag to move</span><a id="ytOpen" class="small" href="https://www.youtube.com" target="_blank" rel="noopener">Open on YouTube</a></div></div>
 
 <script>
 (() => {
@@ -1383,10 +1406,11 @@ const YTEng = {
     return this.ready;
   },
   load(t) {
-    this.track = t; this.cued = false;
-    $('#ytBox').hidden = false;
+    this.track = t; this.cued = false; this.wantPlay = false;
+    $('#ytBox').hidden = false; placeYtBox();
     $('#ytOpen').href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(t.ytId);
-    this.api().then(p => { if (this.track !== t) return; p.cueVideoById(t.ytId); this.cued = true; }).catch(e => toast(e.message));
+    // Only cue (load without playing) if nothing asked to play; play() loads and starts in one step.
+    this.api().then(p => { if (this.track !== t || this.wantPlay) return; p.cueVideoById(t.ytId); this.cued = true; }).catch(e => toast(e.message));
   },
   unload() {
     this.track = null;
@@ -1396,10 +1420,11 @@ const YTEng = {
   get playing() { try { const s = this.player && this.player.getPlayerState(); return !!this.track && (s === 1 || s === 3); } catch (e) { return false; } },
   play() {
     const t = this.track; if (!t) return;
+    this.wantPlay = true;
     this.api().then(p => {
       if (this.track !== t) return;
       try { p.setVolume(Math.round(volGain() * 100)); } catch (e) {}
-      if (this.cued) p.playVideo(); else { p.loadVideoById(t.ytId); this.cued = true; }
+      if (this.cued) p.playVideo(); else { p.loadVideoById(t.ytId); this.cued = true; }   // loadVideoById starts playing right away
     }).catch(e => toast(e.message));
   },
   pause() { try { this.player && this.player.pauseVideo(); } catch (e) {} },
@@ -1409,6 +1434,39 @@ const YTEng = {
   get duration() { try { const d = this.player && this.player.getDuration && this.player.getDuration(); return d > 0 ? d : (this.track ? this.track.duration : 0); } catch (e) { return this.track ? this.track.duration : 0; } },
   setVolume() { try { this.player && this.player.setVolume(Math.round(volGain() * 100)); } catch (e) {} }
 };
+/* The YouTube window can be dragged; it snaps to the nearest corner and remembers it. */
+function placeYtBox() {
+  const box = $('#ytBox'); if (!box) return;
+  const c = store.get('ytCorner', 'br'), m = 16, bottom = matchMedia('(max-width:760px)').matches ? 138 : 100;
+  box.style.left = box.style.right = box.style.top = box.style.bottom = '';
+  if (c[0] === 't') box.style.top = (m + 56) + 'px'; else box.style.bottom = bottom + 'px';
+  if (c[1] === 'l') box.style.left = m + 'px'; else box.style.right = m + 'px';
+}
+(function dragYtBox() {
+  let start = null;
+  document.addEventListener('pointerdown', e => {
+    const handle = e.target.closest('#ytBox .yt-bar'); if (!handle || e.target.closest('a')) return;
+    const box = $('#ytBox'), r = box.getBoundingClientRect();
+    start = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    box.classList.add('dragging'); handle.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  document.addEventListener('pointermove', e => {
+    if (!start) return;
+    const box = $('#ytBox');
+    box.style.right = box.style.bottom = '';
+    box.style.left = clamp(e.clientX - start.dx, 0, innerWidth - box.offsetWidth) + 'px';
+    box.style.top = clamp(e.clientY - start.dy, 0, innerHeight - box.offsetHeight) + 'px';
+  });
+  document.addEventListener('pointerup', e => {
+    if (!start) return;
+    start = null;
+    const box = $('#ytBox'), r = box.getBoundingClientRect();
+    box.classList.remove('dragging');
+    store.set('ytCorner', (r.top + r.height / 2 < innerHeight / 2 ? 't' : 'b') + (r.left + r.width / 2 < innerWidth / 2 ? 'l' : 'r'));
+    placeYtBox();
+  });
+  window.addEventListener('resize', placeYtBox);
+})();
 const Engine = {
   mode: 'synth',
   get e() { return this.mode === 'file' ? FileEng : this.mode === 'yt' ? YTEng : Synth; },
@@ -1481,6 +1539,14 @@ function getCollection(type, id) {
     const sub = albums.length ? plural(albums.filter(a => a.trackIds.some(visible)).length, 'album') : 'From your uploads';
     return { type, id, kind: 'Artist', title: id, desc: '', sub, tracks, cover: tCover(tracks[0]), color: ALBUM_MAP[TRACKS[tracks[0]].albumId].colors[0], round: true };
   }
+  if (type === 'import') {
+    const imp = sp.imports.find(i => i.id === id); if (!imp) return null;
+    const tracks = (imp.trackIds || []).filter(visible);
+    const inM = tracks.filter(t => spStatus(t) === 'file').length;
+    return { type, id, kind: 'Imported from Spotify', title: imp.name,
+      desc: 'Greyed-out songs aren’t in Murmur yet. They play from YouTube, or use ⋯ → Bring into Murmur to upload your own copy.',
+      sub: `<b>${esc(imp.owner || 'Spotify')}</b> · ${inM} of ${tracks.length} in Murmur`, tracks, cover: imp.cover || SPALBUM.cover, color: '#2fa36b', imported: true };
+  }
   if (type === 'ytq') {
     return { type, id, kind: 'YouTube', title: id, sub: '<b>YouTube</b>', tracks: (yt.results.get(id) || []).filter(visible), color: '#e0473f' };
   }
@@ -1519,8 +1585,23 @@ function playFrom(type, id, start) {
   pushRecent(type, id);
   loadAndPlay(curId(), true);
 }
+let spFails = 0;
 function loadAndPlay(tid, autoplay = true) {
   state.current = tid;
+  const st = TRACKS[tid];
+  if (st && st.sp) {
+    // Imported Spotify song: play your uploaded copy, or its YouTube match.
+    Engine.pause(); updatePlayerUI();
+    resolveSp(st).then(p => {
+      if (state.current !== tid) return;
+      if (!p) { if (autoplay && ++spFails < 5) setTimeout(() => next(true), 400); return; }
+      spFails = 0;
+      Engine.load(p);
+      if (autoplay) { Engine.play(); notePlay(tid); }
+      updatePlayIcons(); highlight(); renderNP();
+    });
+    return;
+  }
   Engine.load(TRACKS[tid]);
   if (autoplay) { Engine.play(); notePlay(tid); }
   updatePlayerUI();
@@ -1636,9 +1717,9 @@ function trackRow(tid, i, o = {}) {
     const attrs = o.compact ? `data-act="${act}" role="button" tabindex="0" aria-label="Play ${esc(t.title)} next"` : '';
     return `<div class="row plain" data-tid="${tid}" ${attrs}><div class="ti"><img src="${tCover(tid)}" alt=""><div class="tx"><span class="t ell">${esc(t.title)}</span><span class="a ell">${esc(t.artist)} · ${esc(t.album)}</span></div></div>${right}</div>`;
   }
-  return `<div class="row" data-act="${act}" data-i="${i}" data-tid="${tid}" ${extra} role="button" tabindex="0" aria-label="${esc(t.title)} by ${esc(t.artist)}">
+  return `<div class="row${t.sp ? ' sp-row' + (spStatus(tid) === 'file' ? '' : ' ghost') : ''}" data-act="${act}" data-i="${i}" data-tid="${tid}" ${extra} role="button" tabindex="0" aria-label="${esc(t.title)} by ${esc(t.artist)}">
     <span class="num">${CK}<span class="n">${i + 1}</span>${EQ}</span>
-    <div class="ti"><img src="${tCover(tid)}" alt=""><div class="tx"><span class="t ell">${esc(t.title)}</span><span class="a ell"><span class="dl-dot" title="Downloaded">${icon('dlFill')}</span><button data-act="open" data-type="artist" data-id="${esc(t.artist)}">${esc(t.artist)}</button></span></div></div>
+    <div class="ti"><img src="${tCover(tid)}" alt=""><div class="tx"><span class="t ell">${esc(t.title)}</span><span class="a ell">${t.sp ? spChip(tid) : ''}<span class="dl-dot" title="Downloaded">${icon('dlFill')}</span><button data-act="open" data-type="artist" data-id="${esc(t.artist)}">${esc(t.artist)}</button></span></div></div>
     <button class="alb ell" data-act="open" data-type="album" data-id="${t.albumId}">${esc(t.album)}</button>
     ${right}
     <span class="dur">${fmt(t.duration)}</span>
@@ -1828,7 +1909,7 @@ function viewCollection(type, id) {
     const pool = Object.keys(TRACKS).filter(t => visible(t) && !col.tracks.includes(t)).sort((a, b) => TRACKS[a].seed - TRACKS[b].seed).slice(0, 6);
     if (pool.length) rec = `<div class="shelf-head"><h2>Recommended</h2><p>Based on what's in this playlist</p></div><div class="tracks">${pool.map((t, i) => trackRow(t, i, { add: true })).join('')}</div>`;
   }
-  const delLabel = col.editable ? 'Delete playlist' : col.uploaded ? (canEditMusic() ? 'Delete album' : '') : (col.demo || col.curated) ? 'Remove from library' : '';
+  const delLabel = col.imported ? 'Delete import' : col.editable ? 'Delete playlist' : col.uploaded ? (canEditMusic() ? 'Delete album' : '') : (col.demo || col.curated) ? 'Remove from library' : '';
   const del = delLabel ? `<button class="text-btn" data-act="col-delete" data-type="${type}" data-id="${esc(id)}">${icon('trash')}<span>${delLabel}</span></button>` : '';
   const hasUploads = col.tracks.some(canDownload);
   const dlBtn = hasUploads && (server.on || col.tracks.some(t => offline.has(t)))
@@ -1845,13 +1926,14 @@ function viewCollection(type, id) {
   <div class="actions">
     ${n ? playFab(type, id, 'big-play') : ''}
     <button class="icon-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}">${icon('shuffle')}</button>
-    ${dlBtn}${n ? selBtn(type, id) : ''}${editAlbum}${del}${clearDl}
+    ${dlBtn}${n ? selBtn(type, id) : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${editAlbum}${del}${clearDl}
   </div>
   ${body}${rec}`;
 }
 function libEntries() {
   const out = [{ type: 'liked', id: 'liked', name: 'Liked Songs', sub: `Playlist · ${plural(getCollection('liked').tracks.length, 'song')}`, k: 'playlist' }];
   if (server.on || server.offlineMode) out.push({ type: 'album', id: 'uploads', name: 'Uploads', sub: `Your files · ${plural(UPLOADS.trackIds.length, 'song')}`, k: 'playlist' });
+  sp.imports.forEach(imp => out.push({ type: 'import', id: imp.id, name: imp.name, sub: `Spotify playlist · ${plural((imp.trackIds || []).length, 'song')}`, k: 'playlist', sel: true }));
   const ytCount = YTALBUM.trackIds.filter(visible).length;
   if (ytCount) out.push({ type: 'album', id: 'youtube', name: 'From YouTube', sub: `YouTube · ${plural(ytCount, 'song')}`, k: 'playlist' });
   if (server.on || offline.size) out.push({ type: 'downloads', id: 'downloads', name: 'Downloaded', sub: `On this device · ${plural(getCollection('downloads').tracks.length, 'song')}`, k: 'playlist' });
@@ -1882,6 +1964,7 @@ function viewLibrary() {
   return `<div class="shelf-head" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
       ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
+      ${server.on && sp.clientId ? `<button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import from Spotify</span></button>` : ''}
       <button class="icon-btn" data-act="new-pl" aria-label="Create playlist">${icon('plus')}</button></div></div>
   <div class="chips" style="padding-left:0">${chipsHTML()}</div>
   ${selecting ? '<p class="small" style="margin:0 0 10px">Pick playlists and albums to delete or to add to a playlist. Liked Songs, Uploads and artists can’t be selected.</p>' : ''}
@@ -1939,6 +2022,7 @@ function buildShell() {
         <button class="text-btn up-btn" data-act="upload" id="upBtn" hidden>${icon('upload')}<span>Upload</span></button>
         <button class="avatar acct-btn" data-act="acct" id="acctBtn" aria-label="Your account" title="Your account" hidden></button>
       </div>
+      <input type="file" id="fileBring" class="vh" accept="audio/*,video/*,.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.wma,.aiff,.aif,.mp4,.m4v,.mov,.mkv,.webm,.avi" tabindex="-1" aria-hidden="true">
       <input type="file" id="fileGlobal" class="vh" multiple accept="audio/*,video/*,.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.wma,.aiff,.aif,.mp4,.m4v,.mov,.mkv,.webm,.avi" tabindex="-1" aria-hidden="true">
     </div>
     <div class="view" id="view"></div>
@@ -2065,7 +2149,7 @@ function updatePlayerUI() {
     $('#fCover').src = tCover(t.id); $('#fCover').alt = t.album;
     $('#fTitle').textContent = t.title;
     $('#fCtx').textContent = state.ctx ? state.ctx.title : t.album;
-    $('#fFacts').innerHTML = t.yt ? `Playing from YouTube · ${esc(t.artist)}` : t.src
+    $('#fFacts').innerHTML = t.sp ? `From your Spotify import · ${{ file: 'your file in Murmur', yt: 'playing from YouTube', none: 'no match found', new: 'finding a match…' }[spStatus(t.id)]}` : t.yt ? `Playing from YouTube · ${esc(t.artist)}` : t.src
       ?`${esc(t.format.toUpperCase())} · ${fmtSize(t.size)} · stored on your Murmur server`
       : `${NOTE[t.root % 12]} ${t.scale} · ${t.bpm} BPM · <span class="prog">${chordName(t)}</span>`;
     document.documentElement.style.setProperty('--tint', a.colors[1]);
@@ -2082,7 +2166,11 @@ function renderNP() {
   <img class="cover np-cover" src="${tCover(t.id)}" alt="${esc(t.album)}">
   <div class="np-meta"><div style="min-width:0"><h3>${esc(t.title)}</h3><button class="np-artist ell" data-act="open" data-type="artist" data-id="${esc(t.artist)}">${esc(t.artist)}</button></div>
     <button class="icon-btn like${state.liked.has(t.id) ? ' on' : ''}" data-act="like" data-tid="${t.id}" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
-  ${t.yt ? `<div class="np-card"><span class="eyebrow">From YouTube</span>
+  ${t.sp ? `<div class="np-card"><span class="eyebrow">From your Spotify import</span>
+    <dl class="facts"><dt>Album</dt><dd>${esc(t.album)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Playing from</dt><dd>${{ file: 'Your file in Murmur', yt: 'YouTube', none: 'Nothing found yet', new: 'Looking it up…' }[spStatus(t.id)]}</dd></dl>
+    <div class="acct-actions">${canEditMusic() && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-bring" data-tid="${t.id}">${icon('upload')}<span>Bring into Murmur</span></button>` : ''}
+      ${yt.enabled ? `<button class="text-btn" data-act="m-spver" data-tid="${t.id}">${icon('search')}<span>Choose a YouTube version</span></button>` : ''}</div></div>`
+  : t.yt ? `<div class="np-card"><span class="eyebrow">From YouTube</span>
     <dl class="facts"><dt>Channel</dt><dd>${esc(t.artist)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd>${t.genreTag ? `<dt>Suggested for</dt><dd>${esc(t.genreTag)}</dd>` : ''}</dl>
     <p class="small">Plays in YouTube’s player, so it needs a connection and can’t be downloaded.</p>
     <a class="text-btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(t.ytId)}" target="_blank" rel="noopener">${icon('expand')}<span>Open on YouTube</span></a></div>`
@@ -2146,6 +2234,9 @@ function renderMenu() {
       + b('sub', icon('plus') + 'Add to playlist')
       + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
       + (t.yt ? b('ytopen', icon('expand') + 'Open on YouTube') : '')
+      + (t.sp ? '<hr>' + (canEditMusic() ? b('bring', icon('upload') + (spStatus(t.id) === 'file' ? 'Replace the file in Murmur' : 'Bring into Murmur (upload your copy)')) : '')
+        + (yt.enabled ? b('spver', icon('search') + 'Choose a YouTube version') : '')
+        + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
       + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '')
         + (server.on ? b('save', icon('save') + 'Save file to device') : '') : '')
       + (t.src && canEditMusic() ? b('edit', icon('edit') + 'Edit details') : '')
@@ -2319,7 +2410,8 @@ function describeCollections(keys) {
   let userPl = 0, curPl = 0, demoAlb = 0, upAlb = 0, files = 0;
   keys.forEach(k => {
     const i = k.indexOf(':'), type = k.slice(0, i), id = k.slice(i + 1);
-    if (type === 'playlist') { if (state.playlists.some(p => p.id === id)) userPl++; else curPl++; }
+    if (type === 'import') userPl++;
+    else if (type === 'playlist') { if (state.playlists.some(p => p.id === id)) userPl++; else curPl++; }
     else if (type === 'album') { const a = ALBUM_MAP[id]; if (!a) return; if (a.uploaded) { upAlb++; files += a.trackIds.length; } else demoAlb++; }
   });
   return { userPl, curPl, demoAlb, upAlb, files };
@@ -2339,7 +2431,11 @@ async function deleteCollections(keys) {
   let msg = [];
   keys.forEach(k => {
     const i = k.indexOf(':'), type = k.slice(0, i), id = k.slice(i + 1);
-    if (type === 'playlist') {
+    if (type === 'import') {
+      sp.imports = sp.imports.filter(x => x.id !== id);
+      api('DELETE', 'api/imports/' + encodeURIComponent(id)).catch(e => toast(e.message));
+      hydrateImports();
+    } else if (type === 'playlist') {
       if (state.playlists.some(p => p.id === id)) {
         state.playlists = state.playlists.filter(p => p.id !== id);
         state.recent = state.recent.filter(r => r !== k);
@@ -2440,7 +2536,10 @@ function act(el, e) {
       if (op === 'back') { m.sub = false; renderMenu(); return; }
       if (op === 'delete' && !m.confirm) { m.confirm = true; renderMenu(); return; }
       closeMenu();
-      if (op === 'ytopen') { const a = document.createElement('a'); a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(TRACKS[tids[0]].ytId); a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+      if (op === 'bring') bringIntoMurmur(tids[0]);
+      else if (op === 'spver') chooseVersion(tids[0]);
+      else if (op === 'spopen') { const a = document.createElement('a'); a.href = TRACKS[tids[0]].url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+      else if (op === 'ytopen') { const a = document.createElement('a'); a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(TRACKS[tids[0]].ytId); a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
       else if (op === 'dl') downloadTracks(tids);
       else if (op === 'undl') confirmRemoveDownloads(tids);
       else if (op === 'save') saveToDevice(tids[0]);
@@ -2501,6 +2600,13 @@ function act(el, e) {
     case 'acct-server': closeModal(); showGate('connect'); break;
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
+    case 'sp-import': closeModal(); spAccess().then(tok => tok ? openImportPicker() : spLogin()); break;
+    case 'sp-sync': syncImport(d.id); break;
+    case 'm-bring': bringIntoMurmur(d.tid); break;
+    case 'm-spver': chooseVersion(d.tid); break;
+    case 'sp-key-remove':
+      api('DELETE', 'api/settings/spotify').then(() => { sp.clientId = ''; toast('Spotify setup removed. Imported playlists stay.'); render(); }).catch(err => toast(err.message));
+      break;
     case 'yt-search': runYtSearch(d.q); break;
     case 'tq-clear': { const q = $('#tq'); q.value = ''; onSearchInput(''); q.focus(); if (state.view.name === 'search') { state.search = ''; refreshSearch(); } break; }
     case 'drop-pick': pickDrop(+d.k); break;
@@ -2595,6 +2701,12 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', async e => {
   if (e.target.id === 'gForm') { e.preventDefault(); gateSubmit(e.target); return; }
   if (e.target.id === 'addPerson') { e.preventDefault(); addPerson(e.target); return; }
+  if (e.target.id === 'spKeyForm') {
+    e.preventDefault();
+    try { sp.clientId = (await api('PUT', 'api/settings/spotify', { clientId: new FormData(e.target).get('clientId') })).spotifyClientId; toast('Spotify import is set up'); render(); }
+    catch (err) { toast(err.message); }
+    return;
+  }
   if (e.target.id === 'ytKeyForm') {
     e.preventDefault();
     const btn = e.target.querySelector('.m-ok'); btn.disabled = true; btn.textContent = 'Checking key…';
@@ -2627,6 +2739,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'fileGlobal') { uploadFiles(t.files); t.value = ''; return; }
+  if (t.id === 'fileBring') { bringUpload(t.files[0]); t.value = ''; return; }
   if (t.matches('[data-seek]')) { Engine.seek(t.value / 1000 * Engine.duration); seeking = false; }
   else if (t.id === 'plName') {
     const p = state.playlists.find(x => x.id === t.dataset.pid); if (!p) return;
@@ -2682,6 +2795,272 @@ document.addEventListener('drop', e => {
   uploadFiles(e.dataTransfer.files);
 });
 window.addEventListener('blur', hideDrop);
+
+/* ================= Spotify import ================= */
+/* Imported playlists are song lists only. Each song plays from your own uploaded copy when
+   you've brought it into Murmur, otherwise from a YouTube match that's found once and shared. */
+const sp = { clientId: '', imports: [], matches: {}, token: null };
+const SP_SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read';
+const SPALBUM = { id: 'spotify', title: 'From Spotify', artist: 'Spotify', year: 'Imported', genre: 'spotify', seed: 11,
+  colors: ['#2fa36b', '#12261c', '#ffb070'], desc: 'Every song from your imported Spotify playlists.', trackIds: [] };
+SPALBUM.cover = makeCover(SPALBUM);
+ALBUM_MAP.spotify = SPALBUM;
+const spRedirect = () => location.origin + location.pathname;
+const normKey = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  .replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s(feat|ft)\.?\s.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const matchKey = x => x.isrc ? 'isrc:' + x.isrc.toUpperCase() : 'n:' + normKey(x.artist) + '|' + normKey(x.title);
+const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+function addSpTrack(x) {
+  const id = 'sp-' + hashStr(x.key).toString(36) + hashStr('m' + x.key).toString(36);
+  TRACKS[id] = { id, sp: true, key: x.key, title: x.title, artist: x.artist || 'Unknown artist', album: x.album || 'Spotify', albumId: 'spotify',
+    genre: 'spotify', duration: x.duration || 0, cover: x.cover || SPALBUM.cover, isrc: x.isrc, url: x.url, seed: hashStr(id) };
+  return id;
+}
+function hydrateImports() {
+  sp.imports.forEach(imp => { imp.trackIds = imp.tracks.map(addSpTrack); });
+  SPALBUM.trackIds = [...new Set(sp.imports.flatMap(i => i.trackIds))];
+}
+async function loadSpotify() {
+  try { sp.clientId = (await api('GET', 'api/settings/public')).spotifyClientId || ''; } catch (e) {}
+  try { sp.imports = (await api('GET', 'api/imports')).imports || []; } catch (e) {}
+  try { sp.matches = (await api('GET', 'api/matches')).matches || {}; } catch (e) {}
+  hydrateImports();
+}
+/* 'file' = your copy is in Murmur, 'yt' = plays from YouTube, 'none' = nothing found, 'new' = not looked up yet */
+function spStatus(id) {
+  const t = TRACKS[id]; if (!t || !t.sp) return '';
+  const m = sp.matches[t.key] || {};
+  if (m.file && TRACKS['f-' + m.file]) return 'file';
+  if (m.yt) return 'yt';
+  return m.none ? 'none' : 'new';
+}
+const SP_CHIP = { file: ['In Murmur', 'in'], yt: ['YouTube', 'yt'], none: ['Not found', 'none'], new: ['Not in Murmur', 'new'] };
+function spChip(id) { const s = spStatus(id); return s ? `<span class="sp-chip ${SP_CHIP[s][1]}">${SP_CHIP[s][0]}</span>` : ''; }
+async function saveMatch(key, patch) {
+  try { const res = await api('PUT', 'api/matches/' + encodeURIComponent(key), patch); sp.matches[key] = res.match; }
+  catch (e) { toast(e.message); }
+}
+/* Pick the YouTube result that's most likely the same recording. */
+function pickBest(t, ids) {
+  const artist = normKey(t.artist.split(',')[0]), title = normKey(t.title);
+  const bad = /\b(live|cover|karaoke|instrumental|remix|sped up|slowed|8d|reaction|nightcore|reverb)\b/;
+  let best = null, top = -Infinity;
+  ids.forEach(id => {
+    const v = TRACKS[id]; if (!v) return;
+    const vt = normKey(v.title), ch = normKey(v.artist);
+    let s = 0;
+    const dd = Math.abs((v.duration || 0) - (t.duration || 0));
+    s -= t.duration ? (dd > 25 ? 60 : dd) : 0;
+    if (artist && (ch.includes(artist) || artist.includes(ch) || vt.includes(artist))) s += 30;
+    if (title && vt.includes(title)) s += 25;
+    if (bad.test(vt) && !bad.test(title)) s -= 45;
+    if (s > top) { top = s; best = id; }
+  });
+  return top > -45 ? best : null;
+}
+/* Turn an imported song into something the engine can play. */
+async function resolveSp(t) {
+  const m = sp.matches[t.key] || {};
+  if (m.file && TRACKS['f-' + m.file]) return TRACKS['f-' + m.file];
+  if (m.yt) return TRACKS[addYtTrack(m.yt)];
+  if (!server.on || !yt.enabled) { toast('This song isn’t in Murmur yet. Connect YouTube in People & settings to play it, or use ⋯ → Bring into Murmur.'); return null; }
+  let ids;
+  try { ids = await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, ''); } catch (e) { toast(e.message); return null; }
+  const best = pickBest(t, ids);
+  await saveMatch(t.key, best ? { yt: ytMeta(best) } : { none: true });
+  syncSpChips();
+  return best ? TRACKS[best] : null;
+}
+function syncSpChips() {
+  $$('.row[data-tid^="sp-"]').forEach(r => {
+    const s = spStatus(r.dataset.tid);
+    r.classList.toggle('ghost', s !== 'file');
+    const chip = r.querySelector('.sp-chip'); if (chip) { chip.className = 'sp-chip ' + SP_CHIP[s][1]; chip.textContent = SP_CHIP[s][0]; }
+  });
+}
+
+/* ---------- bring a song into Murmur by uploading your own copy ---------- */
+let bringFor = null;
+function bringIntoMurmur(id) {
+  if (!canEditMusic()) { toast('Your account can’t add music. Ask the owner to allow it.'); return; }
+  bringFor = id; $('#fileBring').click();
+}
+async function bringUpload(file) {
+  const t = TRACKS[bringFor]; bringFor = null;
+  if (!t || !file) return;
+  server.current = { name: file.name, pct: 0 }; renderUploadStatus();
+  try {
+    const r = await xhrUpload(file, p => { server.current.pct = p; renderUploadStatus(); });
+    // Use the Spotify details so the file is named and grouped the same way.
+    const res = await api('PATCH', 'api/tracks', { ids: [r.id], title: t.title, artist: t.artist, album: t.album });
+    res.tracks.forEach(addServerTrack); rebuildUploadAlbums();
+    await saveMatch(t.key, { file: r.id });
+    toast(`“${t.title}” is now in Murmur`);
+  } catch (e) { toast(e.message); }
+  server.current = null; renderUploadStatus(); render(); renderNP();
+}
+async function chooseVersion(id) {
+  const t = TRACKS[id]; if (!t) return;
+  if (!yt.enabled) { toast('Connect YouTube in People & settings first.'); return; }
+  let ids;
+  try { ids = await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, ''); } catch (e) { toast(e.message); return; }
+  if (!ids.length) { toast('YouTube found nothing for this song.'); return; }
+  const cur = (sp.matches[t.key] || {}).yt;
+  openModal({ title: `Pick a version of “${esc(t.title)}”`, confirm: 'Use this version', html: `<p>Spotify length: <b>${fmt(t.duration)}</b>. Your choice is saved for everyone.</p>
+    <div class="ver-list">${ids.slice(0, 10).map((v, i) => { const y = TRACKS[v];
+      return `<label class="ver"><input type="radio" name="v" value="${esc(y.ytId)}" ${(cur ? cur.id === y.ytId : i === 0) ? 'checked' : ''}>
+        <img src="${esc(y.cover)}" alt=""><span><b>${esc(y.title)}</b><span class="small">${esc(y.artist)} · ${fmt(y.duration)}</span></span></label>`; }).join('')}</div>`,
+    onSubmit: async fd => {
+      const v = fd.get('v'); if (!v) return;
+      await saveMatch(t.key, { yt: ytMeta('yt-' + v) });
+      toast('Saved. This version plays from now on.');
+      syncSpChips(); if (state.current === id) loadAndPlay(id, true);
+    } });
+}
+
+/* ---------- Spotify sign-in (PKCE, in the browser) ---------- */
+async function spLogin() {
+  if (!sp.clientId) { toast('Spotify isn’t set up yet. The owner can add it under People & settings.'); return; }
+  if (!window.crypto || !crypto.subtle) { toast('Importing needs a secure address. Open Murmur from your https:// address or http://127.0.0.1:8080.'); return; }
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  const st = b64url(crypto.getRandomValues(new Uint8Array(12)));
+  sessionStorage.setItem('murmur:spauth', JSON.stringify({ verifier, state: st }));
+  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({ response_type: 'code', client_id: sp.clientId,
+    scope: SP_SCOPES, redirect_uri: spRedirect(), code_challenge_method: 'S256', code_challenge: challenge, state: st });
+}
+function spSaveToken(j) {
+  sp.token = { access: j.access_token, refresh: j.refresh_token || (sp.token && sp.token.refresh), exp: Date.now() + ((j.expires_in || 3600) - 60) * 1000 };
+  try { sessionStorage.setItem('murmur:sptok', JSON.stringify(sp.token)); } catch (e) {}
+}
+async function spFinishLogin() {
+  const p = new URLSearchParams(location.search);
+  if (!p.has('state') || (!p.has('code') && !p.has('error'))) return false;
+  history.replaceState(null, '', spRedirect());
+  let saved = null; try { saved = JSON.parse(sessionStorage.getItem('murmur:spauth') || 'null'); } catch (e) {}
+  sessionStorage.removeItem('murmur:spauth');
+  if (p.get('error')) { toast(p.get('error') === 'access_denied' ? 'Spotify sign-in was cancelled.' : 'Spotify said: ' + p.get('error')); return true; }
+  if (!saved || saved.state !== p.get('state')) { toast('That Spotify sign-in didn’t match. Try importing again.'); return true; }
+  const r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', code: p.get('code'), redirect_uri: spRedirect(), client_id: sp.clientId, code_verifier: saved.verifier }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { toast('Spotify sign-in failed: ' + (j.error_description || j.error || r.status)); return true; }
+  spSaveToken(j);
+  openImportPicker();
+  return true;
+}
+async function spAccess() {
+  if (!sp.token) { try { sp.token = JSON.parse(sessionStorage.getItem('murmur:sptok') || 'null'); } catch (e) {} }
+  if (!sp.token) return null;
+  if (Date.now() < sp.token.exp) return sp.token.access;
+  if (!sp.token.refresh) return null;
+  const r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: sp.token.refresh, client_id: sp.clientId }) });
+  if (!r.ok) { sp.token = null; sessionStorage.removeItem('murmur:sptok'); return null; }
+  spSaveToken(await r.json());
+  return sp.token.access;
+}
+async function spGet(url) {
+  const tok = await spAccess();
+  if (!tok) throw Object.assign(new Error('Sign in to Spotify again.'), { login: true });
+  for (let tries = 0; tries < 5; tries++) {
+    const r = await fetch(url.startsWith('http') ? url : 'https://api.spotify.com/v1/' + url, { headers: { Authorization: 'Bearer ' + tok } });
+    if (r.status === 429) { await new Promise(res => setTimeout(res, (Number(r.headers.get('Retry-After')) || 2) * 1000)); continue; }
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { sp.token = null; sessionStorage.removeItem('murmur:sptok'); throw Object.assign(new Error('Sign in to Spotify again.'), { login: true }); }
+    if (r.status === 403) throw new Error((j.error && j.error.message) || 'Spotify didn’t allow this. Make sure your Spotify account is added under User Management in the Spotify app settings.');
+    if (!r.ok) throw Object.assign(new Error((j.error && j.error.message) || `Spotify answered ${r.status}.`), { status: r.status });
+    return j;
+  }
+  throw new Error('Spotify is busy. Try again in a minute.');
+}
+async function spTracks(id) {
+  const out = [];
+  let url = id === 'liked' ? 'me/tracks?limit=50' : `playlists/${id}/tracks?limit=100`;
+  let triedItems = false;
+  while (url) {
+    let j;
+    try { j = await spGet(url); }
+    catch (e) {
+      // Newer Spotify apps read playlist songs from /items instead of /tracks.
+      if (!e.login && id !== 'liked' && !triedItems && !out.length) { triedItems = true; url = `playlists/${id}/items?limit=100`; continue; }
+      throw e;
+    }
+    (j.items || []).forEach(it => {
+      const tr = it && (it.track || it.item);
+      if (!tr || (tr.type && tr.type !== 'track') || !tr.name) return;
+      const imgs = (tr.album && tr.album.images) || [];
+      const x = { title: tr.name, artist: (tr.artists || []).map(a => a.name).filter(Boolean).join(', '), album: (tr.album && tr.album.name) || '',
+        cover: (imgs[1] || imgs[0] || {}).url || '', duration: Math.round((tr.duration_ms || 0) / 1000),
+        isrc: (tr.external_ids && tr.external_ids.isrc) || '', url: (tr.external_urls && tr.external_urls.spotify) || '' };
+      x.key = matchKey({ isrc: x.isrc, artist: x.artist.split(',')[0], title: x.title });
+      out.push(x);
+    });
+    url = j.next;
+    sp.progress && sp.progress(out.length);
+  }
+  return out;
+}
+async function openImportPicker() {
+  let lists = [];
+  try { let url = 'me/playlists?limit=50'; while (url && lists.length < 500) { const j = await spGet(url); lists.push(...(j.items || []).filter(Boolean)); url = j.next; } }
+  catch (e) { if (e.login) { spLogin(); return; } toast(e.message); return; }
+  const have = new Set(sp.imports.map(i => i.spotifyId));
+  const row = (id, name, sub, img) => `<label class="ver"><input type="checkbox" name="pl" value="${esc(id)}">
+    ${img ? `<img src="${esc(img)}" alt="">` : `<span class="ver-ph">${icon('heartFill')}</span>`}<span><b>${esc(name)}</b><span class="small">${esc(sub)}${have.has(id) ? ' · already imported (importing again updates it)' : ''}</span></span></label>`;
+  openModal({ title: 'Import from Spotify', confirm: 'Import', html: `<p>Pick what to bring over. Only the song lists are copied; songs play from YouTube until you bring your own copy into Murmur.</p>
+    <div class="ver-list">${row('liked', 'Liked Songs', 'Your saved songs on Spotify')}${lists.map(l => row(l.id, l.name, `${(l.tracks && l.tracks.total) || (l.items && l.items.total) || 0} songs · by ${(l.owner && l.owner.display_name) || 'Spotify'}`, ((l.images || [])[0] || {}).url)).join('')}</div>`,
+    onSubmit: fd => importPlaylists(fd.getAll('pl'), lists) });
+}
+async function importPlaylists(ids, lists) {
+  if (!ids.length) return;
+  let done = 0, firstId = null;
+  for (const sid of ids) {
+    const meta = sid === 'liked' ? { name: 'Liked Songs (Spotify)', images: [] } : lists.find(l => l.id === sid) || { name: 'Spotify playlist', images: [] };
+    server.current = { name: `${meta.name} (${done + 1} of ${ids.length})`, pct: 5 }; renderUploadStatus();
+    sp.progress = n => { server.current.name = `${meta.name}: ${n} songs`; renderUploadStatus(); };
+    try {
+      const tracks = await spTracks(sid);
+      const id = 'spi-' + sid;
+      const res = await api('PUT', 'api/imports/' + encodeURIComponent(id), { spotifyId: sid, name: meta.name, cover: ((meta.images || [])[0] || {}).url || '', owner: meta.owner && meta.owner.display_name, tracks });
+      sp.imports = [res.import, ...sp.imports.filter(i => i.id !== id)];
+      firstId = firstId || id; done++;
+    } catch (e) {
+      if (e.login) { server.current = null; renderUploadStatus(); spLogin(); return; }
+      toast(`${meta.name}: ${e.status === 404 ? 'Spotify doesn’t let apps read this playlist (Spotify-made playlists like Discover Weekly are blocked).' : e.message}`);
+    }
+  }
+  sp.progress = null; server.current = null; renderUploadStatus();
+  hydrateImports();
+  if (done) { toast(`Imported ${plural(done, 'playlist')} from Spotify`); navigate({ name: 'collection', type: 'import', id: firstId }); }
+  else render();
+}
+async function syncImport(id) {
+  const imp = sp.imports.find(i => i.id === id); if (!imp) return;
+  const meta = { id: imp.spotifyId, name: imp.name, images: imp.cover ? [{ url: imp.cover }] : [], owner: { display_name: imp.owner } };
+  await importPlaylists([imp.spotifyId], [meta]);
+}
+function spotifySettingsHTML() {
+  const uris = [...new Set([cfg && cfg.pagesUrl, 'https://rodriguezcurielj.github.io/Murmur/', 'http://127.0.0.1:8080/', /^https:|^http:\/\/127\.0\.0\.1/.test(spRedirect()) ? spRedirect() : null].filter(Boolean))];
+  return `<section class="person yt-settings" aria-labelledby="spSetTitle">
+    <header class="person-head"><span class="avatar sp-av">${icon('list')}</span>
+      <div class="person-meta"><h3 id="spSetTitle">Spotify import</h3><span class="small">${sp.clientId ? 'Set up. Anyone signed in can import their playlists from Your Library.' : 'Not set up yet.'}</span></div></header>
+    ${sp.clientId ? `<div class="person-actions"><button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import my playlists</span></button><button class="text-btn danger" data-act="sp-key-remove">Remove Spotify setup</button></div>
+      <p class="small">Everyone who imports must be added under <b>User Management</b> in your Spotify app (up to 25 people).</p>` : `
+    <ol class="steps small">
+      <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a>, sign in, and click <b>Create app</b>. Name it Murmur.</li>
+      <li>Under <b>Redirect URIs</b>, add each of these exactly, then check <b>Web API</b> and save:<br>${uris.map(u => `<code>${esc(u)}</code>`).join('<br>')}</li>
+      <li>Open the app’s <b>Settings</b>, copy the <b>Client ID</b>, and paste it below.</li>
+      <li>Under <b>User Management</b>, add the Spotify email of everyone who will import, you included.</li>
+    </ol>
+    <p class="small">Spotify doesn’t accept “localhost” addresses. On this PC, import from <b>http://127.0.0.1:8080</b> or the GitHub Pages site.</p>
+    <form id="spKeyForm" class="person-add yt-key-form">
+      <div class="field"><label for="spKey">Spotify Client ID</label><input id="spKey" name="clientId" required autocomplete="off" spellcheck="false" placeholder="32 letters and numbers"></div>
+      <button class="m-ok" type="submit">Save</button>
+    </form>`}
+  </section>`;
+}
 
 /* ================= sign-in (Docker server only) ================= */
 const PIN_ATTRS = 'type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4" required autocomplete="off" class="pin"';
@@ -2848,6 +3227,7 @@ function viewPeople() {
   };
   return `<h1 class="greet">People & settings</h1>
   ${ytSettingsHTML()}
+  ${spotifySettingsHTML()}
   <h2 class="sub-head">People</h2>
   <p class="small" style="max-width:60ch">People you add sign in with their name and a 4-digit PIN. When they choose “Remember this computer” they stay signed in there for 90 days, then need their PIN again. Deleting someone signs them out everywhere.</p>
   <form id="addPerson" class="person-add">
@@ -2896,6 +3276,8 @@ async function addPerson(form) {
   if (mode === 'ok') {
     await connectServer();
     try { yt.enabled = !!(await api('GET', 'api/youtube/status')).enabled; } catch (e) {}
+    if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
+    await loadSpotify();
   }
   const saved = mode === 'demo' ? [] : await loadOffline();
   if (server.on) {
@@ -2915,6 +3297,7 @@ async function addPerson(form) {
   render();
   requestAnimationFrame(frame);
   loadSuggestions();
+  if (mode === 'ok') spFinishLogin();   // coming back from the Spotify sign-in page
   // Notice when the sign-in ends (90 days up, PIN changed, or removed by the owner).
   if (mode === 'ok') {
     document.addEventListener('visibilitychange', async () => {

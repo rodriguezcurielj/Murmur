@@ -10,6 +10,7 @@ const path = require('path');
 const crypto = require('crypto');
 const createAuth = require('./auth');
 const createYouTube = require('./youtube');
+const createSpotify = require('./spotify');
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -69,10 +70,11 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://rodriguezcuriel
 const auth = createAuth(path.join(DATA, 'auth.json'), { allowedOrigins: ALLOWED_ORIGINS });
 app.use(auth.cors);
 app.use(auth.sameOrigin);
-app.use('/api', express.json({ limit: '1mb' }));
+app.use('/api', express.json({ limit: '10mb' }));   // imported Spotify playlists can be large
 app.use('/api', auth.requireUser);
 auth.routes(app);
 createYouTube(path.join(DATA, 'settings.json'), auth).routes(app);
+createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id) }).routes(app);
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
