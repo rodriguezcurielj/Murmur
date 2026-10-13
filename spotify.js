@@ -1,6 +1,9 @@
 // Spotify import: each person's imported playlists (song lists only, no audio), plus a shared
 // table that remembers how each song is played in Murmur (an uploaded file or a YouTube video).
-// The Spotify sign-in itself happens in the browser (PKCE), so no Spotify secret is stored here.
+// Anyone can import a public playlist or album by pasting its link: no Spotify sign-in and no developer
+// setup. Murmur reads the song list from Spotify's public embed page (up to 100 songs). If the owner adds
+// their Spotify app's Client ID and Secret, links use Spotify's Web API instead and get every song.
+// The older "sign in to Spotify" import still happens in the browser (PKCE).
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
@@ -19,6 +22,83 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
   }
   const str = (v, max = 300) => String(v == null ? '' : v).slice(0, max);
   const canEdit = u => u.role === 'owner' || !!u.canEdit;
+  // A plain user agent gets Spotify's server-rendered pages, which include the song count.
+  const UA = { 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en' };
+
+  // Playlist or album link (also spotify: URIs and spotify.link short links) -> { kind, id }.
+  async function parseLink(link) {
+    link = str(link, 500).trim();
+    let m = link.match(/^spotify:(playlist|album):([A-Za-z0-9]{10,40})$/);
+    if (m) return { kind: m[1], id: m[2] };
+    if (/^https:\/\/(spotify\.link|spotify\.app\.link)\//.test(link)) {
+      try { const r = await fetch(link, { headers: UA, redirect: 'follow' }); link = r.url; } catch { /* fall through */ }
+    }
+    m = link.match(/^https:\/\/open\.spotify\.com\/(?:intl-[a-z-]+\/)?(?:embed\/)?(playlist|album)\/([A-Za-z0-9]{10,40})/);
+    return m ? { kind: m[1], id: m[2] } : null;
+  }
+
+  // Spotify Web API with the app's own key (Client Credentials). Only used when the owner added a secret.
+  let appToken = null;
+  async function apiGet(url) {
+    if (!appToken || appToken.exp < Date.now()) {
+      const r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: 'Basic ' + Buffer.from(cfg.clientId + ':' + cfg.clientSecret).toString('base64') },
+        body: 'grant_type=client_credentials' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.access_token) throw new Error('Spotify didn’t accept the Client ID and Secret.');
+      appToken = { value: j.access_token, exp: Date.now() + ((j.expires_in || 3600) - 60) * 1000 };
+    }
+    const r = await fetch(url.startsWith('https:') ? url : 'https://api.spotify.com/v1/' + url, { headers: { Authorization: 'Bearer ' + appToken.value } });
+    if (!r.ok) throw Object.assign(new Error('Spotify said ' + r.status), { status: r.status });
+    return r.json();
+  }
+  const fromApiTrack = (tr, album) => {
+    const al = tr.album || album || {}, imgs = al.images || [];
+    return { title: tr.name, artist: (tr.artists || []).map(a => a.name).filter(Boolean).join(', '), album: al.name || '',
+      cover: (imgs[1] || imgs[0] || {}).url || '', duration: Math.round((tr.duration_ms || 0) / 1000),
+      isrc: (tr.external_ids && tr.external_ids.isrc) || '', url: (tr.external_urls && tr.external_urls.spotify) || '' };
+  };
+  async function viaApi({ kind, id }) {
+    if (kind === 'album') {
+      const a = await apiGet('albums/' + id);
+      const tracks = []; let page = a.tracks;
+      while (page) { tracks.push(...(page.items || []).map(t => fromApiTrack(t, a))); page = page.next && tracks.length < 10000 ? await apiGet(page.next) : null; }
+      return { name: a.name, cover: ((a.images || [])[0] || {}).url || '', owner: (a.artists || []).map(x => x.name).join(', '), tracks, total: tracks.length };
+    }
+    const p = await apiGet('playlists/' + id + '?fields=name,images,owner(display_name),tracks(total)');
+    const tracks = [];
+    let url = 'playlists/' + id + '/tracks?limit=100&additional_types=track&fields=next,items(track(name,duration_ms,artists(name),album(name,images),external_ids,external_urls,type))';
+    while (url && tracks.length < 10000) {
+      const j = await apiGet(url);
+      (j.items || []).forEach(it => { if (it && it.track && it.track.type === 'track' && it.track.name) tracks.push(fromApiTrack(it.track)); });
+      url = j.next;
+    }
+    return { name: p.name, cover: ((p.images || [])[0] || {}).url || '', owner: p.owner && p.owner.display_name, tracks, total: (p.tracks && p.tracks.total) || tracks.length };
+  }
+
+  // No key needed: the public embed page has the first 100 songs.
+  async function viaEmbed({ kind, id }) {
+    const r = await fetch(`https://open.spotify.com/embed/${kind}/${id}`, { headers: UA });
+    if (r.status === 404) throw Object.assign(new Error('Spotify couldn’t find that. Check the link, and make sure the playlist is public.'), { status: 404 });
+    if (!r.ok) throw new Error('Spotify didn’t answer (error ' + r.status + '). Try again in a minute.');
+    const html = await r.text();
+    const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    let e = null; try { e = JSON.parse(m[1]).props.pageProps.state.data.entity; } catch { e = null; }
+    if (!e || !Array.isArray(e.trackList)) throw new Error('Spotify didn’t share that list. Make sure the playlist is public.');
+    const cover = ((e.coverArt && e.coverArt.sources) || []).map(x => x.url).find(Boolean) || '';
+    const tracks = e.trackList.filter(t => t && t.title).map(t => ({
+      title: t.title, artist: t.subtitle || '', album: kind === 'album' ? e.name : '', cover: kind === 'album' ? cover : '',
+      duration: Math.round((t.duration || 0) / 1000), isrc: '', url: /^spotify:track:/.test(t.uri || '') ? 'https://open.spotify.com/track/' + t.uri.split(':')[2] : '' }));
+    // The embed stops at 100 songs; the playlist page says how many there really are.
+    let total = tracks.length;
+    if (tracks.length >= 100) {
+      try {
+        const page = await (await fetch(`https://open.spotify.com/${kind}/${id}`, { headers: UA })).text();
+        const c = page.match(/music:song_count" content="(\d+)/); if (c) total = Math.max(total, Number(c[1]));
+      } catch { /* unknown total */ }
+    }
+    return { name: e.name || e.title || 'Spotify ' + kind, cover, owner: kind === 'playlist' ? (e.subtitle || '') : (e.subtitle || ''), tracks, total };
+  }
 
   function cleanTrack(t) {
     return {
@@ -31,17 +111,41 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
 
   function routes(app) {
     // Settings everyone signed in can see.
-    app.get('/api/settings/public', (req, res) => res.json({ spotifyClientId: cfg.clientId || '' }));
+    app.get('/api/settings/public', (req, res) => res.json({ spotifyClientId: cfg.clientId || '', spotifyFullLinks: !!(cfg.clientId && cfg.clientSecret) }));
+
+    // Read a public Spotify playlist or album from its link (anyone signed in).
+    app.post('/api/spotify/link', async (req, res) => {
+      const ref = await parseLink(req.body && req.body.link);
+      if (!ref) return res.status(400).json({ error: 'That isn’t a Spotify playlist or album link. In Spotify, tap ⋯ → Share → Copy link.' });
+      try {
+        let out = null;
+        if (cfg.clientId && cfg.clientSecret) { try { out = await viaApi(ref); } catch (e) { out = null; } }
+        if (!out) out = await viaEmbed(ref);
+        if (!out.tracks.length) return res.status(404).json({ error: 'That list has no songs Murmur can read (podcasts and local files are skipped).' });
+        res.json({ kind: ref.kind, spotifyId: ref.id, ...out, partial: out.total > out.tracks.length });
+      } catch (e) {
+        res.status(e.status === 404 ? 404 : 502).json({ error: e.message || 'Couldn’t read that from Spotify.' });
+      }
+    });
 
     app.put('/api/settings/spotify', auth.requireOwner, async (req, res) => {
       const id = str(req.body && req.body.clientId, 64).trim();
       if (!/^[0-9a-f]{32}$/i.test(id)) return res.status(400).json({ error: 'That doesn’t look like a Spotify Client ID. It’s a 32-character code from your app’s Settings page.' });
-      cfg.clientId = id; await save('cfg', cfg);
-      res.json({ spotifyClientId: id });
+      const secret = str(req.body && req.body.clientSecret, 64).trim();
+      if (secret && !/^[0-9a-f]{32}$/i.test(secret)) return res.status(400).json({ error: 'That doesn’t look like a Client Secret. It’s the 32-character code under “View client secret”.' });
+      if (cfg.clientId !== id) appToken = null;
+      cfg.clientId = id;
+      if (secret) { cfg.clientSecret = secret; appToken = null; }
+      if (cfg.clientSecret) {
+        try { await apiGet('browse/new-releases?limit=1'); }
+        catch (e) { if (secret) { delete cfg.clientSecret; appToken = null; await save('cfg', cfg); return res.status(400).json({ error: 'Spotify didn’t accept that Client ID and Secret together. Copy both again from the app’s Settings page.' }); } }
+      }
+      await save('cfg', cfg);
+      res.json({ spotifyClientId: id, spotifyFullLinks: !!cfg.clientSecret });
     });
     app.delete('/api/settings/spotify', auth.requireOwner, async (req, res) => {
-      delete cfg.clientId; await save('cfg', cfg);
-      res.json({ spotifyClientId: '' });
+      delete cfg.clientId; delete cfg.clientSecret; appToken = null; await save('cfg', cfg);
+      res.json({ spotifyClientId: '', spotifyFullLinks: false });
     });
 
     // Each person's imported playlists.

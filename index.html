@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013172525">
+<meta name="murmur-build" content="20261013181140">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -2325,7 +2325,7 @@ function viewLibrary() {
   return `<div class="shelf-head" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
       ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
-      ${server.on && sp.clientId ? `<button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import from Spotify</span></button>` : ''}
+      ${server.on ? `<button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import from Spotify</span></button>` : ''}
       <button class="icon-btn" data-act="new-pl" aria-label="Create playlist">${icon('plus')}</button></div></div>
   <div class="chips" style="padding-left:0">${chipsHTML()}</div>
   ${selecting ? '<p class="small" style="margin:0 0 10px">Pick playlists and albums to delete or to add to a playlist. Liked Songs, Uploads and artists can’t be selected.</p>' : ''}
@@ -3042,12 +3042,13 @@ function act(el, e) {
     case 'disc-play': playFrom('discover', 'mix', +d.i); break;
     case 'cat-play': playFrom('catq', d.q, +d.i); break;
     case 'disc-refresh': loadDiscover(true); break;
-    case 'sp-import': closeModal(); spAccess().then(tok => tok ? openImportPicker() : spLogin()); break;
+    case 'sp-import': closeModal(); openLinkImport(); break;
+    case 'sp-login-import': closeModal(); spAccess().then(tok => tok ? openImportPicker() : spLogin()); break;
     case 'sp-sync': syncImport(d.id); break;
     case 'm-bring': bringIntoMurmur(d.tid); break;
     case 'm-spver': chooseVersion(d.tid); break;
     case 'sp-key-remove':
-      api('DELETE', 'api/settings/spotify').then(() => { sp.clientId = ''; toast('Spotify setup removed. Imported playlists stay.'); render(); }).catch(err => toast(err.message));
+      api('DELETE', 'api/settings/spotify').then(() => { sp.clientId = ''; sp.fullLinks = false; toast('Spotify setup removed. Imported playlists stay.'); render(); }).catch(err => toast(err.message));
       break;
     case 'yt-search': runYtSearch(d.q); break;
     case 'tq-clear': { const q = $('#tq'); q.value = ''; onSearchInput(''); q.focus(); if (state.view.name === 'search') { state.search = ''; refreshSearch(); } break; }
@@ -3146,7 +3147,12 @@ document.addEventListener('submit', async e => {
   if (e.target.id === 'addPerson') { e.preventDefault(); addPerson(e.target); return; }
   if (e.target.id === 'spKeyForm') {
     e.preventDefault();
-    try { sp.clientId = (await api('PUT', 'api/settings/spotify', { clientId: new FormData(e.target).get('clientId') })).spotifyClientId; toast('Spotify import is set up'); render(); }
+    const fd = new FormData(e.target);
+    try {
+      const r = await api('PUT', 'api/settings/spotify', { clientId: fd.get('clientId'), clientSecret: fd.get('clientSecret') || '' });
+      sp.clientId = r.spotifyClientId; sp.fullLinks = !!r.spotifyFullLinks;
+      toast(sp.fullLinks ? 'Spotify app key saved. Links now bring in whole playlists.' : 'Spotify app saved'); render();
+    }
     catch (err) { toast(err.message); }
     return;
   }
@@ -3242,7 +3248,7 @@ window.addEventListener('blur', hideDrop);
 /* ================= Spotify import ================= */
 /* Imported playlists are song lists only. Each song plays from your own uploaded copy when
    you've brought it into Murmur, otherwise from a YouTube match that's found once and shared. */
-const sp = { clientId: '', imports: [], matches: {}, token: null };
+const sp = { clientId: '', fullLinks: false, imports: [], matches: {}, token: null };
 const SP_SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read';
 const SPALBUM = { id: 'spotify', title: 'From Spotify', artist: 'Spotify', year: 'Imported', genre: 'spotify', seed: 11,
   colors: ['#2fa36b', '#12261c', '#ffb070'], desc: 'Every song from your imported Spotify playlists.', trackIds: [] };
@@ -3268,7 +3274,7 @@ function hydrateImports() {
   SPALBUM.trackIds = [...new Set(sp.imports.flatMap(i => i.trackIds))];
 }
 async function loadSpotify() {
-  try { sp.clientId = (await api('GET', 'api/settings/public')).spotifyClientId || ''; } catch (e) {}
+  try { const p = await api('GET', 'api/settings/public'); sp.clientId = p.spotifyClientId || ''; sp.fullLinks = !!p.spotifyFullLinks; } catch (e) {}
   try { sp.imports = (await api('GET', 'api/imports')).imports || []; } catch (e) {}
   try { sp.matches = (await api('GET', 'api/matches')).matches || {}; } catch (e) {}
   hydrateImports();
@@ -3482,8 +3488,41 @@ async function importPlaylists(ids, lists) {
   if (done) { toast(`Imported ${plural(done, 'playlist')} from Spotify`); navigate({ name: 'collection', type: 'import', id: firstId }); }
   else render();
 }
+/* Import by link: paste a public playlist or album link. No Spotify sign-in or setup needed. */
+function openLinkImport(msg) {
+  openModal({ title: 'Import from Spotify', confirm: 'Import', html: `<p>Paste the link to a Spotify playlist or album. No Spotify sign-in needed.</p>
+    <ol class="steps small"><li>In Spotify, open the playlist and tap <b>⋯</b> → <b>Share</b> → <b>Copy link</b>.</li>
+      <li>Paste it here. The playlist has to be <b>public</b> (⋯ → <b>Make public</b>, or <b>Add to profile</b>).</li></ol>
+    <div class="field"><label for="spLink">Playlist or album link</label><input id="spLink" name="link" required autocomplete="off" spellcheck="false" inputmode="url" placeholder="https://open.spotify.com/playlist/…"></div>
+    ${msg ? `<p class="gate-err" role="alert">${esc(msg)}</p>` : ''}
+    <p class="small">Your Spotify <b>Liked Songs</b> are private, so they can’t be imported by link. On a computer, select them all (Ctrl+A), right-click → <b>Add to playlist</b> → <b>New playlist</b>, then import that playlist.${sp.fullLinks ? '' : ' Big playlists come in with their first 100 songs.'}</p>
+    ${sp.clientId ? `<p class="small">Or <button type="button" class="link-btn" data-act="sp-login-import">sign in to Spotify</button> and pick from your playlists.</p>` : ''}`,
+    onSubmit: fd => { importFromLink(String(fd.get('link') || '')); } });
+  setTimeout(() => { const i = $('#spLink'); if (i) i.focus(); }, 0);
+}
+async function importFromLink(link) {
+  link = link.trim(); if (!link) return;
+  server.current = { name: 'Reading the playlist from Spotify…', pct: 10 }; renderUploadStatus();
+  try {
+    const r = await api('POST', 'api/spotify/link', { link });
+    server.current = { name: `${r.name}: ${plural(r.tracks.length, 'song')}`, pct: 60 }; renderUploadStatus();
+    const tracks = r.tracks.map(x => ({ ...x, key: matchKey({ isrc: x.isrc, artist: String(x.artist || '').split(',')[0], title: x.title }) }));
+    const id = 'spl-' + r.kind + '-' + r.spotifyId;
+    const res = await api('PUT', 'api/imports/' + encodeURIComponent(id), { spotifyId: r.kind + ':' + r.spotifyId, name: r.name, cover: r.cover || '', owner: r.owner || '', tracks });
+    sp.imports = [res.import, ...sp.imports.filter(i => i.id !== id)];
+    server.current = null; renderUploadStatus();
+    hydrateImports();
+    toast(r.partial ? `Imported the first ${r.tracks.length} of ${r.total} songs from “${r.name}”` : `Imported “${r.name}” (${plural(r.tracks.length, 'song')})`);
+    navigate({ name: 'collection', type: 'import', id });
+  } catch (e) {
+    server.current = null; renderUploadStatus();
+    openLinkImport(e.message);
+    const i = $('#spLink'); if (i) i.value = link;
+  }
+}
 async function syncImport(id) {
   const imp = sp.imports.find(i => i.id === id); if (!imp) return;
+  if (id.startsWith('spl-')) { const [kind, sid] = String(imp.spotifyId).split(':'); return importFromLink(`https://open.spotify.com/${kind}/${sid}`); }
   const meta = { id: imp.spotifyId, name: imp.name, images: imp.cover ? [{ url: imp.cover }] : [], owner: { display_name: imp.owner } };
   await importPlaylists([imp.spotifyId], [meta]);
 }
@@ -3491,18 +3530,24 @@ function spotifySettingsHTML() {
   const uris = [...new Set([cfg && cfg.pagesUrl, 'https://rodriguezcurielj.github.io/Murmur/', 'http://127.0.0.1:8080/', /^https:|^http:\/\/127\.0\.0\.1/.test(spRedirect()) ? spRedirect() : null].filter(Boolean))];
   return `<section class="person yt-settings" aria-labelledby="spSetTitle">
     <header class="person-head"><span class="avatar sp-av">${icon('list')}</span>
-      <div class="person-meta"><h3 id="spSetTitle">Spotify import</h3><span class="small">${sp.clientId ? 'Set up. Anyone signed in can import their playlists from Your Library.' : 'Not set up yet.'}</span></div></header>
-    ${sp.clientId ? `<div class="person-actions"><button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import my playlists</span></button><button class="text-btn danger" data-act="sp-key-remove">Remove Spotify setup</button></div>
-      <p class="small">Everyone who imports must be added under <b>User Management</b> in your Spotify app (up to 25 people).</p>` : `
+      <div class="person-meta"><h3 id="spSetTitle">Spotify import</h3><span class="small">Everyone can import public playlists and albums by pasting a link (Your Library → Import from Spotify). Nothing to set up.</span></div></header>
+    <p class="small">${sp.fullLinks ? '<b>Whole playlists:</b> on. Links bring in every song.' : 'Without a Spotify app key, links bring in the first 100 songs of a playlist. Add your app’s Client ID and Client Secret below to get every song.'}</p>
+    ${sp.clientId ? `<div class="person-actions"><button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import a playlist</span></button><button class="text-btn danger" data-act="sp-key-remove">Remove Spotify app key</button></div>
+      ${sp.fullLinks ? '' : `<form id="spKeyForm" class="person-add yt-key-form"><input type="hidden" name="clientId" value="${esc(sp.clientId)}">
+        <div class="field"><label for="spSecret">Client Secret (for whole playlists)</label><input id="spSecret" name="clientSecret" required autocomplete="off" spellcheck="false" placeholder="From your Spotify app’s Settings → View client secret"></div>
+        <button class="m-ok" type="submit">Save</button></form>`}
+      <p class="small">Optional extra: “sign in to Spotify” importing only works for people added under <b>User Management</b> in your Spotify app.</p>` : `
+    <p class="small"><b>Optional, owner only:</b> a free Spotify app key lets links bring in whole playlists.</p>
     <ol class="steps small">
       <li>Open the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a>, sign in, and click <b>Create app</b>. Name it Murmur.</li>
       <li>Under <b>Redirect URIs</b>, add each of these exactly, then check <b>Web API</b> and save:<br>${uris.map(u => `<code>${esc(u)}</code>`).join('<br>')}</li>
-      <li>Open the app’s <b>Settings</b>, copy the <b>Client ID</b>, and paste it below.</li>
-      <li>Under <b>User Management</b>, add the Spotify email of everyone who will import, you included.</li>
+      <li>Open the app’s <b>Settings</b>, copy the <b>Client ID</b> and the <b>Client Secret</b> (View client secret), and paste them below.</li>
+      <li>Only for “sign in to Spotify” importing: under <b>User Management</b>, add the Spotify email of each person who uses it.</li>
     </ol>
     <p class="small">Spotify doesn’t accept “localhost” addresses. On this PC, import from <b>http://127.0.0.1:8080</b> or the GitHub Pages site.</p>
     <form id="spKeyForm" class="person-add yt-key-form">
       <div class="field"><label for="spKey">Spotify Client ID</label><input id="spKey" name="clientId" required autocomplete="off" spellcheck="false" placeholder="32 letters and numbers"></div>
+      <div class="field"><label for="spSecret">Client Secret</label><input id="spSecret" name="clientSecret" autocomplete="off" spellcheck="false" placeholder="Settings → View client secret"></div>
       <button class="m-ok" type="submit">Save</button>
     </form>`}
   </section>`;
