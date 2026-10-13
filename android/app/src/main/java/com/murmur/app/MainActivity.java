@@ -121,8 +121,7 @@ public class MainActivity extends Activity {
             keptContext.setBaseContext(this);
             ViewGroup oldParent = (ViewGroup) keptWeb.getParent();
             if (oldParent != null) oldParent.removeView(keptWeb);
-            // New screen: let the page re-fit its size once it's laid out here.
-            keptWeb.post(() -> keptWeb.evaluateJavascript("window.murmurFit && window.murmurFit()", null));
+            // New screen: the page re-fits once it's laid out here (see refit and the layout listener).
         }
         web = keptWeb;
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -158,6 +157,9 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
 
         v.addJavascriptInterface(new Bridge(ctx.getApplicationContext()), "MurmurAndroid");
+        v.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) refit((WebView) view);
+        });
 
         // Ad blocker, part 2: run the ad-removing script inside YouTube's player before YouTube's own code.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -221,6 +223,31 @@ public class MainActivity extends Activity {
         return v;
     }
 
+    /**
+     * Ask the page to size itself for the screen it's on now. Run a few times, because after a flip
+     * Android can finish moving the app to the other screen (and change its density) a moment later.
+     */
+    private static void refit(WebView v) {
+        if (v == null) return;
+        Runnable fit = () -> v.evaluateJavascript("window.murmurFit && window.murmurFit()", null);
+        v.post(fit);
+        v.postDelayed(fit, 250);
+        v.postDelayed(fit, 800);
+    }
+
+    /** Opening the app again (maybe on the other screen): check which screen it's on and fit to it. */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refit(web);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) refit(web);
+    }
+
     /** Murmur itself, its server, and the Spotify sign-in stay inside the app. */
     private static boolean staysInApp(Uri u) {
         String host = u.getHost() == null ? "" : u.getHost();
@@ -240,7 +267,7 @@ public class MainActivity extends Activity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        if (web != null) { web.requestLayout(); web.evaluateJavascript("window.dispatchEvent(new Event('resize'))", null); }
+        if (web != null) { web.requestLayout(); web.evaluateJavascript("window.dispatchEvent(new Event('resize'))", null); refit(web); }
     }
 
     @Override
@@ -344,7 +371,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "2.1"; }
+        public String version() { return "2.2"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }
@@ -362,7 +389,9 @@ public class MainActivity extends Activity {
             android.content.SharedPreferences prefs = app.getSharedPreferences("murmur", Context.MODE_PRIVATE);
             float target = Math.max(prefs.getFloat("targetDensity", 2.625f), density);
             if (target > prefs.getFloat("targetDensity", 0f)) prefs.edit().putFloat("targetDensity", target).apply();
-            return "{\"widthPx\":" + a.web.getWidth() + ",\"density\":" + density + ",\"target\":" + target + "}";
+            int width = a.web.getWidth();
+            if (width <= 0) width = a.getResources().getDisplayMetrics().widthPixels;
+            return "{\"widthPx\":" + width + ",\"density\":" + density + ",\"target\":" + target + "}";
         }
 
         /** The page reports what's playing; the background service keeps it going and shows the notification. */

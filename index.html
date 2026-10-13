@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013160906">
+<meta name="murmur-build" content="20261013162830">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -717,47 +717,7 @@ const GENRES = {
     lead: { type: 'triangle', vol: .09, prob: .3, every: 2, len: 4, delay: true } }
 };
 
-const ALBUMS = [
-  { id: 'paper-lanterns', title: 'Paper Lanterns', artist: 'Mira Okafor', year: 2025, genre: 'lofi',
-    colors: ['#e9925a', '#5a3478', '#ffd9a0'], desc: 'Four rainy-afternoon sketches built around a detuned electric piano.',
-    list: [
-      ['Rain on Tin Roofs', { bpm: 78, root: 57, scale: 'minor', prog: [0, 5, 3, 4] }],
-      ['Second Cup', { bpm: 84, root: 60, scale: 'dorian', prog: [0, 3, 4, 3] }],
-      ['Library Hours', { bpm: 74, root: 55, scale: 'major', prog: [0, 5, 3, 4] }],
-      ['Slow Tram Home', { bpm: 80, root: 58, scale: 'minor', prog: [0, 6, 5, 4] }]
-    ] },
-  { id: 'neon-causeway', title: 'Neon Causeway', artist: 'The Velvet Grid', year: 2024, genre: 'synthwave',
-    colors: ['#ff5fa2', '#1b1446', '#ff9a3c'], desc: 'Analog arpeggios for a coastal highway that only exists after midnight.',
-    list: [
-      ['Causeway at 2 AM', { bpm: 104, root: 57, scale: 'minor', prog: [0, 5, 6, 4] }],
-      ['Chrome Horizon', { bpm: 110, root: 52, scale: 'minor', prog: [0, 3, 5, 4] }],
-      ['Arcade Afterglow', { bpm: 112, root: 55, scale: 'major', prog: [0, 4, 5, 3] }],
-      ['Night Drive Protocol', { bpm: 100, root: 53, scale: 'minor', prog: [0, 5, 2, 6] }]
-    ] },
-  { id: 'basement-hours', title: 'Basement Hours', artist: 'Kofi Lux', year: 2025, genre: 'house',
-    colors: ['#3fd0c9', '#0f2b3d', '#f6f08a'], desc: 'Warm-up cuts tuned for the first hour, before the room fills in.',
-    list: [
-      ['Warehouse Sunrise', { bpm: 122, root: 57, scale: 'minor', prog: [0, 5, 3, 4] }],
-      ['Floor Plan', { bpm: 124, root: 53, scale: 'dorian', prog: [0, 3, 0, 4] }],
-      ['Keep the Lights Low', { bpm: 120, root: 55, scale: 'minor', prog: [0, 6, 5, 6] }],
-      ['Ninety Seconds of Light', { bpm: 126, root: 60, scale: 'major', prog: [0, 5, 3, 4] }]
-    ] },
-  { id: 'tide-tables', title: 'Tide Tables', artist: 'Halden', year: 2023, genre: 'ambient',
-    colors: ['#8fb8c9', '#1f3a4a', '#e7efe6'], desc: 'Each piece is named for a reading from a harbour tide chart.',
-    list: [
-      ['Low Water, 06:12', { bpm: 64, root: 50, scale: 'major', prog: [0, 3, 5, 4] }],
-      ['Fog Bank', { bpm: 60, root: 52, scale: 'minor', prog: [0, 5, 3, 6] }],
-      ['Slack Tide', { bpm: 66, root: 55, scale: 'major', prog: [0, 4, 3, 4] }]
-    ] },
-  { id: 'concrete-garden', title: 'Concrete Garden', artist: 'Ostra', year: 2024, genre: 'downtempo',
-    colors: ['#9bc26b', '#2e2a22', '#e5704b'], desc: 'Broken beats and sub bass recorded under an overpass, figuratively.',
-    list: [
-      ['Smoke Signals', { bpm: 88, root: 52, scale: 'minor', prog: [0, 3, 4, 0] }],
-      ['Concrete Garden', { bpm: 90, root: 57, scale: 'dorian', prog: [0, 3, 0, 4] }],
-      ['Late Checkout', { bpm: 86, root: 55, scale: 'minor', prog: [0, 5, 3, 4] }],
-      ['Overpass Bloom', { bpm: 92, root: 53, scale: 'minor', prog: [0, 6, 5, 4] }]
-    ] }
-];
+const ALBUMS = [];
 
 const TRACKS = {}, ALBUM_MAP = {};
 ALBUMS.forEach(a => {
@@ -773,16 +733,7 @@ ALBUMS.forEach(a => {
 });
 const ARTISTS = [...new Set(ALBUMS.map(a => a.artist))];
 const T = (a, n) => a + '-' + n;
-const CURATED = [
-  { id: 'deep-focus', name: 'Deep Focus', desc: 'Soft keys and slow pulses for long work blocks.',
-    tracks: [T('paper-lanterns', 3), T('tide-tables', 1), T('paper-lanterns', 1), T('tide-tables', 2), T('paper-lanterns', 2), T('tide-tables', 3), T('paper-lanterns', 4)] },
-  { id: 'night-drive', name: 'Night Drive', desc: 'Synths and low end for empty highways.',
-    tracks: [T('neon-causeway', 1), T('concrete-garden', 1), T('neon-causeway', 4), T('neon-causeway', 2), T('concrete-garden', 4), T('neon-causeway', 3)] },
-  { id: 'friday-warm-up', name: 'Friday Warm-Up', desc: 'Start low, end loud. House into synthwave.',
-    tracks: [T('basement-hours', 3), T('basement-hours', 1), T('neon-causeway', 3), T('basement-hours', 2), T('basement-hours', 4), T('neon-causeway', 2)] },
-  { id: 'daily-mix', name: 'Daily Mix 1', desc: 'Mira Okafor, Ostra, Halden and more.',
-    tracks: [T('concrete-garden', 3), T('paper-lanterns', 1), T('basement-hours', 1), T('tide-tables', 3), T('concrete-garden', 2), T('neon-causeway', 1), T('paper-lanterns', 4)] }
-];
+const CURATED = [];
 
 /* ================= covers ================= */
 function makeCover(a) {
@@ -1321,7 +1272,7 @@ const DEFAULT_LIKED = [T('paper-lanterns', 1), T('neon-causeway', 2), T('concret
 const state = {
   view: { name: 'home' }, back: [], fwd: [],
   liked: new Set(store.get('liked', DEFAULT_LIKED)),
-  playlists: store.get('playlists', [{ id: 'u-sunday', name: 'Sunday Reset', tracks: [T('tide-tables', 3), T('paper-lanterns', 2), T('concrete-garden', 3)] }]),
+  playlists: store.get('playlists', []).filter(p => p.id !== 'u-sunday'),
   hidden: new Set(store.get('hidden', [])), hiddenCols: new Set(store.get('hiddenCols', [])),
   recent: store.get('recent', []),
   volume: store.get('volume', .8), muted: false,
@@ -1828,7 +1779,7 @@ function getCollection(type, id) {
     const tracks = UPLOADS.trackIds.filter(t => offline.has(t) && visible(t));
     const bytes = tracks.reduce((s, t) => s + (offline.get(t).size || 0), 0);
     return { type, id: 'downloads', kind: 'On this device', title: 'Downloaded', sub: `<b>You</b>${bytes ? ' · ' + fmtSize(bytes) : ''}`,
-      desc: 'Downloaded songs play with no connection. The built-in demo songs always work offline.', tracks, dlCover: true, color: '#3a8f7a' };
+      desc: 'Downloaded songs play with no connection.', tracks, dlCover: true, color: '#3a8f7a' };
   }
   if (type === 'genre') {
     const g = GENRES[id]; if (!g) return null;
@@ -1945,8 +1896,9 @@ function tasteSeeds() {
   const ranked = [...w.entries()].sort((a, b) => b[1] - a[1]);
   const genres = ranked.filter(([k]) => k.startsWith('g:')).slice(0, 3).map(([k]) => k.slice(2));
   const artists = ranked.filter(([k]) => k.startsWith('a:')).slice(0, 2).map(([k]) => k.slice(2));
-  if (!genres.length) genres.push('Lo-fi', 'Synthwave');
-  return { genres, artists };
+  const guessed = !genres.length;
+  if (guessed) genres.push('Hip-Hop', 'Pop', 'R&B');
+  return { genres, artists, guessed };
 }
 const ytQueryFor = s => s.kind === 'genre' ? `${s.value} music` : `songs like ${s.value}`;
 async function ytSearch(q, genreTag) {
@@ -1960,8 +1912,8 @@ async function ytSearch(q, genreTag) {
 }
 async function loadSuggestions() {
   if (!server.on) return;
-  const { genres } = tasteSeeds();
-  yt.shelves = genres.slice(0, 3).map(g => ({ kind: 'genre', value: g }));
+  const { genres, guessed } = tasteSeeds();
+  yt.shelves = genres.slice(0, 3).map(g => ({ kind: 'genre', value: g, guessed }));
   await Promise.all(yt.shelves.map(async sh => {
     const key = 'genre:' + sh.value.toLowerCase();
     try {
@@ -1983,7 +1935,7 @@ function ytShelvesHTML() {
   const shelves = yt.shelves.map(sh => {
     const key = 'genre:' + sh.value.toLowerCase(), ids = (cat.results.get(key) || []).filter(id => TRACKS[id] && visible(id));
     if (!ids.length) return '';
-    return `<div class="shelf-head"><h2>Because you like ${esc(sh.value)}</h2><p>Popular ${esc(sh.value)} songs</p></div><div class="shelf">${ids.slice(0, 12).map((id, i) => catCard(id, key, i)).join('')}</div>`;
+    return `<div class="shelf-head"><h2>${sh.guessed ? 'Popular ' + esc(sh.value) : 'Because you like ' + esc(sh.value)}</h2><p>${sh.guessed ? 'Like or play songs and these follow your taste' : 'Popular ' + esc(sh.value) + ' songs'}</p></div><div class="shelf">${ids.slice(0, 12).map((id, i) => catCard(id, key, i)).join('')}</div>`;
   }).join('');
   if (!yt.enabled && me && me.role === 'owner') return shelves + `<div class="yt-setup"><span>${icon('search')}</span><div><b>Turn on YouTube playback</b><p class="small">Suggested songs play from YouTube. Connect a free YouTube API key to play them.</p></div><button class="text-btn" data-act="go-settings">Set up YouTube</button></div>`;
   return shelves;
@@ -2419,7 +2371,7 @@ function render() {
   else if (v.name === 'people') el.innerHTML = viewPeople();
   else if (v.name === 'collection') el.innerHTML = viewCollection(v.type, v.id);
   if (server.offlineMode) {
-    el.insertAdjacentHTML('afterbegin', `<div class="offline-banner" role="status">${icon('cloudOff')}<span><b>Offline.</b> Can’t reach your Murmur server, so only downloaded songs and the demo music can play.</span><button class="text-btn" data-act="retry">Try again</button></div>`);
+    el.insertAdjacentHTML('afterbegin', `<div class="offline-banner" role="status">${icon('cloudOff')}<span><b>Offline.</b> Can’t reach your Murmur server, so only downloaded songs can play.</span><button class="text-btn" data-act="retry">Try again</button></div>`);
   }
   syncDownloads();
   $$('[data-act="nav"]').forEach(b => b.classList.toggle('on', b.dataset.to === v.name));
@@ -3883,12 +3835,21 @@ window.murmurFit = () => {
   let info; try { info = JSON.parse(app.displayInfo()); } catch (e) { return; }
   const meta = document.querySelector('meta[name="viewport"]');
   if (!meta || !info.widthPx || !info.density || !info.target) return;
-  let content = 'width=device-width, initial-scale=1, viewport-fit=cover';
+  // The zoom is always pinned (minimum = maximum), so moving between screens can't leave the
+  // previous screen's zoom behind: the inside screen gets exactly 1, the cover screen its own scale.
+  let content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
   if (info.density < info.target * 0.92) {
     const scale = info.target / info.density, width = Math.round(info.widthPx / info.target);
     content = `width=${width}, initial-scale=${scale.toFixed(3)}, minimum-scale=${scale.toFixed(3)}, maximum-scale=${scale.toFixed(3)}, user-scalable=no, viewport-fit=cover`;
   }
-  if (meta.getAttribute('content') !== content) meta.setAttribute('content', content);
+  if (meta.getAttribute('content') === content) return;
+  meta.setAttribute('content', content);
+  // New screen: things placed by measuring (menus, the YouTube box, the full player) are redone for it.
+  closeMenu();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    placeYtBox();
+    const f = $('#full'); if (f && !f.hidden) f.classList.toggle('scrolls', f.scrollHeight > f.clientHeight + 4);
+  }));
 };
 window.murmurFit();
 setTimeout(window.murmurFit, 500);   // in case the screen size wasn't known yet
