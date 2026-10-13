@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013184220">
+<meta name="murmur-build" content="20261013185540">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -291,6 +291,10 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .row.is-dl .dl-dot{display:inline-block}
 .row.is-dling .t::after{content:" · downloading";color:var(--muted);font-weight:500;font-size:12px}
 .dl-btn.on{color:var(--accent)}
+.dl-col{font-weight:600}
+.dl-note{color:var(--muted);flex-basis:100%}
+.dl-note:empty{display:none}
+.dl-col svg{width:18px;height:18px}
 .dl-btn.busy{color:var(--accent);animation:dlpulse 1.1s ease-in-out infinite}
 @keyframes dlpulse{50%{opacity:.35}}
 .dl-cover{background:linear-gradient(140deg,#1d6b5a 0%,#3a8f7a 50%,#ffb070 100%)}
@@ -1100,10 +1104,22 @@ async function fetchWithProgress(url, onProg) {
   return new Blob(parts, { type: res.headers.get('content-type') || 'audio/mpeg' });
 }
 const canDownload = id => !!TRACKS[id] && !!TRACKS[id].src;
+function dlTargets(ids) {
+  return [...new Set(ids.map(id => {
+    const t = TRACKS[id]; if (!t) return null;
+    if (t.src) return id;
+    if (t.sp && spStatus(id) === 'file') return 'f-' + sp.matches[t.key].file;
+    return null;
+  }).filter(id => id && canDownload(id)))];
+}
+const dlNoun = col => col.kind === 'Album' ? 'album' : ['playlist', 'liked', 'import', 'mlist'].includes(col.type) || col.kind === 'Playlist' ? 'playlist' : 'songs';
+// Songs in a list that only play from YouTube (no file in Murmur), so they can't be saved.
+const dlSkipped = col => col.tracks.filter(id => !dlTargets([id]).length).length;
+const ytOnlyText = n => n === 1 ? '1 song only plays from YouTube and can’t be downloaded.' : n + ' songs only play from YouTube and can’t be downloaded.';
 function downloadTracks(ids) {
   const want = ids.filter(id => canDownload(id) && !offline.has(id) && !dlq.queue.includes(id) && !(dlq.cur && dlq.cur.id === id));
   if (!want.length) {
-    toast(ids.some(canDownload) ? 'Already downloaded' : 'Demo songs already play offline. Only your uploads need downloading.');
+    toast(ids.some(canDownload) ? 'Already downloaded' : 'Only songs with a file in Murmur can be downloaded. YouTube songs can’t.');
     return;
   }
   if (!server.on) { toast('Downloading needs a connection to your Murmur server.'); return; }
@@ -1167,11 +1183,17 @@ function syncDownloads() {
   $$('.row[data-tid]').forEach(r => { r.classList.toggle('is-dl', offline.has(r.dataset.tid)); r.classList.toggle('is-dling', busy.has(r.dataset.tid)); });
   $$('[data-act="col-dl"]').forEach(b => {
     const col = getCollection(b.dataset.type, b.dataset.id); if (!col) return;
-    const ups = col.tracks.filter(canDownload), done = ups.length && ups.every(id => offline.has(id)), going = ups.some(id => busy.has(id));
+    const ups = dlTargets(col.tracks), have = ups.filter(id => offline.has(id)).length;
+    const done = ups.length && have === ups.length, going = ups.some(id => busy.has(id)), noun = dlNoun(col);
     b.classList.toggle('on', !!done); b.classList.toggle('busy', going && !done);
-    b.innerHTML = icon(done ? 'dlFill' : 'download');
-    const label = done ? 'Remove download' : going ? 'Downloading…' : 'Download for offline';
-    b.setAttribute('aria-label', label); b.title = label;
+    const text = done ? 'Downloaded' : going ? `Downloading ${have} of ${ups.length}` : have ? `Download the rest (${ups.length - have})` : `Download ${noun}`;
+    b.innerHTML = icon(done ? 'dlFill' : 'download') + `<span>${text}</span>`;
+    const skipped = dlSkipped(col);
+    b.title = (done ? 'Saved on this device. Click to remove the download.' : 'Save every song on this device to play with no connection.')
+      + (skipped ? ' ' + ytOnlyText(skipped) : '');
+    b.setAttribute('aria-label', b.title);
+    const note = b.parentElement && b.parentElement.querySelector('.dl-note');
+    if (note) note.textContent = skipped ? ytOnlyText(skipped) : '';
   });
 }
 async function saveToDevice(id) {
@@ -1867,7 +1889,7 @@ function getCollection(type, id) {
     return { type, id: 'liked', kind: 'Playlist', title: 'Liked Songs', desc: '', sub: '<b>You</b>', tracks: [...state.liked].filter(visible).reverse(), liked: true, color: '#7b4fd9' };
   }
   if (type === 'downloads') {
-    const tracks = UPLOADS.trackIds.filter(t => offline.has(t) && visible(t));
+    const tracks = [...UPLOADS.trackIds, ...SHARED.trackIds].filter(t => offline.has(t) && visible(t));
     const bytes = tracks.reduce((s, t) => s + (offline.get(t).size || 0), 0);
     return { type, id: 'downloads', kind: 'On this device', title: 'Downloaded', sub: `<b>You</b>${bytes ? ' · ' + fmtSize(bytes) : ''}`,
       desc: 'Downloaded songs play with no connection.', tracks, dlCover: true, color: '#3a8f7a' };
@@ -2285,9 +2307,8 @@ function viewCollection(type, id) {
   const albumOk = col.uploaded && canEditMusic() && (col.mine || me.role === 'owner');
   const delLabel = col.imported ? 'Delete import' : col.editable ? 'Delete playlist' : col.uploaded ? (albumOk ? 'Delete album' : '') : (col.demo || col.curated) ? 'Remove from library' : '';
   const del = delLabel ? `<button class="text-btn" data-act="col-delete" data-type="${type}" data-id="${esc(id)}">${icon('trash')}<span>${delLabel}</span></button>` : '';
-  const hasUploads = col.tracks.some(canDownload);
-  const dlBtn = hasUploads && (server.on || col.tracks.some(t => offline.has(t)))
-    ? `<button class="icon-btn dl-btn" data-act="col-dl" data-type="${type}" data-id="${esc(id)}" aria-label="Download for offline">${icon('download')}</button>` : '';
+  const dlBtn = type !== 'downloads' && col.tracks.length && (server.on || dlTargets(col.tracks).some(t => offline.has(t)))
+    ? `<button class="text-btn dl-btn dl-col" data-act="col-dl" data-type="${type}" data-id="${esc(id)}">${icon('download')}<span>Download ${dlNoun(col)}</span></button><span class="small dl-note"></span>` : '';
   const clearDl = type === 'downloads' && n ? `<button class="text-btn" data-act="dl-clear">${icon('trash')}<span>Remove all downloads</span></button>` : '';
   const editAlbum = albumOk ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '';
   return `<header class="hero" style="--tint:${col.color}">
@@ -3029,14 +3050,17 @@ function act(el, e) {
     case 'sel-queue': addToQueue(selIds()); clearSel(); break;
     case 'sel-edit': openEdit(selIds()); break;
     case 'sel-dl': {
-      const ids = selIds().filter(canDownload);
+      const ids = dlTargets(selIds());
       if (ids.every(id => offline.has(id))) confirmRemoveDownloads(ids); else { downloadTracks(ids); clearSel(); }
       break;
     }
     case 'col-dl': {
       const col = getCollection(d.type, d.id); if (!col) return;
-      const ids = col.tracks.filter(canDownload);
-      if (ids.length && ids.every(id => offline.has(id))) confirmRemoveDownloads(ids); else downloadTracks(ids);
+      const ids = dlTargets(col.tracks), skipped = dlSkipped(col);
+      if (!ids.length) { toast('These songs play from YouTube, which can’t be downloaded. Use ⋯ → Bring into Murmur on a song to add your own copy, then download it.'); break; }
+      if (ids.every(id => offline.has(id))) { confirmRemoveDownloads(ids); break; }
+      downloadTracks(ids);
+      if (skipped) toast(`Downloading ${plural(ids.filter(id => !offline.has(id)).length, 'song')}. ${ytOnlyText(skipped)}`);
       break;
     }
     case 'dl-clear': confirmRemoveDownloads([...offline.keys()].filter(id => TRACKS[id])); break;
