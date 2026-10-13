@@ -91,6 +91,13 @@ public class MainActivity extends Activity {
         Window w = getWindow();
         w.setStatusBarColor(BG);
         w.setNavigationBarColor(BG);
+        // Use the whole screen, including around camera cutouts (the Razr's cover screen has its cameras in it).
+        // The page is padded away from the cutouts below, so nothing ends up under a camera.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.view.WindowManager.LayoutParams lp = w.getAttributes();
+            lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+            w.setAttributes(lp);
+        }
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BG);
@@ -331,7 +338,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.8"; }
+        public String version() { return "1.9"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }

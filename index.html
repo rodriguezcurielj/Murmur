@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261012223917">
+<meta name="murmur-build" content="20261012224631">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -504,6 +504,68 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .up-btn{padding:6px 10px}
 }
 @media (hover:none){.row .like,.row .more{opacity:1}}
+
+/* ---------- short screens: the Razr's cover screen, or a phone held sideways ---------- */
+@media (max-height:560px){
+  .topbar{padding:6px 12px;gap:6px}
+  .top-search{max-width:none}
+  .top-search input{padding:6px 0;font-size:14px}
+  .topbar .icon-btn{width:30px;height:30px}
+  .view{padding-top:2px;padding-bottom:20px}
+  .greet{font-size:22px;margin:4px 0 10px}
+  .search-title{font-size:20px}
+  .quick{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px}
+  .qt .cover{width:42px;height:42px}
+  .qt{font-size:13px}
+  .shelf-head{margin:16px 0 6px}
+  .shelf-head h2{font-size:18px}
+  .shelf{grid-auto-columns:minmax(112px,124px)}
+  .card{padding:6px;gap:6px}
+  .card .sb{-webkit-line-clamp:1}
+  .fab{width:34px;height:34px}
+  .hero{flex-direction:row;align-items:flex-end;gap:14px;padding:14px 16px}
+  .hero-cover{width:92px;align-self:auto}
+  .hero h1,.title-input{font-size:24px}
+  .hero-desc{display:none}
+  .hero-sub{font-size:12px}
+  .actions{padding:8px 0;gap:10px}
+  .big-play{width:42px;height:42px}
+  .big-play svg{width:18px;height:18px}
+  .row{padding-top:4px;padding-bottom:4px}
+  .ti img{width:34px;height:34px}
+  .player{min-height:0}
+  .p-cover{width:44px;height:44px}
+  .drop{padding:12px;margin-bottom:12px}
+  /* Full-screen player side by side: cover on the left, everything else on the right. */
+  .full{padding:calc(8px + env(safe-area-inset-top,0px)) 14px calc(8px + env(safe-area-inset-bottom,0px))}
+  .full-in{max-width:none;min-height:100%;display:grid;grid-template-columns:auto minmax(0,1fr);
+    grid-template-areas:"top top" "cover meta" "cover seek" "cover ctl" "cover switch" "cover viz";align-content:center;column-gap:18px;row-gap:6px}
+  .full-top{grid-area:top}
+  .full-cover{grid-area:cover;width:auto;height:min(calc(100vh - 80px),46vw);aspect-ratio:1;align-self:center}
+  .full-meta{grid-area:meta}
+  .full-title{font-size:20px}
+  .full-seek{grid-area:seek}
+  .controls.big{grid-area:ctl}
+  .controls.big .play-btn{width:50px;height:50px}
+  .controls.big .icon-btn{width:38px;height:38px}
+  #fVideoSwitch{grid-area:switch;justify-self:start}
+  #viz{grid-area:viz;height:34px}
+  #fFacts{display:none}
+}
+/* Short AND narrow: the cover screen itself. */
+@media (max-height:560px) and (max-width:760px){
+  .m-brand{display:none}
+  .player{margin:0 6px 4px;padding:4px 6px}
+  .p-cover{width:36px;height:36px}
+  .mini-play{width:36px;height:36px}
+  .bottom-nav{padding:0}
+  .bottom-nav button{font-size:0;gap:0;padding:6px 0}
+  .bottom-nav svg{width:22px;height:22px}
+  .toast{bottom:96px}
+  .sel-bar{bottom:92px}
+  .up-status{bottom:96px}
+  .full-cover{height:min(calc(100vh - 70px),42vw)}
+}
 @media (prefers-reduced-motion:reduce){.dl-btn.busy{animation:none}*{transition:none!important}.eq i{animation:none;height:10px}.toast.show{animation:none}}
 </style>
 
@@ -2175,7 +2237,7 @@ function buildShell() {
     <canvas id="viz" aria-hidden="true"></canvas>
     <div class="full-meta"><div><div class="full-title" id="fTitle"></div><button class="full-artist ell" id="fArtist" data-act="open" data-type="artist"></button></div>
       <button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
-    <div><input type="range" data-seek id="fSeek" min="0" max="1000" value="0" aria-label="Seek"><div class="times"><span data-pos>0:00</span><span data-dur>0:00</span></div></div>
+    <div class="full-seek"><input type="range" data-seek id="fSeek" min="0" max="1000" value="0" aria-label="Seek"><div class="times"><span data-pos>0:00</span><span data-dur>0:00</span></div></div>
     <div class="controls big">${ctrls()}</div>
     <p class="small" id="fFacts"></p>
   </div>`;
