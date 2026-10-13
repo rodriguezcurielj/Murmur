@@ -241,14 +241,24 @@ public class MainActivity extends Activity {
         pendingPick = null;
     }
 
-    /** Back gesture: close menus and go back inside Murmur first; leave the app only from Home. */
+    private long lastBackOnHome = 0;
+
+    /**
+     * Back gesture: closes whatever is open, otherwise jumps to Murmur's Home. On Home, the first swipe
+     * shows "Swipe back again to exit" and a second swipe within 2 seconds leaves the app (music keeps playing).
+     */
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         web.evaluateJavascript("(window.murmurBack ? window.murmurBack() : false)", handled -> {
-            if (!"true".equals(handled)) {
-                if (web.canGoBack()) web.goBack();
-                else moveTaskToBack(true);   // keep music playing instead of closing
+            if ("true".equals(handled)) { lastBackOnHome = 0; return; }
+            long now = System.currentTimeMillis();
+            if (now - lastBackOnHome < 2000) {
+                lastBackOnHome = 0;
+                moveTaskToBack(true);   // leave the app without closing it, so music keeps playing
+            } else {
+                lastBackOnHome = now;
+                Toast.makeText(this, "Swipe back again to exit", Toast.LENGTH_SHORT).show();
             }
         });
     }
@@ -310,7 +320,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "1.6"; }
+        public String version() { return "1.7"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }

@@ -3530,7 +3530,7 @@ async function addPerson(form) {
     });
   }
 })();
-/* The Android app's back button: close whatever is open, else go back a page. Returns false when there's nothing left. */
+/* The Android app's back button: close whatever is open, else go to Home. Returns false on Home. */
 window.murmurBack = () => {
   if (!$('#tqDrop').hidden) { closeDrop(); return true; }
   if (!$('#modal').hidden) { closeModal(); return true; }
@@ -3538,8 +3538,11 @@ window.murmurBack = () => {
   if (!$('#full').hidden) { $('#full').hidden = true; return true; }
   if (state.sel || state.libSel) { clearSel(); return true; }
   if (!$('#gate').hidden) return false;
-  if (state.back.length) { state.fwd.push(state.view); navigate(state.back.pop(), false); return true; }
-  if (state.view.name !== 'home') { navigate({ name: 'home' }); return true; }
+  // Anywhere but Home: back goes straight to Home. On Home the app asks for a second swipe to exit.
+  if (state.view.name !== 'home' || state.search) {
+    state.search = ''; const q = $('#tq'); if (q) { q.value = ''; const c = $('#tqClear'); if (c) c.hidden = true; }
+    navigate({ name: 'home' }); return true;
+  }
   return false;
 };
 let installEvt = null;
