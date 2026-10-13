@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const createAuth = require('./auth');
 const createYouTube = require('./youtube');
 const createSpotify = require('./spotify');
+const createDiscover = require('./discover');
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -74,6 +75,7 @@ app.use('/api', express.json({ limit: '10mb' }));   // imported Spotify playlist
 app.use('/api', auth.requireUser);
 auth.routes(app);
 createYouTube(path.join(DATA, 'settings.json'), auth).routes(app);
+createDiscover().routes(app);
 createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id) }).routes(app);
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 

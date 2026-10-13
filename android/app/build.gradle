@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.murmur.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.murmur.app'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0'
+        // The page the app opens. It's the GitHub Pages copy, which finds your server through config.js.
+        buildConfigField 'String', 'START_URL', '"https://rodriguezcurielj.github.io/Murmur/"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    // Signed with a key kept on this computer (android/murmur-release.jks, not in git), so
+    // new versions install over old ones. See android/README.md to make the key.
+    signingConfigs {
+        release {
+            def props = new Properties()
+            def f = rootProject.file('keystore.properties')
+            if (f.exists()) {
+                f.withInputStream { props.load(it) }
+                storeFile rootProject.file(props['storeFile'])
+                storePassword props['storePassword']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig rootProject.file('keystore.properties').exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

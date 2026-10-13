@@ -388,6 +388,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .sp-chip.yt{border-color:transparent;background:color-mix(in srgb,#e0473f 22%,transparent);color:#ff8f88}
 .sp-chip.none{border-color:color-mix(in srgb,#ff8e8e 40%,transparent);color:#ff9a9a}
 .sp-av{background:#2fa36b;color:#fff}
+.disc-badge{background:#5d8bf4}
 .sp-av svg{width:16px;height:16px}
 .ver-list{display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow:auto;margin:0 -4px}
 .ver{display:flex;align-items:center;gap:10px;padding:6px;border-radius:8px;cursor:pointer;color:var(--fg)}
@@ -1053,6 +1054,17 @@ async function saveToDevice(id) {
   const t = TRACKS[id]; if (!t || !t.src) return;
   const name = `${t.artist && t.artist !== 'Unknown artist' ? t.artist + ' - ' : ''}${t.title}`.replace(/[\\/:*?"<>|]+/g, '').slice(0, 120) || 'song';
   let href = t.src, temp = null;
+  if (window.MurmurAndroid) {
+    // Inside the Android app: hand the file to the app, which saves it to Downloads.
+    try {
+      const rec = offline.has(id) ? await Offline.get(id) : null;
+      const blob = rec && rec.blob ? rec.blob : await (await fetch(t.src)).blob();
+      const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
+      const ok = window.MurmurAndroid.saveFile(`${name}.${t.format || 'mp3'}`, blob.type || 'audio/mpeg', b64);
+      toast(ok ? `Saved “${t.title}” to Downloads` : `Couldn't save ${t.title}.`);
+    } catch (e) { toast(`Couldn't save ${t.title}. Check your connection to the Murmur server.`); }
+    return;
+  }
   if (remote.base || offline.has(id)) {
     // Browsers ignore the file name for links to other sites, so fetch the file first.
     try {
@@ -1539,6 +1551,12 @@ function getCollection(type, id) {
     const sub = albums.length ? plural(albums.filter(a => a.trackIds.some(visible)).length, 'album') : 'From your uploads';
     return { type, id, kind: 'Artist', title: id, desc: '', sub, tracks, cover: tCover(tracks[0]), color: ALBUM_MAP[TRACKS[tracks[0]].albumId].colors[0], round: true };
   }
+  if (type === 'discover') {
+    const tracks = disc.ids.filter(visible);
+    return { type, id: 'mix', kind: 'Made for you', title: 'Discover',
+      desc: disc.seeds.length ? `New songs from artists similar to ${disc.seeds.join(', ')}. They play from YouTube; use ⋯ → Bring into Murmur to keep your own copy.` : 'Popular songs right now. Like and play more music and this fills up with picks for you.',
+      sub: '<b>Murmur</b> · refreshed daily', tracks, mosaic: mosaicFor(tracks), cover: DISCALBUM.cover, color: '#5d8bf4', discover: true };
+  }
   if (type === 'import') {
     const imp = sp.imports.find(i => i.id === id); if (!imp) return null;
     const tracks = (imp.trackIds || []).filter(visible);
@@ -1766,6 +1784,7 @@ function viewHome() {
     return `<div class="qt" data-act="open" data-type="${t}" data-id="${i}" data-col-key="${t}:${i}" role="button" tabindex="0">${coverHTML(col, '')}<span class="nm ell">${esc(col.title)}</span>${col.tracks.length ? playFab(t, i) : ''}</div>`;
   }).join('')}</div>
   ${shelf('Your albums', upAlbums().map(a => card('album', a.id)), 'Grouped from the album tags on your uploads')}
+  ${discoverShelfHTML()}
   ${ytShelvesHTML()}
   ${shelf('Made for you', visCurated().map(p => card('playlist', p.id)), 'Mixes built from your listening')}
   ${shelf('Recently played', recent.map(([t, i]) => card(t, i)))}
@@ -1890,7 +1909,9 @@ function viewCollection(type, id) {
     ? `<input class="title-input" id="plName" data-pid="${esc(id)}" value="${esc(col.title)}" aria-label="Playlist name" maxlength="60">`
     : `<h1>${esc(col.title)}</h1>`;
   let body;
-  if (type === 'downloads' && !n) {
+  if (type === 'discover' && !n) {
+    body = `<div class="empty"><h2>${disc.loading ? 'Finding new songs…' : 'No suggestions yet'}</h2>${disc.error ? esc(disc.error) : 'Like a few songs or play some music, then tap Get new suggestions.'}</div>`;
+  } else if (type === 'downloads' && !n) {
     body = `<div class="empty"><h2>Nothing downloaded yet</h2>Open an album, playlist or Uploads and tap the download button, or pick songs with Select and choose Download. Downloaded songs play here with no connection.</div>`;
   } else if (col.uploadsAll && !server.on && !server.offlineMode) {
     body = `<div class="empty"><h2>Uploads need the Murmur server</h2>Run Murmur with Docker (<code>docker compose up -d</code>) and open <b>localhost:8080</b>. Your files are stored in the <code>music-data</code> folder.</div>`;
@@ -1926,13 +1947,14 @@ function viewCollection(type, id) {
   <div class="actions">
     ${n ? playFab(type, id, 'big-play') : ''}
     <button class="icon-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}">${icon('shuffle')}</button>
-    ${dlBtn}${n ? selBtn(type, id) : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${editAlbum}${del}${clearDl}
+    ${dlBtn}${n ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${editAlbum}${del}${clearDl}
   </div>
   ${body}${rec}`;
 }
 function libEntries() {
   const out = [{ type: 'liked', id: 'liked', name: 'Liked Songs', sub: `Playlist · ${plural(getCollection('liked').tracks.length, 'song')}`, k: 'playlist' }];
   if (server.on || server.offlineMode) out.push({ type: 'album', id: 'uploads', name: 'Uploads', sub: `Your files · ${plural(UPLOADS.trackIds.length, 'song')}`, k: 'playlist' });
+  if (server.on && (disc.ids.length || disc.loading)) out.push({ type: 'discover', id: 'mix', name: 'Discover', sub: `Made for you · ${plural(disc.ids.filter(visible).length, 'song')}`, k: 'playlist' });
   sp.imports.forEach(imp => out.push({ type: 'import', id: imp.id, name: imp.name, sub: `Spotify playlist · ${plural((imp.trackIds || []).length, 'song')}`, k: 'playlist', sel: true }));
   const ytCount = YTALBUM.trackIds.filter(visible).length;
   if (ytCount) out.push({ type: 'album', id: 'youtube', name: 'From YouTube', sub: `YouTube · ${plural(ytCount, 'song')}`, k: 'playlist' });
@@ -2166,7 +2188,7 @@ function renderNP() {
   <img class="cover np-cover" src="${tCover(t.id)}" alt="${esc(t.album)}">
   <div class="np-meta"><div style="min-width:0"><h3>${esc(t.title)}</h3><button class="np-artist ell" data-act="open" data-type="artist" data-id="${esc(t.artist)}">${esc(t.artist)}</button></div>
     <button class="icon-btn like${state.liked.has(t.id) ? ' on' : ''}" data-act="like" data-tid="${t.id}" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
-  ${t.sp ? `<div class="np-card"><span class="eyebrow">From your Spotify import</span>
+  ${t.sp ? `<div class="np-card"><span class="eyebrow">${t.disc ? 'Suggested for you' : 'From your Spotify import'}</span>${t.disc && t.because ? `<p class="small">Because you listen to ${esc(t.because)}</p>` : ''}
     <dl class="facts"><dt>Album</dt><dd>${esc(t.album)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Playing from</dt><dd>${{ file: 'Your file in Murmur', yt: 'YouTube', none: 'Nothing found yet', new: 'Looking it up…' }[spStatus(t.id)]}</dd></dl>
     <div class="acct-actions">${canEditMusic() && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-bring" data-tid="${t.id}">${icon('upload')}<span>Bring into Murmur</span></button>` : ''}
       ${yt.enabled ? `<button class="text-btn" data-act="m-spver" data-tid="${t.id}">${icon('search')}<span>Choose a YouTube version</span></button>` : ''}</div></div>`
@@ -2600,6 +2622,8 @@ function act(el, e) {
     case 'acct-server': closeModal(); showGate('connect'); break;
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
+    case 'disc-play': playFrom('discover', 'mix', +d.i); break;
+    case 'disc-refresh': loadDiscover(true); break;
     case 'sp-import': closeModal(); spAccess().then(tok => tok ? openImportPicker() : spLogin()); break;
     case 'sp-sync': syncImport(d.id); break;
     case 'm-bring': bringIntoMurmur(d.tid); break;
@@ -2811,10 +2835,13 @@ const normKey = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[�
 const matchKey = x => x.isrc ? 'isrc:' + x.isrc.toUpperCase() : 'n:' + normKey(x.artist) + '|' + normKey(x.title);
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-function addSpTrack(x) {
+function addSpTrack(x, source = 'spotify') {
   const id = 'sp-' + hashStr(x.key).toString(36) + hashStr('m' + x.key).toString(36);
-  TRACKS[id] = { id, sp: true, key: x.key, title: x.title, artist: x.artist || 'Unknown artist', album: x.album || 'Spotify', albumId: 'spotify',
-    genre: 'spotify', duration: x.duration || 0, cover: x.cover || SPALBUM.cover, isrc: x.isrc, url: x.url, seed: hashStr(id) };
+  if (TRACKS[id] && !(TRACKS[id].disc && source === 'spotify')) return id;   // an imported copy wins over a suggestion
+  const isDisc = source === 'discover';
+  TRACKS[id] = { id, sp: true, disc: isDisc, key: x.key, title: x.title, artist: x.artist || 'Unknown artist', album: x.album || (isDisc ? 'Discover' : 'Spotify'),
+    albumId: isDisc ? 'discover' : 'spotify', genre: isDisc ? 'discover' : 'spotify', duration: x.duration || 0, cover: x.cover || (isDisc ? DISCALBUM.cover : SPALBUM.cover),
+    isrc: x.isrc, url: x.url, because: x.because || '', seed: hashStr(id) };
   return id;
 }
 function hydrateImports() {
@@ -3062,6 +3089,69 @@ function spotifySettingsHTML() {
   </section>`;
 }
 
+/* ================= Discover: new songs from similar artists ================= */
+const DISCALBUM = { id: 'discover', title: 'Discover', artist: 'Murmur', year: 'Made for you', genre: 'discover', seed: 23,
+  colors: ['#5d8bf4', '#141a33', '#ffb070'], desc: '', trackIds: [] };
+DISCALBUM.cover = makeCover(DISCALBUM);
+ALBUM_MAP.discover = DISCALBUM;
+const disc = { ids: [], seeds: [], loading: false, error: '' };
+const cleanArtist = a => String(a || '').split(',')[0].replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').replace(/\s+official$/i, '').trim();
+/* The artists you actually listen to: liked songs count most, then plays, Spotify imports and uploads. Demo artists are skipped. */
+function discoverSeeds() {
+  const demo = new Set(ARTISTS.map(a => a.toLowerCase())), w = new Map();
+  const add = (a, n) => { a = cleanArtist(a); if (!a || demo.has(a.toLowerCase()) || /^(unknown artist|youtube|various artists|spotify)$/i.test(a)) return; w.set(a, (w.get(a) || 0) + n); };
+  const weigh = (id, n) => { const t = TRACKS[id]; if (t && visible(id) && (t.src || t.yt || t.sp)) add(t.artist, n); };
+  const plays = store.get('plays', {});
+  state.liked.forEach(id => weigh(id, 3));
+  Object.entries(plays).forEach(([id, n]) => weigh(id, Math.min(n, 5)));
+  sp.imports.forEach(i => (i.trackIds || []).forEach(id => { if (!TRACKS[id].disc) weigh(id, 0.3); }));
+  UPLOADS.trackIds.forEach(id => weigh(id, 0.5));
+  return [...w.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([a]) => a);
+}
+/* Songs you already have, so suggestions are always new. */
+function ownedKeys() {
+  const keys = new Set();
+  Object.values(TRACKS).forEach(t => { if (!t.disc) keys.add(normKey(cleanArtist(t.artist)) + '|' + normKey(t.title)); });
+  return keys;
+}
+async function loadDiscover(force) {
+  if (!server.on || disc.loading) return;
+  const seeds = discoverSeeds();
+  const cached = store.get('discover', null);
+  let items;
+  if (!force && cached && Date.now() - cached.at < 24 * 3600e3 && cached.seeds.join('|') === seeds.join('|')) items = cached.items;
+  else {
+    disc.loading = true; if (state.view.name === 'home' || state.view.type === 'discover') render();
+    try {
+      const res = await api('GET', 'api/discover?artists=' + encodeURIComponent(seeds.join('|')));
+      items = res.items || [];
+      try { store.set('discover', { at: Date.now(), seeds, items }); } catch (e) {}
+      disc.error = '';
+    } catch (e) { disc.error = e.message; items = (cached && cached.items) || []; }
+    disc.loading = false;
+  }
+  const owned = ownedKeys();
+  disc.seeds = seeds;
+  disc.ids = items.filter(x => !owned.has(normKey(cleanArtist(x.artist)) + '|' + normKey(x.title)))
+    .map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
+  DISCALBUM.trackIds = disc.ids;
+  if (state.view.name === 'home' || (state.view.name === 'collection' && state.view.type === 'discover')) render(); else renderSidebar();
+}
+function discCard(id, i) {
+  const t = TRACKS[id];
+  return `<div class="card" data-act="disc-play" data-i="${i}" data-tid="${id}" role="button" tabindex="0" aria-label="Play ${esc(t.title)} by ${esc(t.artist)}">
+    <div class="card-art"><img class="cover" src="${esc(t.cover)}" alt="" loading="lazy"><span class="yt-badge disc-badge">New</span></div>
+    <div><div class="nm ell">${esc(t.title)}</div><div class="sb ell">${esc(t.artist)}</div></div></div>`;
+}
+function discoverShelfHTML() {
+  if (!server.on) return '';
+  const ids = disc.ids.filter(visible);
+  if (!ids.length) return disc.loading ? `<div class="shelf-head"><h2>New songs for you</h2><p>Finding songs…</p></div>` : '';
+  const why = disc.seeds.length ? `Similar to ${disc.seeds.slice(0, 3).map(esc).join(', ')}` : 'Popular right now';
+  return `<div class="shelf-head"><h2>New songs for you</h2><div class="head-actions"><p>${why}</p><button class="text-btn" data-act="open" data-type="discover" data-id="mix">See all</button></div></div>
+    <div class="shelf">${ids.slice(0, 14).map(discCard).join('')}</div>`;
+}
+
 /* ================= sign-in (Docker server only) ================= */
 const PIN_ATTRS = 'type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4" required autocomplete="off" class="pin"';
 async function getStatus(base) {
@@ -3297,7 +3387,7 @@ async function addPerson(form) {
   render();
   requestAnimationFrame(frame);
   loadSuggestions();
-  if (mode === 'ok') spFinishLogin();   // coming back from the Spotify sign-in page
+  if (mode === 'ok') { spFinishLogin(); loadDiscover(); }   // coming back from the Spotify sign-in page
   // Notice when the sign-in ends (90 days up, PIN changed, or removed by the owner).
   if (mode === 'ok') {
     document.addEventListener('visibilitychange', async () => {
@@ -3306,6 +3396,18 @@ async function addPerson(form) {
     });
   }
 })();
+/* The Android app's back button: close whatever is open, else go back a page. Returns false when there's nothing left. */
+window.murmurBack = () => {
+  if (!$('#tqDrop').hidden) { closeDrop(); return true; }
+  if (!$('#modal').hidden) { closeModal(); return true; }
+  if (!menuEl.hidden) { closeMenu(); return true; }
+  if (!$('#full').hidden) { $('#full').hidden = true; return true; }
+  if (state.sel || state.libSel) { clearSel(); return true; }
+  if (!$('#gate').hidden) return false;
+  if (state.back.length) { state.fwd.push(state.view); navigate(state.back.pop(), false); return true; }
+  if (state.view.name !== 'home') { navigate({ name: 'home' }); return true; }
+  return false;
+};
 let installEvt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; const b = $('#installBtn'); if (b) b.hidden = false; });
 window.addEventListener('appinstalled', () => { installEvt = null; const b = $('#installBtn'); if (b) b.hidden = true; toast('Murmur is installed'); });

@@ -47,6 +47,14 @@ The owner can connect a free YouTube Data API key under **People & settings**. T
 
 The free quota allows about 90 searches a day, so results are cached for 12 hours.
 
+## Discover
+
+Home shows **New songs for you**, and Your Library has a **Discover** list. Murmur takes the artists you like and play most, finds similar artists in Deezer's public music catalog (free, no key), and suggests their top songs that aren't already in your library. Suggestions play from YouTube, and *Bring into Murmur* works on them too. The list refreshes daily, or tap **Get new suggestions**.
+
+## Android app
+
+`android/` has a small native app for Android phones. See `android/README.md` to build it. To install: copy `Murmur.apk` to the phone, open it, and allow installing from that source when asked.
+
 ## Where your music is stored
 
 Everything you upload goes into `music-data/` at the top of this repo. That folder is mounted into the container and isn't committed to git:
@@ -83,6 +91,9 @@ server.js             Express server: upload, edit, delete, file streaming
 auth.js               Accounts, PINs, sessions, permissions
 youtube.js            YouTube search and suggestions (official API)
 config.js             Server address used by the GitHub Pages copy
+spotify.js            Spotify playlist import and the shared song-to-source matches
+discover.js           New-song suggestions from similar artists (Deezer catalog)
+android/              Native Android app
 Docker/               Dockerfile and docker-compose.yml
 music-data/           Your music and accounts (not in git)
 ```

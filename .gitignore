@@ -3,3 +3,11 @@ music-data/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+
+# Android build output and private signing files
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/*.jks
