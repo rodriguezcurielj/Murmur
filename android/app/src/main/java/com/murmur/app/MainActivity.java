@@ -121,6 +121,8 @@ public class MainActivity extends Activity {
             keptContext.setBaseContext(this);
             ViewGroup oldParent = (ViewGroup) keptWeb.getParent();
             if (oldParent != null) oldParent.removeView(keptWeb);
+            // New screen: let the page re-fit its size once it's laid out here.
+            keptWeb.post(() -> keptWeb.evaluateJavascript("window.murmurFit && window.murmurFit()", null));
         }
         web = keptWeb;
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -342,10 +344,26 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "2.0"; }
+        public String version() { return "2.1"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }
+
+        /**
+         * Screen info so the page can keep one size everywhere. The Razr's cover screen reports a lower
+         * pixel density when Murmur is opened there directly, which shrinks the page; "target" is the
+         * highest density Murmur has run at (the inside screen), and the page scales itself up to match.
+         */
+        @JavascriptInterface
+        public String displayInfo() {
+            MainActivity a = current;
+            if (a == null || a.web == null) return "{}";
+            float density = a.getResources().getDisplayMetrics().density;
+            android.content.SharedPreferences prefs = app.getSharedPreferences("murmur", Context.MODE_PRIVATE);
+            float target = Math.max(prefs.getFloat("targetDensity", 2.625f), density);
+            if (target > prefs.getFloat("targetDensity", 0f)) prefs.edit().putFloat("targetDensity", target).apply();
+            return "{\"widthPx\":" + a.web.getWidth() + ",\"density\":" + density + ",\"target\":" + target + "}";
+        }
 
         /** The page reports what's playing; the background service keeps it going and shows the notification. */
         @JavascriptInterface
