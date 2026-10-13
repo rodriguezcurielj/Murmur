@@ -21,6 +21,32 @@ Then open **http://localhost:8080**.
 | Rebuild after changing code | `docker compose up -d --build` |
 | See server logs | `docker logs -f murmur` |
 
+## Run a server on any device (PC, Mac, Linux, Raspberry Pi)
+
+GitHub builds a ready-made server image on every push (`.github/workflows/docker.yml`), for 64-bit PCs, Raspberry Pi 4/5 (64-bit) and older 32-bit Raspberry Pi OS: `ghcr.io/rodriguezcurielj/murmur:latest`. A new server needs one command and no copy of this repo.
+
+**Linux, Raspberry Pi or Mac** (installs Docker if needed; on a Mac install Docker Desktop first):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/rodriguezcurielj/Murmur/main/install.sh | sh
+```
+
+Add a free public `https://` address (Cloudflare quick tunnel) with `| sh -s -- --tunnel`. Other options: `--dir=PATH`, `--port=NUMBER`.
+
+**Windows** (needs Docker Desktop running), in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/rodriguezcurielj/Murmur/main/install.ps1 | iex
+```
+
+For a public address, run `$env:MURMUR_TUNNEL = '1'` first.
+
+Either way, Murmur ends up in a `murmur` folder in your home folder with its data in `murmur/music-data`, updates itself every night at 4:00, and prints the addresses to open. Open one to create that server's owner account. To make it selectable in the apps, add its `https://` address to the `servers` list in `config.js`. Each server has its own music and accounts.
+
+By hand: download `Docker/server.yml`, then `docker compose -f server.yml up -d` (add `--profile tunnel` for the public address).
+
+For a Raspberry Pi, use **Raspberry Pi OS (64-bit)** on a Pi 4 or 5, and keep the music on an SSD or a big, fast SD card.
+
 ## Sign-in and people
 
 - **First visit:** Murmur asks you to set up the owner account (your name + a 4-digit PIN). Do this right away. Until you do, anyone who can reach the server could claim it.
@@ -102,7 +128,9 @@ android/              Native Android app (build-apk.ps1 rebuilds apps/Murmur.apk
 ios/                  Native iPhone app (built by GitHub Actions into apps/Murmur.ipa)
 extension/            Murmur Ad Blocker browser extension (YouTube ads, desktop browsers)
 apps/                 Download page plus the built Murmur.apk and Murmur.ipa
-Docker/               Dockerfile and docker-compose.yml
+userdata.js           Each person's own library (liked songs, playlists, history) and the owner's admin view
+Docker/               Dockerfile, docker-compose.yml (build from this repo) and server.yml (ready-made image)
+install.sh, install.ps1   One-command server setup for Linux/Raspberry Pi/Mac and Windows
 music-data/           Your music and accounts (not in git)
 ```
 

@@ -1,0 +1,31 @@
+# Run a Murmur server from the ready-made image on GitHub (no building needed).
+# Works on Windows/Mac (Docker Desktop), Linux servers and Raspberry Pi.
+#
+#   docker compose -f server.yml up -d                       Murmur on http://localhost:8080
+#   docker compose -f server.yml --profile tunnel up -d      plus a public https:// address
+#   docker logs murmur-tunnel                                shows that public address
+#   docker compose -f server.yml pull && docker compose -f server.yml up -d    update to the newest version
+#
+# The install scripts (install.sh / install.ps1) download this file and run it for you.
+name: murmur
+services:
+  murmur:
+    image: ghcr.io/rodriguezcurielj/murmur:latest
+    container_name: murmur
+    ports:
+      - "8080:8080"
+    volumes:
+      # Your music, accounts and settings. Back up this folder to keep everything.
+      - ./music-data:/data
+    restart: unless-stopped
+
+  # Optional: a free Cloudflare "quick tunnel" gives the server a public https:// address so phones
+  # and the GitHub Pages player can reach it from anywhere. The address changes when it restarts.
+  tunnel:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: murmur-tunnel
+    command: tunnel --no-autoupdate --url http://murmur:8080
+    depends_on:
+      - murmur
+    restart: unless-stopped
+    profiles: [tunnel]
