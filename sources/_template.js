@@ -16,6 +16,15 @@ module.exports = {
   // and it arrives as cfg.key below. (Need more than one value? Ask for them joined, e.g. "id:secret".)
   key: { label: 'Example API key', url: 'https://example.com/developers', help: 'Where to get the key, in one sentence.' },
 
+  // Optional: "paste a link". Which links this source understands, and how to turn one into an id for download().
+  // People paste these in Download… → From a link, and get the audio file back.
+  links: [/^https:\/\/(www\.)?example\.com\/track\/\w+/i],
+  linkExample: 'https://example.com/track/abc123',
+  async idFromLink(link, cfg) {
+    const m = link.match(/\/track\/(\w+)/);
+    return m ? m[1] : null;           // or ask the service's API to look the link up
+  },
+
   // 1. Search. Return up to ~15 songs that can actually be downloaded.
   async search(q, cfg) {
     const r = await fetch('https://api.example.com/search?q=' + encodeURIComponent(q), { headers: { Authorization: 'Bearer ' + cfg.key } });

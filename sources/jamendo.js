@@ -22,6 +22,10 @@ module.exports = {
   about: 'Over 600,000 Creative Commons songs from independent artists, free to download for personal listening.',
   license: 'Creative Commons',
   key: { label: 'Jamendo Client ID', url: 'https://devportal.jamendo.com', help: 'Free: sign up at devportal.jamendo.com, click Create an app, and copy its Client ID.' },
+  // Paste a link: https://www.jamendo.com/track/<number>/<name>
+  links: [/^https?:\/\/(www\.)?jamendo\.com\/(?:[a-z]{2}\/)?track\/\d+/i],
+  linkExample: 'https://www.jamendo.com/track/1234567/song-name',
+  async idFromLink(link) { const m = link.match(/\/track\/(\d+)/); return m ? m[1] : null; },
   async search(q, cfg) {
     const list = await api('tracks/?limit=20&audiodownload_allowed=true&search=' + encodeURIComponent(q), cfg.key);
     return list.filter(t => t.audiodownload_allowed && t.audiodownload).map(toItem);

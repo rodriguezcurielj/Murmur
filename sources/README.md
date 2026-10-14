@@ -14,6 +14,13 @@ The owner switches sources on and off, and enters any keys, under **People & set
 | `audius.js` | none | Tracks whose artist made them freely downloadable on Audius |
 | `jamendo.js` | free Client ID from [devportal.jamendo.com](https://devportal.jamendo.com) | Creative Commons music, free for personal listening |
 
+## Paste a link
+
+People can also paste a link to a song in **Download… → From a link**. Murmur finds the source whose `links`
+patterns match, asks its `idFromLink()` for the track, downloads it like a search result, and offers the
+audio file. Audius and Jamendo support this; add `links`, `linkExample` and `idFromLink()` to a new source
+to support it (see `_template.js`).
+
 ## Adding a paid or licensed source
 
 1. Copy `_template.js` to a new file, for example `mystore.js`.

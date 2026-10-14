@@ -28,6 +28,14 @@ module.exports = {
   site: 'https://audius.co',
   about: 'Independent artists. Only tracks the artist made free to download are offered.',
   license: 'Free download allowed by the artist',
+  // Paste a link: https://audius.co/<artist>/<track>
+  links: [/^https?:\/\/(www\.)?audius\.co\/[^/]+\/[^/?#]+/i],
+  linkExample: 'https://audius.co/artist/song-name',
+  async idFromLink(link) {
+    const t = await api('resolve?url=' + encodeURIComponent(link.split(/[?#]/)[0]));
+    if (!t || !t.id || !t.title) return null;
+    return t.id;
+  },
   async search(q) {
     const list = await api('tracks/search?limit=50&query=' + encodeURIComponent(q));
     return (list || []).filter(open).map(toItem);

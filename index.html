@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261014113644">
+<meta name="murmur-build" content="20261014143911">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -2384,6 +2384,7 @@ function viewLibrary() {
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
       ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
       ${server.on ? `<button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import from Spotify</span></button>` : ''}
+      ${server.on && canEditMusic() && linkSources().length ? `<button class="text-btn" data-act="link-dl">${icon('download')}<span>Add from a link</span></button>` : ''}
       <button class="icon-btn" data-act="new-pl" aria-label="Create playlist">${icon('plus')}</button></div></div>
   <div class="chips" style="padding-left:0">${chipsHTML()}</div>
   ${selecting ? '<p class="small" style="margin:0 0 10px">Pick playlists and albums to delete or to add to a playlist. Liked Songs, Uploads and artists can’t be selected.</p>' : ''}
@@ -3122,6 +3123,11 @@ function act(el, e) {
     case 'dls-save': closeModal(); saveToDevice(dlTargets([d.tid])[0]); break;
     case 'dls-sources': closeModal(); findCopy(d.tid); break;
     case 'dls-yt': closeModal(); pickYouTubeVersion(d.tid); break;
+    case 'dls-link': closeModal(); openLinkDownload('', d.tid); break;
+    case 'link-dl': closeModal(); openLinkDownload(); break;
+    case 'lr-play': closeModal(); playFrom('album', TRACKS[d.tid].albumId, Math.max(0, getCollection('album', TRACKS[d.tid].albumId).tracks.indexOf(d.tid))); break;
+    case 'lr-save': saveToDevice(d.tid); break;
+    case 'lr-offline': downloadTracks([d.tid]); syncLinkResult(d.tid); break;
     case 'ytp-preview': previewYouTube(d.v); break;
     case 'ytp-copy': copyLink(d.url); break;
     case 'src-search': openSourceSearch(d.q); break;
@@ -3634,6 +3640,56 @@ function findCopy(tid) {
   const t = TRACKS[tid]; if (!t) return;
   openSourceSearch(`${cleanArtist(t.artist)} ${t.title}`.replace(/\s*[\[(][^\])]*(official|video|audio|lyrics?)[^\])]*[\])]/ig, '').trim(), t.sp ? t.key : '', tid);
 }
+/* "From a link": paste a song's link from a legal download source; Murmur gets the audio file. */
+const linkSources = () => srcs.list.filter(x => x.ready && x.linkExample);
+function openLinkDownload(link = '', forTid = '', msg = '') {
+  const list = linkSources();
+  if (!list.length) { toast('No download source that takes links is switched on. See My download sources.'); return; }
+  const t = TRACKS[forTid];
+  openModal({ title: 'Get a song from a link', confirm: 'Get the audio', html: `
+    <p class="small">Paste the link to a song on ${list.map(x => `<a href="${esc(x.site)}" target="_blank" rel="noopener">${esc(x.name)}</a>`).join(' or ')}. Murmur gets the audio file, adds it to your music, and you can save the file to your device.</p>
+    <div class="field"><label for="dlLink">Song link</label><input id="dlLink" name="link" required autocomplete="off" spellcheck="false" inputmode="url" value="${esc(link)}" placeholder="${esc(list[0].linkExample)}"></div>
+    <p class="small">Examples: ${list.map(x => `<code>${esc(x.linkExample)}</code>`).join(' ')}</p>
+    ${t && t.sp ? `<label class="switch"><input type="checkbox" name="link_song" checked><span>Use it for “${esc(t.title)}”</span></label>` : ''}
+    ${msg ? `<p class="gate-err" role="alert">${esc(msg)}</p>` : ''}`,
+    onSubmit: fd => getFromLink(String(fd.get('link') || '').trim(), forTid, fd.get('link_song') ? (t && t.key) : '') });
+}
+async function getFromLink(link, forTid, matchKey, confirmPaid) {
+  if (!link) return;
+  server.current = { name: 'Getting the audio from the link…', pct: 20 }; renderUploadStatus();
+  let r, j = {};
+  try {
+    r = await fetch(apiUrl('api/sources/link'), { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ link, matchKey: matchKey || undefined, confirmPaid: !!confirmPaid }) });
+    j = await r.json().catch(() => ({}));
+  } catch (e) { j = { error: 'Can’t reach your Murmur server.' }; }
+  server.current = null; renderUploadStatus();
+  // A paid source: ask before buying, then try again.
+  if (r && r.status === 409 && j.confirm) {
+    openModal({ title: 'Buy this song?', confirm: 'Buy it', html: `<p>${esc(j.error)}</p><p class="small">${esc(link)}</p>`, onSubmit: () => getFromLink(link, forTid, matchKey, true) });
+    return;
+  }
+  if (!r || !r.ok || !j.track) { openLinkDownload(link, forTid, j.error || 'Couldn’t get that song.'); return; }
+  addServerTrack(j.track); rebuildUploadAlbums();
+  if (matchKey) { sp.matches[matchKey] = { ...(sp.matches[matchKey] || {}), file: j.track.id }; syncSpChips(); }
+  render();
+  showLinkResult('f-' + j.track.id, j.source);
+}
+// The result: the audio file, ready to play, save or keep offline.
+function showLinkResult(tid, sourceName) {
+  const t = TRACKS[tid]; if (!t) return;
+  openModal({ title: 'Got it', confirm: 'Done', html: `
+    <div class="ver"><img src="${esc(tCover(tid))}" alt=""><span><b>${esc(t.title)}</b><span class="small">${esc(t.artist)} · ${fmt(t.duration)} · ${esc((t.format || 'mp3').toUpperCase())}, ${fmtSize(t.size)}</span></span></div>
+    <p class="small">From ${esc(sourceName || (t.raw && t.raw.source && t.raw.source.name) || 'a download source')}${t.raw && t.raw.source && t.raw.source.license ? ' · ' + esc(t.raw.source.license) : ''}. It’s in your Uploads now.</p>
+    <div class="acct-actions link-result" data-tid="${esc(tid)}">
+      <button type="button" class="text-btn" data-act="lr-play" data-tid="${esc(tid)}">${icon('play')}<span>Play</span></button>
+      <button type="button" class="text-btn" data-act="lr-save" data-tid="${esc(tid)}">${icon('save')}<span>Save the audio file</span></button>
+      <button type="button" class="text-btn" data-act="lr-offline" data-tid="${esc(tid)}">${icon('download')}<span>${offline.has(tid) ? 'Saved for offline' : 'Keep offline in Murmur'}</span></button>
+    </div>`, onSubmit: () => {} });
+}
+function syncLinkResult(tid) {
+  const b = document.querySelector(`.link-result [data-act="lr-offline"]`);
+  if (b) { b.disabled = true; b.querySelector('span').textContent = 'Saving for offline…'; }
+}
 /* "Download…": choose where the song comes from. */
 function pickDownloadSource(tid) {
   const t = TRACKS[tid]; if (!t) return;
@@ -3645,6 +3701,7 @@ function pickDownloadSource(tid) {
     <div class="dls-list">
       ${file ? opt('dls-file', 'download', 'Murmur', offline.has(file) ? 'Already saved on this device' : 'Save it on this device to play offline') + opt('dls-save', 'save', 'Murmur: save the file', 'Get the audio file itself') : ''}
       ${sourcesOn.length && canEditMusic() ? opt('dls-sources', 'list', 'Download sources', 'Find a copy you can keep on ' + esc(sourcesOn.join(', '))) : ''}
+      ${linkSources().length && canEditMusic() ? opt('dls-link', 'expand', 'From a link', 'Paste a song’s link from ' + esc(linkSources().map(x => x.name).join(' or '))) : ''}
       ${opt('dls-yt', 'play', 'YouTube', yt.enabled ? 'Pick the right video, listen to it, and get its link' : 'Connect YouTube in People & settings first', !yt.enabled)}
     </div>`, onSubmit: () => {} });
 }
@@ -3751,6 +3808,7 @@ function viewMySources() {
     : x.paid ? 'Needs your own key: it’s a paid service, so purchases go on your account.' : 'Needs a key.';
   return `<h1 class="greet">My download sources</h1>
     <p class="small" style="max-width:62ch">Places Murmur gets songs you’re allowed to keep, from a song’s ⋯ → Find a downloadable copy, or Search. Your keys are only used for you and are never shown again after saving.${canEditMusic() ? '' : ' Adding songs to Murmur needs music permission from the owner.'}</p>
+    ${canEditMusic() && linkSources().length ? `<p><button type="button" class="text-btn" data-act="link-dl">${icon('download')}<span>Get a song from a link</span></button></p>` : ''}
     <div class="people">${srcs.list.map(x => `<section class="person src-mine">
       <header class="person-head"><span class="avatar">${icon('download')}</span>
         <div class="person-meta"><h3>${esc(x.name)}${x.paid ? ' <span class="badge">Paid</span>' : ''}</h3><span class="small">${esc(x.about || '')} <a href="${esc(x.site)}" target="_blank" rel="noopener">Site</a></span></div></header>

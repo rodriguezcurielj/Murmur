@@ -35,6 +35,7 @@ module.exports = function createSources(dataDir, auth, opts) {
   const describe = (p, user) => {
     const c = conf(p), m = mine(p, user), owner = user.role === 'owner';
     return { id: p.id, name: p.name, site: p.site, about: p.about, license: p.license, paid: !!p.paid, enabled: !!c.enabled, ready: ready(p, user),
+      linkExample: typeof p.idFromLink === 'function' && Array.isArray(p.links) ? (p.linkExample || p.site) : '',
       needsKey: !!p.key, off: !!m.off, keyLabel: p.key && p.key.label, keyHelp: p.key && p.key.help, keyUrl: p.key && p.key.url,
       hasMyKey: !!m.key, sharedKey: sharedFor(p, user), ...(owner && p.key ? { hasKey: !!c.key, shareKey: !!c.shareKey } : {}) };
   };
@@ -52,6 +53,25 @@ module.exports = function createSources(dataDir, auth, opts) {
     try { await pipeline(Readable.fromWeb(r.body), limit, fs.createWriteStream(tmp)); }
     catch (e) { await fsp.rm(tmp, { force: true }); throw Object.assign(new Error(seen > opts.maxBytes ? 'That file is bigger than the upload limit.' : 'The download was interrupted. Try again.'), { status: 502 }); }
     return tmp;
+  }
+
+  // Download one item from a source and add it to Murmur (shared by search results and pasted links).
+  async function addFromSource(p, id, user, matchKey) {
+    let tmp = null;
+    try {
+      const got = await p.download(id, confFor(p, user));   // { url, headers?, filename, title, artist, album, cover, license, licenseUrl, page }
+      tmp = await fetchToTmp(got.url, got.headers);
+      const track = await opts.addFile(tmp, got.filename || 'download.mp3', user, {
+        title: got.title, artist: got.artist, album: got.album || '', coverUrl: /^https:\/\//.test(got.cover || '') ? got.cover : '',
+        source: { id: p.id, name: p.name, item: id, license: got.license || p.license || '', licenseUrl: got.licenseUrl || '', page: got.page || '' }
+      });
+      tmp = null;
+      if (matchKey) await opts.linkToSong(String(matchKey), track.id, user);
+      return track;
+    } catch (e) {
+      if (tmp) await fsp.rm(tmp, { force: true });
+      throw e;
+    }
   }
 
   function routes(app) {
@@ -106,21 +126,25 @@ module.exports = function createSources(dataDir, auth, opts) {
     app.post('/api/sources/add', auth.requireEdit, async (req, res) => {
       const b = req.body || {}, p = byId(b.provider);
       if (!p || !ready(p, req.user)) return res.status(400).json({ error: 'That source isn’t switched on for you.' });
-      let tmp = null;
+      try { res.json({ track: await addFromSource(p, String(b.id || ''), req.user, b.matchKey) }); }
+      catch (e) { res.status(e.status || 502).json({ error: e.message || 'Couldn’t get that file.' }); }
+    });
+
+    // Paste a link: the source that handles that site turns it into a track, then it's added like any result.
+    app.post('/api/sources/link', auth.requireEdit, async (req, res) => {
+      const link = String((req.body && req.body.link) || '').trim().slice(0, 500);
+      let u; try { u = new URL(link); } catch { return res.status(400).json({ error: 'That isn’t a link. Copy the song’s address from the site and paste it here.' }); }
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return res.status(400).json({ error: 'That isn’t a web link.' });
+      const p = providers.find(x => typeof x.idFromLink === 'function' && (x.links || []).some(re => re.test(link)));
+      if (!p) return res.status(400).json({ error: `None of the download sources can open links from ${u.hostname}.` });
+      if (!ready(p, req.user)) return res.status(400).json({ error: `${p.name} isn’t switched on for you. Turn it on in My download sources.` });
+      // A paid source buys the song: only after the person confirmed it.
+      if (p.paid && !(req.body && req.body.confirmPaid)) return res.status(409).json({ confirm: true, source: p.name, error: `This link is from ${p.name}, a paid source. Getting it buys the song on your account.` });
       try {
-        const got = await p.download(String(b.id || ''), confFor(p, req.user));   // { url, headers?, filename, title, artist, album, cover, license, licenseUrl, page }
-        tmp = await fetchToTmp(got.url, got.headers);
-        const track = await opts.addFile(tmp, got.filename || 'download.mp3', req.user, {
-          title: got.title, artist: got.artist, album: got.album || '', coverUrl: /^https:\/\//.test(got.cover || '') ? got.cover : '',
-          source: { id: p.id, name: p.name, item: String(b.id), license: got.license || p.license || '', licenseUrl: got.licenseUrl || '', page: got.page || '' }
-        });
-        tmp = null;
-        if (b.matchKey) await opts.linkToSong(String(b.matchKey), track.id, req.user);
-        res.json({ track });
-      } catch (e) {
-        if (tmp) await fsp.rm(tmp, { force: true });
-        res.status(e.status || 502).json({ error: e.message || 'Couldn’t get that file.' });
-      }
+        const id = await p.idFromLink(link, confFor(p, req.user));
+        if (!id) return res.status(404).json({ error: `${p.name} couldn’t find a song at that link.` });
+        res.json({ track: await addFromSource(p, String(id), req.user, req.body.matchKey), source: p.name });
+      } catch (e) { res.status(e.status || 502).json({ error: e.message || 'Couldn’t get that file.' }); }
     });
   }
 
