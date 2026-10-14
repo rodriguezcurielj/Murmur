@@ -85,4 +85,9 @@ http.createServer((req, res) => {
     }
 
     res.statusCode = 404; res.end('Not found');                // anything else
+    res.statusCode = 404; res.end('Not found');                // anything else
+}).listen(PORT, '127.0.0.1', () => {                         // <--- THIS WAS MISSING
+    fs.mkdirSync(OUT_DIR, { recursive: true });
+    console.log(`yt2audio running at http://localhost:${PORT}  (files go to ${OUT_DIR})`);
+
 });
