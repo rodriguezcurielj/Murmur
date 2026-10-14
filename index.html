@@ -3781,6 +3781,7 @@ function syncLinkResult(tid) {
      * Automatically takes the selected YouTube version, sends it to the 'youtube-cc' source,
      * streams the live progress, and completes the download workflow.
      */
+    /* Takes the chosen video ID (v) and track info (y), posts it to your yt2audio server, and streams real-time progress. */
     async function showYouTubeLink(v, y) {
         const youtubeUrl = `https://www.youtube.com/watch?v=${v}`;
 
@@ -3793,7 +3794,7 @@ function syncLinkResult(tid) {
         <p style="font-size: 12px; color: var(--sub);">${esc(y.artist || 'Unknown Artist')}</p>
       </div>
       <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">
-        Connecting to youtube-cc source...
+        Connecting to yt2audio server...
       </div>
     `,
             confirm: false
@@ -3802,21 +3803,31 @@ function syncLinkResult(tid) {
         const progressBox = document.getElementById('download-progress');
 
         try {
-            progressBox.textContent += `\nSending link to backend...\n`;
+            progressBox.textContent += `\nSending link to http://localhost:8765/convert...\n`;
 
-            // Try posting to Murmur's standard source link endpoint
-            const res = await api('POST', '/api/sources/download', {
-                sourceId: 'youtube-cc',
-                url: youtubeUrl
+            // Post directly to your yt2audio server.js endpoint
+            const res = await fetch('http://localhost:8765/convert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ links: [youtubeUrl], format: 'mp3' })
             });
 
-            progressBox.textContent += `\nDownload initiated successfully!\nProcessing audio extraction...`;
+            if (!res.ok) throw new Error('Server responded with status ' + res.status);
 
-            setTimeout(() => {
-                progressBox.textContent += `\nDone! Audio file ready.`;
-                toast('YouTube audio converted successfully!');
-                if (typeof loadFiles === 'function') loadFiles();
-            }, 1500);
+            // Read the streamed response from convert.js line by line
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                const text = decoder.decode(value, { stream: true });
+                progressBox.textContent += text;
+                progressBox.scrollTop = progressBox.scrollHeight;
+            }
+
+            toast('YouTube audio converted successfully!');
+            if (typeof loadFiles === 'function') loadFiles();
 
         } catch (err) {
             progressBox.textContent += `\nError: ${err.message}`;
