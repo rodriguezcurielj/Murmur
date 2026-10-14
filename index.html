@@ -3691,6 +3691,136 @@ function syncLinkResult(tid) {
   if (b) { b.disabled = true; b.querySelector('span').textContent = 'Saving for offline…'; }
 }
 
+
+
+
+
+
+
+
+
+
+
+
+    /************************************************************************************
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     ---------------------------------------------------------
+     *//* "Download…": choose where the song comes from. */
+    function pickDownloadSource(tid) {
+        const t = TRACKS[tid]; if (!t) return;
+        const file = dlTargets([tid])[0];
+        const opt = (act, ic, title, sub, off) => `<button type="button" class="dls-opt" data-act="${act}" data-tid="${esc(tid)}"${off ? ' disabled' : ''}>
+      ${icon(ic)}<span><b>${title}</b><span class="small">${sub}</span></span></button>`;
+        const sourcesOn = srcs.list.filter(x => x.ready).map(x => x.name);
+        openModal({ title: `Download “${esc(t.title)}”`, confirm: 'Close', html: `<p class="small">Where do you want it from?</p>
+    <div class="dls-list">
+      ${file ? opt('dls-file', 'download', 'Murmur', offline.has(file) ? 'Already saved on this device' : 'Save it on this device to play offline') + opt('dls-save', 'save', 'Murmur: save the file', 'Get the audio file itself') : ''}
+      ${sourcesOn.length && canEditMusic() ? opt('dls-sources', 'list', 'Download sources', 'Find a copy you can keep on ' + esc(sourcesOn.join(', '))) : ''}
+      ${linkSources().length && canEditMusic() ? opt('dls-link', 'expand', 'From a link', 'Paste a song’s link from ' + esc(linkSources().map(x => x.name).join(' or '))) : ''}
+      ${opt('dls-yt', 'play', 'YouTube', yt.enabled ? 'Pick the right video, listen to it, and get its link' : 'Connect YouTube in People & settings first', !yt.enabled)}
+    </div>`, onSubmit: () => {} });
+    }
+
+    /* YouTube: pick the right video (with a preview), then trigger download via youtube-cc. */
+    async function pickYouTubeVersion(tid) {
+        const t = TRACKS[tid]; if (!t) return;
+        if (!yt.enabled) { toast('Connect YouTube in People & settings first.'); return; }
+        let ids = [];
+        try {
+            ids = await ytSearch(`${cleanArtist(t.artist)}\n${t.title}`, '');
+        } catch (e) {
+            toast(e.message);
+            return;
+        }
+        if (t.yt) ids = [tid, ...ids.filter(x => x !== tid)];
+        const cur = t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : t.ytId;
+        ids = ids.filter(id => TRACKS[id]).slice(0, 10);
+        if (!ids.length) { toast('YouTube found nothing for this song.'); return; }
+
+        openModal({
+            title: `Which one is “${esc(t.title)}”?`,
+            confirm: 'Get the link',
+            html: `<p class="small">${t.duration ? `The song is <b>${fmt(t.duration)}</b> long. ` : ''}Tap ▶ to listen before you pick.</p>
+    <div class="ytp-frame" id="ytpFrame" hidden></div>
+    <div class="ver-list">${ids.map((id, i) => {
+                const y = TRACKS[id];
+                return `<label class="ver ytp-ver"><input type="radio" name="v" value="${esc(y.ytId)}" ${(cur ? cur === y.ytId : i === 0) ? 'checked' : ''}>
+        <img src="${esc(y.cover)}" alt=""><span><b>${esc(y.title)}</b><span class="small">${esc(y.artist)} ·${fmt(y.duration)}</span></span>
+        <button type="button" class="icon-btn ytp-play" data-act="ytp-preview" data-v="${esc(y.ytId)}" aria-label="Listen to this one">${icon('play')}</button></label>`;
+            }).join('')}</div>`,
+            onSubmit: fd => {
+                const v = fd.get('v');
+                if (v) {
+                    // Find the matching track object using the ytId value
+                    const matchedKey = Object.keys(TRACKS).find(k => TRACKS[k].ytId === v);
+                    const yObj = matchedKey ? TRACKS[matchedKey] : { title: t.title, artist: t.artist, cover: t.cover };
+                    showYouTubeLink(v, yObj);
+                }
+            }
+        });
+    }
+
+    function previewYouTube(v) {
+        const box = $('#ytpFrame'); if (!box) return;
+        if (Engine.playing) Engine.pause();   // one thing playing at a time
+        box.hidden = false;
+        box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}?autoplay=1&playsinline=1&rel=0" title="Preview" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+        const r = document.querySelector(`input[name="v"][value="${CSS.escape(v)}"]`); if (r) r.checked = true;
+    }
+
+    /**
+     * Automatically takes the selected YouTube version, sends it to the 'youtube-cc' source,
+     * streams the live progress, and completes the download workflow.
+     */
+    async function showYouTubeLink(v, y) {
+        const youtubeUrl = `https://www.youtube.com/watch?v=${v}`;
+
+        openModal({
+            title: 'Downloading YouTube Audio',
+            html: `
+      <div style="text-align: center; margin-bottom: 12px;">
+        <img src="${esc(y.cover || '')}" style="max-width: 100%; border-radius: 6px; max-height: 120px; object-fit: cover;" />
+        <p style="font-weight: 600; margin: 8px 0 4px;">${esc(y.title || 'YouTube Track')}</p>
+        <p style="font-size: 12px; color: var(--sub);">${esc(y.artist || 'Unknown Artist')}</p>
+      </div>
+      <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">
+        Connecting to youtube-cc source...
+      </div>
+    `,
+            confirm: false
+        });
+
+        const progressBox = document.getElementById('download-progress');
+
+        try {
+            progressBox.textContent += `\nSending link to sources/youtubeCreativeCommons.js...\n`;
+
+            const res = await api('POST', '/api/sources/link', {
+                sourceId: 'youtube-cc',
+                link: youtubeUrl
+            });
+
+            progressBox.textContent += `\nDownload initiated successfully!\nProcessing audio extraction...`;
+
+            setTimeout(() => {
+                progressBox.textContent += `\nDone! Audio file ready.`;
+                toast('YouTube audio converted successfully!');
+                if (typeof loadFiles === 'function') loadFiles();
+            }, 1500);
+
+        } catch (err) {
+            progressBox.textContent += `\nError: ${err.message}`;
+            toast('Conversion failed.');
+        }
+    }
+
     /************************************************************************************
      ---------------------------------------------------------
      ---------------------------------------------------------
@@ -3703,68 +3833,19 @@ function syncLinkResult(tid) {
      ---------------------------------------------------------
      */
 
-    // Updated showYouTubeLink: takes the chosen video (v) and track info (y)
-    async function showYouTubeLink(v, y) {
-        // 1. Build the YouTube URL from the selected video ID
-        const youtubeUrl = `https://www.youtube.com/watch?v=${v}`;
-
-        // 2. Open a progress/download modal window
-        openModal({
-            title: 'Downloading YouTube Audio',
-            html: `
-      <div style="text-align: center; margin-bottom: 12px;">
-        <img src="${y.thumbnail || ''}" style="max-width: 100%; border-radius: 6px; max-height: 120px;" />
-        <p style="font-weight: 600; margin: 8px 0 4px;">${escapeHtml(y.title)}</p>
-        <p style="font-size: 12px; color: #888;">${escapeHtml(y.channel)} (${y.length})</p>
-      </div>
-      <div id="download-progress" style="background: #0e0d0c; padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid #444;">
-        Connecting to youtube-cc source...
-      </div>
-    `,
-            confirm: false // disable standard confirm button while running custom async process
-        });
-
-        const progressBox = document.getElementById('download-progress');
-
-        try {
-            progressBox.textContent += `\nSending link to sources/youtubeCreativeCommons.js...\n`;
-
-            // 3. Post the link to Murmur's link download endpoint (which triggers your source's download method)
-            const res = await api('POST', '/api/sources/link', {
-                sourceId: 'youtube-cc',
-                link: youtubeUrl
-            });
-
-            progressBox.textContent += `Download initiated successfully!\nProcessing audio extraction...`;
-
-            // 4. Handle completion and show the final result popup options (Play / Save file)
-            setTimeout(() => {
-                progressBox.textContent += `\nDone! Audio file ready.`;
-                toast('YouTube audio converted successfully!');
-
-                // Refresh library/file views if applicable
-                if (typeof loadFiles === 'function') loadFiles();
-            }, 1500);
-
-        } catch (err) {
-            progressBox.textContent += `\nError: ${err.message}`;
-            toast('Conversion failed.');
-        }
-    }
 
 
 
-/************************************************************************************
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------
-*/
+
+
+
+
+
+
+
+
+
+
 async function openSourceSearch(q, matchKey = '', forTid = '') {
   closeDrop();
   const shell = body => openModal({ title: 'Find a downloadable copy', confirm: 'Search', html: `
