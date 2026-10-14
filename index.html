@@ -3800,11 +3800,12 @@ function syncLinkResult(tid) {
         const progressBox = document.getElementById('download-progress');
 
         try {
-            progressBox.textContent += `\nSending link to sources/youtubeCreativeCommons.js...\n`;
+            progressBox.textContent += `\nSending link to backend...\n`;
 
-            const res = await api('POST', '/api/sources/link', {
+            // Try posting to Murmur's standard source link endpoint
+            const res = await api('POST', '/api/sources/download', {
                 sourceId: 'youtube-cc',
-                link: youtubeUrl
+                url: youtubeUrl
             });
 
             progressBox.textContent += `\nDownload initiated successfully!\nProcessing audio extraction...`;
