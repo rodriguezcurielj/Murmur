@@ -26,54 +26,63 @@ function listFiles(dir = OUT_DIR) {
   });
 }
 
+
 http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');   // makes the address and ?query easy to read
+    // 1. Add CORS headers so the browser allows external frontend apps to fetch it
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // ---------- INPUT: receive links from the page ----------
-  if (req.method === 'POST' && url.pathname === '/convert') {
-    let body = '';
-    req.on('data', chunk => body += chunk);           // collect the request body
-    return req.on('end', () => {
-      let input = {};
-      try { input = JSON.parse(body); } catch {}      // ignore bad JSON
-      const links = (input.links || []).filter(l => /^https?:\/\//.test(l)); // keep only real links
-      const format = input.format === 'm4a' ? 'm4a' : 'mp3';                 // default to mp3
+    // 2. Handle browser pre-flight OPTIONS check
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        return res.end();
+    }
 
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.write(`Saving ${format} files to ${OUT_DIR}\n`);
+    const url = new URL(req.url, 'http://localhost');   // makes the address and ?query easy to read
 
-      // Run the CORE. Each progress line goes straight back to the page as it happens.
-      convert(links, format,
-        line => res.write(line + '\n'),
-        code => res.end(code === 0 ? 'Finished.\n' : `Finished with errors (code ${code}).\n`));
-    });
-  }
+    // ---------- INPUT: receive links from the page ----------
+    if (req.method === 'POST' && url.pathname === '/convert') {
+        let body = '';
+        req.on('data', chunk => body += chunk);           // collect the request body
+        return req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch {}      // ignore bad JSON
+            const links = (input.links || []).filter(l => /^https?:\/\//.test(l)); // keep only real links
+            const format = input.format === 'm4a' ? 'm4a' : 'mp3';                 // default to mp3
 
-  // ---------- OUTPUT: list saved files ----------
-  if (url.pathname === '/files') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify(listFiles()));
-  }
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.write(`Saving ${format} files to ${OUT_DIR}\n`);
 
-  // ---------- OUTPUT: download one saved file ----------
-  if (url.pathname === '/file') {
-    const file = path.resolve(OUT_DIR, url.searchParams.get('p') || '');
-    // Only allow files inside OUT_DIR (blocks tricks like ../../secret.txt)
-    if (!file.startsWith(OUT_DIR + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; return res.end('Not found'); }
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`);
-    return fs.createReadStream(file).pipe(res);
-  }
+            // Run the CORE. Each progress line goes straight back to the page as it happens.
+            convert(links, format,
+                line => res.write(line + '\n'),
+                code => res.end(code === 0 ? 'Finished.\n' : `Finished with errors (code ${code}).\n`));
+        });
+    }
 
-  // ---------- PAGE: send index.html, style.css or app.js ----------
-  const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-  const pageFile = path.join(PUBLIC, path.basename(name));   // basename = only files directly in public/
-  if (fs.existsSync(pageFile)) {
-    res.writeHead(200, { 'Content-Type': (TYPES[path.extname(pageFile)] || 'text/plain') + '; charset=utf-8' });
-    return fs.createReadStream(pageFile).pipe(res);
-  }
+    // ---------- OUTPUT: list saved files ----------
+    if (url.pathname === '/files') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(listFiles()));
+    }
 
-  res.statusCode = 404; res.end('Not found');                // anything else
-}).listen(PORT, '127.0.0.1', () => {                         // 127.0.0.1 = only your computer can open it
-  fs.mkdirSync(OUT_DIR, { recursive: true });                // make sure the OUTPUT folder exists
-  console.log(`yt2audio running at http://localhost:${PORT}  (files go to ${OUT_DIR})`);
+    // ---------- OUTPUT: download one saved file ----------
+    if (url.pathname === '/file') {
+        const file = path.resolve(OUT_DIR, url.searchParams.get('p') || '');
+        // Only allow files inside OUT_DIR (blocks tricks like ../../secret.txt)
+        if (!file.startsWith(OUT_DIR + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; return res.end('Not found'); }
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file))}`);
+        return fs.createReadStream(file).pipe(res);
+    }
+
+    // ---------- PAGE: send index.html, style.css or app.js ----------
+    const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    const pageFile = path.join(PUBLIC, path.basename(name));   // basename = only files directly in public/
+    if (fs.existsSync(pageFile)) {
+        res.writeHead(200, { 'Content-Type': (TYPES[path.extname(pageFile)] || 'text/plain') + '; charset=utf-8' });
+        return fs.createReadStream(pageFile).pipe(res);
+    }
+
+    res.statusCode = 404; res.end('Not found');                // anything else
 });
