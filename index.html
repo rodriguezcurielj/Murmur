@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013192726">
+<meta name="murmur-build" content="20261014113644">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -353,6 +353,19 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate{position:fixed;inset:0;z-index:100;overflow:auto;display:grid;place-items:center;padding:24px 16px;background:radial-gradient(120% 80% at 50% 0%,color-mix(in srgb,var(--accent) 14%,var(--bg)) 0%,var(--bg) 60%)}
 .gate-card{width:min(400px,100%);display:flex;flex-direction:column;gap:6px}
 .gate-brand{padding:0 0 22px}
+.dls-list{display:grid;gap:8px;margin-top:6px}
+.dls-opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:inherit;font:inherit;cursor:pointer}
+.dls-opt:hover:not(:disabled){background:rgba(255,255,255,.08)}
+.dls-opt:disabled{opacity:.5;cursor:default}
+.dls-opt svg{width:20px;height:20px;flex:none;color:var(--accent)}
+.dls-opt b{display:block}
+.ytp-frame{aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#000;margin:8px 0}
+.ytp-frame iframe{width:100%;height:100%;border:0}
+.ytp-ver{align-items:center;min-width:0}
+.ytp-ver>span{flex:1;min-width:0}
+.ytp-ver b,.ytp-ver .small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ver-list:has(.ytp-ver){overflow-x:hidden}
+.ytp-play{flex:none;margin-left:auto}
 .src-results{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px;max-height:50vh;overflow-y:auto;overflow-x:hidden}
 .src-row{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;background:rgba(255,255,255,.04);min-width:0}
 .src-row img,.src-row .ver-ph{width:48px;height:48px;border-radius:6px;object-fit:cover;flex:none}
@@ -2641,12 +2654,13 @@ function renderNP() {
     <button class="icon-btn like${state.liked.has(t.id) ? ' on' : ''}" data-act="like" data-tid="${t.id}" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
   ${t.sp ? `<div class="np-card"><span class="eyebrow">${t.disc ? 'Suggested for you' : 'From your Spotify import'}</span>${t.disc && t.because ? `<p class="small">Because you listen to ${esc(t.because)}</p>` : ''}
     <dl class="facts"><dt>Album</dt><dd>${esc(t.album)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Playing from</dt><dd>${{ file: 'Your file in Murmur', yt: 'YouTube', none: 'Nothing found yet', new: 'Looking it up…' }[spStatus(t.id)]}</dd></dl>
-    <div class="acct-actions">${canEditMusic() && srcs.ready && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-getcopy" data-tid="${t.id}">${icon('download')}<span>Find a downloadable copy</span></button>` : ''}${canEditMusic() && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-bring" data-tid="${t.id}">${icon('upload')}<span>Bring into Murmur</span></button>` : ''}
+    <div class="acct-actions">${server.on ? `<button class="text-btn" data-act="m-dlpick" data-tid="${t.id}">${icon('download')}<span>Download…</span></button>` : ''}${canEditMusic() && srcs.ready && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-getcopy" data-tid="${t.id}">${icon('download')}<span>Find a downloadable copy</span></button>` : ''}${canEditMusic() && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-bring" data-tid="${t.id}">${icon('upload')}<span>Bring into Murmur</span></button>` : ''}
       ${yt.enabled ? `<button class="text-btn" data-act="m-spver" data-tid="${t.id}">${icon('search')}<span>Choose a YouTube version</span></button>` : ''}</div></div>`
   : t.yt ? `<div class="np-card"><span class="eyebrow">From YouTube</span>
     <dl class="facts"><dt>Channel</dt><dd>${esc(t.artist)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd>${t.genreTag ? `<dt>Suggested for</dt><dd>${esc(t.genreTag)}</dd>` : ''}</dl>
     <p class="small">Plays in YouTube’s player, so it needs a connection and can’t be downloaded.${canEditMusic() && srcs.ready ? ` <button type="button" class="link-btn" data-act="m-getcopy" data-tid="${t.id}">Find a downloadable copy</button>` : ''}</p>
-    <a class="text-btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(t.ytId)}" target="_blank" rel="noopener">${icon('expand')}<span>Open on YouTube</span></a></div>`
+    <div class="acct-actions"><button type="button" class="text-btn" data-act="m-dlpick" data-tid="${t.id}">${icon('download')}<span>Download…</span></button>
+    <a class="text-btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(t.ytId)}" target="_blank" rel="noopener">${icon('expand')}<span>Open on YouTube</span></a></div></div>`
   : t.src ? `<div class="np-card"><span class="eyebrow">Your file</span>
     <dl class="facts"><dt>Format</dt><dd>${esc(t.format.toUpperCase())}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Size</dt><dd>${fmtSize(t.size)}</dd>${t.addedAt ? `<dt>Added</dt><dd>${new Date(t.addedAt).toLocaleDateString()}</dd>` : ''}</dl>
     <p class="small">${t.raw && t.raw.source ? `From ${t.raw.source.page ? `<a href="${esc(t.raw.source.page)}" target="_blank" rel="noopener">${esc(t.raw.source.name)}</a>` : esc(t.raw.source.name)}${t.raw.source.license ? ` · ${t.raw.source.licenseUrl ? `<a href="${esc(t.raw.source.licenseUrl)}" target="_blank" rel="noopener">${esc(t.raw.source.license)}</a>` : esc(t.raw.source.license)}` : ''}. ` : ''}${t.fromVideo ? 'Audio extracted from a video file. ' : ''}Stored in the music-data folder of your Murmur server.</p>
@@ -2709,7 +2723,8 @@ function renderMenu() {
       + b('sub', icon('plus') + 'Add to playlist')
       + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
       + (t.yt ? b('ytopen', icon('expand') + 'Open on YouTube') : '')
-      + (!t.src && (t.sp || t.yt) && canEditMusic() && srcs.ready && !(t.sp && spStatus(t.id) === 'file') ? '<hr>' + b('getcopy', icon('download') + 'Find a downloadable copy') : '')
+      + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download…') : '')
+      + (!t.src && (t.sp || t.yt) && canEditMusic() && srcs.ready && !(t.sp && spStatus(t.id) === 'file') ? b('getcopy', icon('download') + 'Find a downloadable copy') : '')
       + (t.sp ? '<hr>' + (canEditMusic() ? b('bring', icon('upload') + (spStatus(t.id) === 'file' ? 'Replace the file in Murmur' : 'Bring into Murmur (upload your copy)')) : '')
         + (yt.enabled ? b('spver', icon('search') + 'Choose a YouTube version') : '')
         + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
@@ -2751,6 +2766,7 @@ function openModal({ title, html, confirm = 'OK', danger = false, onSubmit }) {
 }
 function closeModal() {
   $('#modal').hidden = true; modalSubmit = null;
+  $$('#modal iframe').forEach(f => f.remove());   // stop a YouTube preview
   if (modalReturn && modalReturn.focus && document.contains(modalReturn)) modalReturn.focus({ preventScroll: true });
 }
 
@@ -3020,6 +3036,7 @@ function act(el, e) {
       closeMenu();
       if (op === 'bring') bringIntoMurmur(tids[0]);
       else if (op === 'getcopy') findCopy(tids[0]);
+      else if (op === 'dlpick') pickDownloadSource(tids[0]);
       else if (op === 'spver') chooseVersion(tids[0]);
       else if (op === 'spopen') { const a = document.createElement('a'); a.href = TRACKS[tids[0]].url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
       else if (op === 'ytopen') { const a = document.createElement('a'); a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(TRACKS[tids[0]].ytId); a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
@@ -3100,6 +3117,13 @@ function act(el, e) {
     case 'sp-sync': syncImport(d.id); break;
     case 'm-bring': bringIntoMurmur(d.tid); break;
     case 'm-getcopy': closeModal(); findCopy(d.tid); break;
+    case 'm-dlpick': closeModal(); pickDownloadSource(d.tid); break;
+    case 'dls-file': closeModal(); downloadTracks(dlTargets([d.tid])); break;
+    case 'dls-save': closeModal(); saveToDevice(dlTargets([d.tid])[0]); break;
+    case 'dls-sources': closeModal(); findCopy(d.tid); break;
+    case 'dls-yt': closeModal(); pickYouTubeVersion(d.tid); break;
+    case 'ytp-preview': previewYouTube(d.v); break;
+    case 'ytp-copy': copyLink(d.url); break;
     case 'src-search': openSourceSearch(d.q); break;
     case 'src-add': addFromSource(d); break;
     case 'src-toggle': setSource(d.id, { enabled: el.checked }); break;
@@ -3609,6 +3633,57 @@ async function loadSources() {
 function findCopy(tid) {
   const t = TRACKS[tid]; if (!t) return;
   openSourceSearch(`${cleanArtist(t.artist)} ${t.title}`.replace(/\s*[\[(][^\])]*(official|video|audio|lyrics?)[^\])]*[\])]/ig, '').trim(), t.sp ? t.key : '', tid);
+}
+/* "Download…": choose where the song comes from. */
+function pickDownloadSource(tid) {
+  const t = TRACKS[tid]; if (!t) return;
+  const file = dlTargets([tid])[0];
+  const opt = (act, ic, title, sub, off) => `<button type="button" class="dls-opt" data-act="${act}" data-tid="${esc(tid)}"${off ? ' disabled' : ''}>
+      ${icon(ic)}<span><b>${title}</b><span class="small">${sub}</span></span></button>`;
+  const sourcesOn = srcs.list.filter(x => x.ready).map(x => x.name);
+  openModal({ title: `Download “${esc(t.title)}”`, confirm: 'Close', html: `<p class="small">Where do you want it from?</p>
+    <div class="dls-list">
+      ${file ? opt('dls-file', 'download', 'Murmur', offline.has(file) ? 'Already saved on this device' : 'Save it on this device to play offline') + opt('dls-save', 'save', 'Murmur: save the file', 'Get the audio file itself') : ''}
+      ${sourcesOn.length && canEditMusic() ? opt('dls-sources', 'list', 'Download sources', 'Find a copy you can keep on ' + esc(sourcesOn.join(', '))) : ''}
+      ${opt('dls-yt', 'play', 'YouTube', yt.enabled ? 'Pick the right video, listen to it, and get its link' : 'Connect YouTube in People & settings first', !yt.enabled)}
+    </div>`, onSubmit: () => {} });
+}
+/* YouTube: pick the right video (with a preview), then show its link. */
+async function pickYouTubeVersion(tid) {
+  const t = TRACKS[tid]; if (!t) return;
+  if (!yt.enabled) { toast('Connect YouTube in People & settings first.'); return; }
+  let ids = [];
+  try { ids = await ytSearch(`${cleanArtist(t.artist)} - ${t.title}`, ''); } catch (e) { toast(e.message); return; }
+  if (t.yt) ids = [tid, ...ids.filter(x => x !== tid)];
+  const cur = t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : t.ytId;
+  ids = ids.filter(id => TRACKS[id]).slice(0, 10);
+  if (!ids.length) { toast('YouTube found nothing for this song.'); return; }
+  openModal({ title: `Which one is “${esc(t.title)}”?`, confirm: 'Get the link', html: `<p class="small">${t.duration ? `The song is <b>${fmt(t.duration)}</b> long. ` : ''}Tap ▶ to listen before you pick.</p>
+    <div class="ytp-frame" id="ytpFrame" hidden></div>
+    <div class="ver-list">${ids.map((id, i) => { const y = TRACKS[id];
+      return `<label class="ver ytp-ver"><input type="radio" name="v" value="${esc(y.ytId)}" ${(cur ? cur === y.ytId : i === 0) ? 'checked' : ''}>
+        <img src="${esc(y.cover)}" alt=""><span><b>${esc(y.title)}</b><span class="small">${esc(y.artist)} · ${fmt(y.duration)}</span></span>
+        <button type="button" class="icon-btn ytp-play" data-act="ytp-preview" data-v="${esc(y.ytId)}" aria-label="Listen to this one">${icon('play')}</button></label>`; }).join('')}</div>`,
+    onSubmit: fd => { const v = fd.get('v'); if (v) showYouTubeLink(v, TRACKS['yt-' + v]); } });
+}
+function previewYouTube(v) {
+  const box = $('#ytpFrame'); if (!box) return;
+  if (Engine.playing) Engine.pause();   // one thing playing at a time
+  box.hidden = false;
+  box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}?autoplay=1&playsinline=1&rel=0" title="Preview" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  const r = document.querySelector(`input[name="v"][value="${CSS.escape(v)}"]`); if (r) r.checked = true;
+}
+function showYouTubeLink(v, y) {
+  const url = 'https://www.youtube.com/watch?v=' + encodeURIComponent(v);
+  openModal({ title: 'YouTube link', confirm: 'Done', html: `
+    ${y ? `<div class="ver"><img src="${esc(y.cover)}" alt=""><span><b>${esc(y.title)}</b><span class="small">${esc(y.artist)} · ${fmt(y.duration)}</span></span></div>` : ''}
+    <div class="field"><label for="ytLink">Link</label><input id="ytLink" value="${esc(url)}" readonly></div>
+    <div class="acct-actions"><button type="button" class="text-btn" data-act="ytp-copy" data-url="${esc(url)}">${icon('list')}<span>Copy link</span></button>
+      <a class="text-btn" href="${esc(url)}" target="_blank" rel="noopener">${icon('expand')}<span>Open on YouTube</span></a></div>`, onSubmit: () => {} });
+}
+async function copyLink(url) {
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); }
+  catch (e) { const i = $('#ytLink'); if (i) { i.focus(); i.select(); } toast('Press Ctrl+C (or long-press → Copy) to copy the link'); }
 }
 async function openSourceSearch(q, matchKey = '', forTid = '') {
   closeDrop();
