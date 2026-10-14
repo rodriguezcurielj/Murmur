@@ -14,6 +14,7 @@ const createSpotify = require('./spotify');
 const createDiscover = require('./discover');
 const createUserData = require('./userdata');
 const createSync = require('./sync');
+const createSources = require('./sources');
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -98,24 +99,31 @@ spotify.routes(app);
 userData.routes(app);
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 
+const sources = createSources(DATA, auth, {
+  tmpDir: DIRS.tmp, maxBytes: MAX_MB * 1024 * 1024,
+  addFile: (p, name, user, extra) => addMediaFile(p, name, user, extra),
+  linkToSong: (key, fileId, user) => spotify.setFileMatch(key, fileId, user)
+});
+sources.routes(app);
+
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.get('/api/tracks', (req, res) => res.json({ tracks: library }));
 
-app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res) => {
-  const f = req.file;
-  if (!f) return res.status(400).json({ error: 'No file received.' });
+// Adds a media file to the library: reads its tags and cover, converts it to MP3 if browsers can't play it.
+// Used by uploads and by download sources. "extra" can set the title/artist/album and where the file came from.
+const mediaError = (status, message) => Object.assign(new Error(message), { status, expose: true });
+async function addMediaFile(srcPath, original, user, extra = {}) {
   const id = crypto.randomBytes(8).toString('hex');
   const coverPath = path.join(DIRS.covers, id + '.jpg');
   let outPath = null;
   try {
-    const original = Buffer.from(f.originalname, 'latin1').toString('utf8');
     let info;
-    try { info = JSON.parse(await run('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', f.path])); }
-    catch { await fsp.rm(f.path, { force: true }); return res.status(415).json({ error: "That isn't a media file Murmur can read." }); }
+    try { info = JSON.parse(await run('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', srcPath])); }
+    catch { throw mediaError(415, "That isn't a media file Murmur can read."); }
 
     const streams = info.streams || [];
     const audio = streams.find(s => s.codec_type === 'audio');
-    if (!audio) { await fsp.rm(f.path, { force: true }); return res.status(415).json({ error: 'That file has no audio track.' }); }
+    if (!audio) throw mediaError(415, 'That file has no audio track.');
     const isPic = s => s.disposition && s.disposition.attached_pic;
     const pic = streams.find(s => s.codec_type === 'video' && isPic(s));
     const video = streams.find(s => s.codec_type === 'video' && !isPic(s));
@@ -123,31 +131,32 @@ app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res
     const tags = lowerKeys({ ...((info.format && info.format.tags) || {}), ...(audio.tags || {}) });
     const duration = parseFloat(info.format && info.format.duration) || parseFloat(audio.duration) || 0;
 
-    // Cover art: embedded picture, or a frame from the video.
+    // Cover art: embedded picture, or a frame from the video, or one the source provided.
     const vf = 'scale=480:480:force_original_aspect_ratio=increase,crop=480:480';
     let cover = null;
     try {
-      if (pic) await run('ffmpeg', ['-v', 'error', '-y', '-i', f.path, '-map', `0:${pic.index}`, '-frames:v', '1', '-vf', vf, coverPath]);
-      else if (video) await run('ffmpeg', ['-v', 'error', '-y', '-ss', String(Math.min(duration * 0.1, 10)), '-i', f.path, '-frames:v', '1', '-vf', vf, coverPath]);
+      if (pic) await run('ffmpeg', ['-v', 'error', '-y', '-i', srcPath, '-map', `0:${pic.index}`, '-frames:v', '1', '-vf', vf, coverPath]);
+      else if (video) await run('ffmpeg', ['-v', 'error', '-y', '-ss', String(Math.min(duration * 0.1, 10)), '-i', srcPath, '-frames:v', '1', '-vf', vf, coverPath]);
+      else if (extra.coverUrl) await run('ffmpeg', ['-v', 'error', '-y', '-i', extra.coverUrl, '-frames:v', '1', '-vf', vf, coverPath]);
       if (fs.existsSync(coverPath)) cover = id + '.jpg';
     } catch { /* no cover is fine */ }
 
     let file, format;
     if (!video && PLAYABLE.has(ext)) {
       file = `${id}.${ext}`; format = ext; outPath = path.join(DIRS.music, file);
-      await move(f.path, outPath);
+      await move(srcPath, outPath);
     } else {
       file = `${id}.mp3`; format = 'mp3'; outPath = path.join(DIRS.music, file);
-      await run('ffmpeg', ['-v', 'error', '-y', '-i', f.path, '-map', '0:a:0', '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '-map_metadata', '0', outPath]);
-      await fsp.rm(f.path, { force: true });
+      await run('ffmpeg', ['-v', 'error', '-y', '-i', srcPath, '-map', '0:a:0', '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '-map_metadata', '0', outPath]);
+      await fsp.rm(srcPath, { force: true });
     }
 
     const guess = guessFromName(original);
     const track = {
       id,
-      title: tags.title || guess.title,
-      artist: tags.artist || tags.album_artist || guess.artist || '',
-      album: tags.album || '',
+      title: extra.title || tags.title || guess.title,
+      artist: extra.artist || tags.artist || tags.album_artist || guess.artist || '',
+      album: extra.album != null ? extra.album : (tags.album || ''),
       genre: tags.genre || '',
       trackNo: parseInt(tags.track, 10) || 0,
       duration,
@@ -157,19 +166,27 @@ app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res
       size: (await fsp.stat(outPath)).size,
       originalName: original,
       fromVideo: !!video,
-      uploadedBy: req.user.id,
-      uploaderName: req.user.name,
+      uploadedBy: user.id,
+      uploaderName: user.name,
+      ...(extra.source ? { source: extra.source } : {}),
       addedAt: new Date().toISOString()
     };
     library.push(track);
     await save();
-    console.log(`Added "${track.title}" (${original})`);
-    res.json({ track });
+    console.log(`Added "${track.title}" (${extra.source ? 'from ' + extra.source.name : original})`);
+    return track;
   } catch (err) {
-    console.error('Upload failed:', err.stderr || err);
-    await Promise.all([f.path, outPath, coverPath].filter(Boolean).map(p => fsp.rm(p, { force: true })));
-    res.status(500).json({ error: "Couldn't convert that file. It may be damaged or use an unsupported codec." });
+    if (!err.expose) console.error('Adding a file failed:', err.stderr || err);
+    await Promise.all([srcPath, outPath, coverPath].filter(Boolean).map(p => fsp.rm(p, { force: true })));
+    throw err.expose ? err : mediaError(500, "Couldn't convert that file. It may be damaged or use an unsupported codec.");
   }
+}
+
+app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res) => {
+  const f = req.file;
+  if (!f) return res.status(400).json({ error: 'No file received.' });
+  try { res.json({ track: await addMediaFile(f.path, Buffer.from(f.originalname, 'latin1').toString('utf8'), req.user) }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // Songs uploaded before uploads had owners belong to the owner.
@@ -259,7 +276,8 @@ Object.assign(deferred, {
   imports: spotify.syncCollections.imports,
   matches: spotify.syncCollections.matches,
   spotifyApp: spotify.syncCollections.spotifyApp,
-  youtube: youtube.syncCollection
+  youtube: youtube.syncCollection,
+  sources: sources.syncCollection
 });
 sync.start();
 

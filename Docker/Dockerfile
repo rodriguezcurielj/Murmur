@@ -7,7 +7,8 @@ WORKDIR /app
 # Build context is the repo root (see docker-compose.yml), so paths here are relative to it.
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
-COPY server.js auth.js youtube.js spotify.js discover.js userdata.js sync.js ./
+COPY server.js auth.js youtube.js spotify.js discover.js userdata.js sync.js sources.js ./
+COPY sources ./sources
 # The web app lives at the repo root (for GitHub Pages); the server serves it from ./public
 COPY index.html config.js manifest.webmanifest sw.js ./public/
 COPY icons ./public/icons

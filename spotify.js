@@ -207,5 +207,13 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
     spotifyApp: { get: () => (Object.keys(cfg).length ? { cfg: { ...cfg } } : {}), set: o => { refill(cfg, o.cfg || {}); appToken = null; save('cfg', cfg); } }
   };
 
-  return { routes, importsFor: id => imports[id] || [], syncCollections };
+  // A file added by a download source becomes how that song plays (like "Bring into Murmur").
+  async function setFileMatch(key, fileId, user) {
+    key = str(key, 400); if (!key) return;
+    matches[key] = { ...(matches[key] || {}), file: str(fileId, 40), by: user.name, at: Date.now() };
+    await save('matches', matches);
+    return matches[key];
+  }
+
+  return { routes, importsFor: id => imports[id] || [], syncCollections, setFileMatch };
 };

@@ -15,6 +15,9 @@ on:
       - spotify.js
       - discover.js
       - userdata.js
+      - sync.js
+      - sources.js
+      - sources/**
       - package.json
       - index.html
       - config.js
