@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261013190857">
+<meta name="murmur-build" content="20261013192726">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -2495,6 +2495,7 @@ function render() {
   else if (v.name === 'queue') el.innerHTML = viewQueue();
   else if (v.name === 'people') el.innerHTML = viewPeople();
   else if (v.name === 'member') el.innerHTML = viewMember(v.id);
+  else if (v.name === 'sources') el.innerHTML = viewMySources();
   else if (v.name === 'collection') el.innerHTML = viewCollection(v.type, v.id);
   if (server.offlineMode) {
     el.insertAdjacentHTML('afterbegin', `<div class="offline-banner" role="status">${icon('cloudOff')}<span><b>Offline.</b> Can’t reach your Murmur server, so only downloaded songs can play.</span><button class="text-btn" data-act="retry">Try again</button></div>`);
@@ -2525,7 +2526,7 @@ function viewFromHash() {
   const name = p[0], rest = p.slice(1).join('/');
   let arg = ''; try { arg = decodeURIComponent(rest); } catch (e) { arg = rest; }
   if (name === 'search') return { view: { name: 'search' }, q: arg };
-  if (['library', 'queue', 'people'].includes(name)) return { view: { name } };
+  if (['library', 'queue', 'people', 'sources'].includes(name)) return { view: { name } };
   if (name === 'member' && arg) return { view: { name: 'member', id: arg } };
   if (name === 'mlist' && arg) return { view: { name: 'member', id: arg.split('~')[0] } };   // reopen their library after a refresh
   if (name && rest) {
@@ -3102,6 +3103,10 @@ function act(el, e) {
     case 'src-search': openSourceSearch(d.q); break;
     case 'src-add': addFromSource(d); break;
     case 'src-toggle': setSource(d.id, { enabled: el.checked }); break;
+    case 'src-share': setSource(d.id, { shareKey: el.checked }); break;
+    case 'acct-sources': closeModal(); navigate({ name: 'sources' }); break;
+    case 'my-src-use': setMySource(d.id, { off: !el.checked }); break;
+    case 'my-src-key-remove': setMySource(d.id, { key: '' }); break;
     case 'src-key-remove': setSource(d.id, { key: '' }); break;
     case 'm-spver': chooseVersion(d.tid); break;
     case 'sp-key-remove':
@@ -3202,6 +3207,12 @@ document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === 
 document.addEventListener('submit', async e => {
   if (e.target.id === 'gForm') { e.preventDefault(); gateSubmit(e.target); return; }
   if (e.target.id === 'addPerson') { e.preventDefault(); addPerson(e.target); return; }
+  if (e.target.classList && e.target.classList.contains('my-src-key')) {
+    e.preventDefault();
+    const btn = e.target.querySelector('.m-ok'); btn.disabled = true; btn.textContent = 'Checking…';
+    await setMySource(e.target.dataset.src, { key: String(new FormData(e.target).get('key') || '') });
+    return;
+  }
   if (e.target.classList && e.target.classList.contains('src-key')) {
     e.preventDefault();
     const btn = e.target.querySelector('.m-ok'); btn.disabled = true; btn.textContent = 'Checking…';
@@ -3646,15 +3657,45 @@ async function setSource(id, body) {
   catch (e) { toast(e.message); }
   if (state.view.name === 'people') render();
 }
+async function setMySource(id, body) {
+  try {
+    const r = await api('PUT', 'api/sources/' + encodeURIComponent(id) + '/mine', body);
+    srcs.list = srcs.list.map(x => x.id === id ? { ...x, ...r.source } : x); srcs.ready = srcs.list.some(x => x.ready);
+    toast(typeof body.key === 'string' ? (body.key ? 'Your key is saved' : 'Your key is removed') : r.source.ready ? r.source.name + ' is on for you' : r.source.name + ' is off for you');
+  } catch (e) { toast(e.message); }
+  if (state.view.name === 'sources') render();
+}
+// Everyone's own page: use a source or not, and their own key for it.
+function viewMySources() {
+  if (!server.on) return `<div class="empty"><h2>Download sources need your Murmur server</h2></div>`;
+  const status = x => !x.enabled ? 'Turned off by the owner.'
+    : x.off ? 'Off for you.'
+    : !x.needsKey ? 'On. No key needed.'
+    : x.hasMyKey ? 'On, with your own key.'
+    : x.sharedKey ? 'On, with the owner’s shared key. Add your own to use your account instead.'
+    : x.paid ? 'Needs your own key: it’s a paid service, so purchases go on your account.' : 'Needs a key.';
+  return `<h1 class="greet">My download sources</h1>
+    <p class="small" style="max-width:62ch">Places Murmur gets songs you’re allowed to keep, from a song’s ⋯ → Find a downloadable copy, or Search. Your keys are only used for you and are never shown again after saving.${canEditMusic() ? '' : ' Adding songs to Murmur needs music permission from the owner.'}</p>
+    <div class="people">${srcs.list.map(x => `<section class="person src-mine">
+      <header class="person-head"><span class="avatar">${icon('download')}</span>
+        <div class="person-meta"><h3>${esc(x.name)}${x.paid ? ' <span class="badge">Paid</span>' : ''}</h3><span class="small">${esc(x.about || '')} <a href="${esc(x.site)}" target="_blank" rel="noopener">Site</a></span></div></header>
+      <p class="small"><b>${esc(status(x))}</b></p>
+      ${x.enabled ? `<label class="switch"><input type="checkbox" data-act="my-src-use" data-id="${esc(x.id)}" ${x.off ? '' : 'checked'}><span>Use ${esc(x.name)}</span></label>` : ''}
+      ${x.needsKey && x.enabled ? (x.hasMyKey ? `<p class="small">Your key is saved. <button type="button" class="link-btn" data-act="my-src-key-remove" data-id="${esc(x.id)}">Remove it</button></p>`
+        : `<form class="person-add yt-key-form my-src-key" data-src="${esc(x.id)}"><div class="field"><label for="mySrc-${esc(x.id)}">Your ${esc(x.keyLabel || 'key')}</label><input id="mySrc-${esc(x.id)}" name="key" required autocomplete="off" spellcheck="false"></div><button class="m-ok" type="submit">Save</button></form>
+          <p class="small">${esc(x.keyHelp || '')}${x.keyUrl ? ` <a href="${esc(x.keyUrl)}" target="_blank" rel="noopener">Open</a>` : ''}</p>`) : ''}
+    </section>`).join('')}</div>`;
+}
 function sourcesSettingsHTML() {
   if (!srcs.list.length) return '';
   return `<section class="person yt-settings" aria-labelledby="srcSetTitle">
     <header class="person-head"><span class="avatar">${icon('download')}</span>
-      <div class="person-meta"><h3 id="srcSetTitle">Download sources</h3><span class="small">Places Murmur can get songs you’re allowed to keep. People with music permission use them from a song’s ⋯ → Find a downloadable copy.</span></div></header>
+      <div class="person-meta"><h3 id="srcSetTitle">Download sources</h3><span class="small">Switch sources on for everyone, and add shared keys. Each person can also add their own key under My download sources (account menu).</span></div></header>
     ${srcs.list.map(x => `<div class="src-set">
       <label class="switch"><input type="checkbox" data-act="src-toggle" data-id="${esc(x.id)}" ${x.enabled ? 'checked' : ''}><span><b>${esc(x.name)}</b>${x.paid ? ' (paid)' : ''}: ${esc(x.about || '')} <a href="${esc(x.site)}" target="_blank" rel="noopener">Site</a></span></label>
-      ${x.needsKey ? (x.hasKey ? `<p class="small">Key saved. <button type="button" class="link-btn" data-act="src-key-remove" data-id="${esc(x.id)}">Remove key</button></p>`
-        : `<form class="person-add yt-key-form src-key" data-src="${esc(x.id)}"><div class="field"><label for="srcKey-${esc(x.id)}">${esc(x.keyLabel || 'Key')}</label><input id="srcKey-${esc(x.id)}" name="key" required autocomplete="off" spellcheck="false"></div><button class="m-ok" type="submit">Save</button></form>
+      ${x.needsKey && x.paid && x.hasKey ? `<label class="switch"><input type="checkbox" data-act="src-share" data-id="${esc(x.id)}" ${x.shareKey ? 'checked' : ''}><span>Let everyone use my key (purchases go on my account)</span></label>` : ''}
+      ${x.needsKey ? (x.hasKey ? `<p class="small">Shared key saved${x.paid && !x.shareKey ? ' (only used for you)' : ', used for everyone without their own'}. <button type="button" class="link-btn" data-act="src-key-remove" data-id="${esc(x.id)}">Remove key</button></p>`
+        : `<form class="person-add yt-key-form src-key" data-src="${esc(x.id)}"><div class="field"><label for="srcKey-${esc(x.id)}">Shared ${esc(x.keyLabel || 'key')}</label><input id="srcKey-${esc(x.id)}" name="key" required autocomplete="off" spellcheck="false"></div><button class="m-ok" type="submit">Save</button></form>
           <p class="small">${esc(x.keyHelp || '')}${x.keyUrl ? ` <a href="${esc(x.keyUrl)}" target="_blank" rel="noopener">Open</a>` : ''}</p>`) : ''}
     </div>`).join('')}
     <p class="small">To add a store or licensed catalog you pay for, see <b>sources/README.md</b> in the Murmur folder.</p>
@@ -3986,6 +4027,7 @@ function openAccount() {
   openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}${adLine}
     <div class="acct-actions">
       ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
+      ${server.on && srcs.list.length ? `<button type="button" class="text-btn" data-act="acct-sources">${icon('download')}<span>My download sources</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Choose server</span></button>` : ''}

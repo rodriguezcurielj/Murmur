@@ -88,7 +88,7 @@ const userData = createUserData(DATA, auth, { importsFor: spotify.importsFor });
 // Deleting a person also deletes their library (liked songs, playlists, history).
 app.delete('/api/users/:id', auth.requireOwner, (req, res, next) => {
   const id = req.params.id;
-  res.on('finish', () => { if (res.statusCode < 300) userData.removeUser(id); });
+  res.on('finish', () => { if (res.statusCode < 300) { userData.removeUser(id); sources.removeUser(id); } });
   next();
 });
 auth.routes(app);

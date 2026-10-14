@@ -2,6 +2,10 @@
 // Each source is a file in sources/ (see sources/README.md for how to add one, including paid services).
 // People search the sources from a song's ⋯ menu ("Find a downloadable copy") or from Search; picking a
 // result downloads it on the server and adds it to Murmur like an upload, linked to the song it replaces.
+//
+// Keys: the owner's key for a source is the shared one. Everyone can also add their own key (their own
+// account with that service), which is used for them instead. A paid source's shared key is only used for
+// the owner unless the owner turns on sharing, so nobody buys songs on someone else's account.
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
@@ -20,14 +24,21 @@ module.exports = function createSources(dataDir, auth, opts) {
   let cfg = {};
   try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { cfg = {}; }
   const save = () => fsp.writeFile(file + '.tmp', JSON.stringify(cfg, null, 2), { mode: 0o600 }).then(() => fsp.rename(file + '.tmp', file)).catch(err => console.error('Could not save sources.json:', err));
+  // cfg = { <source>: { enabled, key, shareKey }, users: { <person id>: { <source>: { key, off } } } }
   const conf = p => ({ enabled: !p.key, ...(cfg[p.id] || {}) });
-  const ready = p => { const c = conf(p); return !!c.enabled && (!p.key || !!c.key); };
+  const mine = (p, user) => ((cfg.users || {})[user.id] || {})[p.id] || {};
+  const sharedFor = (p, user) => { const c = conf(p); return !!c.key && (!p.paid || user.role === 'owner' || !!c.shareKey); };
+  // The settings a source runs with for this person: their own key first, then the shared one.
+  const confFor = (p, user) => { const c = conf(p), m = mine(p, user); return { ...c, key: m.key || (sharedFor(p, user) ? c.key : '') }; };
+  const ready = (p, user) => { const c = conf(p), m = mine(p, user); return !!c.enabled && !m.off && (!p.key || !!m.key || sharedFor(p, user)); };
 
-  const describe = (p, owner) => {
-    const c = conf(p);
-    return { id: p.id, name: p.name, site: p.site, about: p.about, license: p.license, paid: !!p.paid, enabled: !!c.enabled, ready: ready(p),
-      needsKey: !!p.key, ...(owner && p.key ? { keyLabel: p.key.label, keyHelp: p.key.help, keyUrl: p.key.url, hasKey: !!c.key } : {}) };
+  const describe = (p, user) => {
+    const c = conf(p), m = mine(p, user), owner = user.role === 'owner';
+    return { id: p.id, name: p.name, site: p.site, about: p.about, license: p.license, paid: !!p.paid, enabled: !!c.enabled, ready: ready(p, user),
+      needsKey: !!p.key, off: !!m.off, keyLabel: p.key && p.key.label, keyHelp: p.key && p.key.help, keyUrl: p.key && p.key.url,
+      hasMyKey: !!m.key, sharedKey: sharedFor(p, user), ...(owner && p.key ? { hasKey: !!c.key, shareKey: !!c.shareKey } : {}) };
   };
+  const checkKey = async (p, key) => { try { await p.search('love', { key }); } catch (e) { throw Object.assign(new Error(`${p.name} didn’t accept that key: ${e.message}`), { status: 400 }); } };
 
   // Download a source's file to a temporary file, with a size limit.
   async function fetchToTmp(url, headers) {
@@ -44,31 +55,44 @@ module.exports = function createSources(dataDir, auth, opts) {
   }
 
   function routes(app) {
-    app.get('/api/sources', (req, res) => res.json({ sources: providers.map(p => describe(p, req.user.role === 'owner')) }));
+    app.get('/api/sources', (req, res) => res.json({ sources: providers.map(p => describe(p, req.user)) }));
+
+    // Anyone: their own key for a source, and whether they use it at all. { key?: '' removes it, off?: bool }
+    app.put('/api/sources/:id/mine', async (req, res) => {
+      const p = byId(req.params.id); if (!p) return res.status(404).json({ error: 'No such source.' });
+      const b = req.body || {};
+      const users = cfg.users = cfg.users || {}, me = users[req.user.id] = users[req.user.id] || {}, m = me[p.id] = { ...(me[p.id] || {}) };
+      try {
+        if (p.key && typeof b.key === 'string') { const key = b.key.trim(); if (key) { await checkKey(p, key); m.key = key; m.off = false; } else delete m.key; }
+      } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+      if (typeof b.off === 'boolean') m.off = b.off;
+      await save();
+      res.json({ source: describe(p, req.user) });
+    });
 
     // Owner: switch a source on or off, and save its key (checked with a test search first).
     app.put('/api/sources/:id', auth.requireOwner, async (req, res) => {
       const p = byId(req.params.id); if (!p) return res.status(404).json({ error: 'No such source.' });
       const b = req.body || {}, c = { ...conf(p) };
       if (typeof b.enabled === 'boolean') c.enabled = b.enabled;
+      if (typeof b.shareKey === 'boolean') c.shareKey = b.shareKey;
       if (p.key && typeof b.key === 'string') {
         const key = b.key.trim();
         if (key) {
-          try { await p.search('love', { key }); }
-          catch (e) { return res.status(400).json({ error: `${p.name} didn’t accept that key: ${e.message}` }); }
+          try { await checkKey(p, key); } catch (e) { return res.status(400).json({ error: e.message }); }
           c.key = key; c.enabled = true;
         } else delete c.key;
       }
       cfg[p.id] = c; await save();
-      res.json({ source: describe(p, true) });
+      res.json({ source: describe(p, req.user) });
     });
 
     // Search every source that's switched on. Results from a source that fails are skipped (and reported).
     app.get('/api/sources/search', async (req, res) => {
       const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
       if (!q) return res.json({ items: [], errors: [] });
-      const on = providers.filter(ready);
-      const results = await Promise.allSettled(on.map(p => Promise.race([p.search(q, conf(p)), new Promise((_, no) => setTimeout(() => no(new Error('took too long')), 12000))])));
+      const on = providers.filter(p => ready(p, req.user));
+      const results = await Promise.allSettled(on.map(p => Promise.race([p.search(q, confFor(p, req.user)), new Promise((_, no) => setTimeout(() => no(new Error('took too long')), 12000))])));
       const items = [], errors = [];
       results.forEach((r, i) => {
         const p = on[i];
@@ -81,10 +105,10 @@ module.exports = function createSources(dataDir, auth, opts) {
     // Get a result's file and add it to Murmur. With "matchKey", it becomes how that imported/catalog song plays.
     app.post('/api/sources/add', auth.requireEdit, async (req, res) => {
       const b = req.body || {}, p = byId(b.provider);
-      if (!p || !ready(p)) return res.status(400).json({ error: 'That source isn’t switched on.' });
+      if (!p || !ready(p, req.user)) return res.status(400).json({ error: 'That source isn’t switched on for you.' });
       let tmp = null;
       try {
-        const got = await p.download(String(b.id || ''), conf(p));   // { url, headers?, filename, title, artist, album, cover, license, licenseUrl, page }
+        const got = await p.download(String(b.id || ''), confFor(p, req.user));   // { url, headers?, filename, title, artist, album, cover, license, licenseUrl, page }
         tmp = await fetchToTmp(got.url, got.headers);
         const track = await opts.addFile(tmp, got.filename || 'download.mp3', req.user, {
           title: got.title, artist: got.artist, album: got.album || '', coverUrl: /^https:\/\//.test(got.cover || '') ? got.cover : '',
@@ -106,5 +130,8 @@ module.exports = function createSources(dataDir, auth, opts) {
     set: o => { for (const k of Object.keys(cfg)) delete cfg[k]; Object.assign(cfg, o); save(); }
   };
 
-  return { routes, syncCollection };
+  // When a person is deleted, their keys go too.
+  function removeUser(id) { if (cfg.users && cfg.users[id]) { delete cfg.users[id]; save(); } }
+
+  return { routes, syncCollection, removeUser };
 };
