@@ -3712,7 +3712,9 @@ function syncLinkResult(tid) {
      ---------------------------------------------------------
      ---------------------------------------------------------
      ---------------------------------------------------------
-     *//* "Download…": choose where the song comes from. */
+     */
+
+    /* "Download…": choose where the song comes from. */
     function pickDownloadSource(tid) {
         const t = TRACKS[tid]; if (!t) return;
         const file = dlTargets([tid])[0];
