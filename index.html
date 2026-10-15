@@ -1972,8 +1972,21 @@ const FileEng = {
         $$('[data-dur]').forEach(s => s.textContent = fmt(this.duration));
         if (this.pendingSeek) { try { a.currentTime = clamp(this.pendingSeek, 0, this.duration); } catch (e) {} this.pendingSeek = 0; }
       });
+      a.addEventListener('playing', () => { this.netRetries = 0; });
       a.addEventListener('error', () => {
         if (!this.track || !a.getAttribute('src')) return;
+        if (this.netTrack !== this.track) { this.netTrack = this.track; this.netRetries = 0; }
+        // A dropped connection (phone waking up, switching Wi-Fi/data): quietly pick up where it stopped, twice, before saying anything.
+        if (a.error && a.error.code === 2 && !offline.has(this.track.id) && (this.netRetries || 0) < 2) {
+          this.netRetries = (this.netRetries || 0) + 1;
+          const t = this.track, at = a.currentTime || 0, wasPlaying = !!this.wantPlaying;
+          setTimeout(() => {
+            if (this.track !== t) return;
+            this.pendingSeek = at; a.load();
+            if (wasPlaying) a.play().catch(() => {});
+          }, 1500 * this.netRetries);
+          return;
+        }
         toast(offline.has(this.track.id) ? `Couldn't play ${this.track.title}. Try removing and re-downloading it.`
           : `Couldn't play ${this.track.title}. Check your connection to the Murmur server, or download it for offline.`);
       });
@@ -2000,13 +2013,13 @@ const FileEng = {
   unload() { if (this.audio) { this.audio.pause(); this.audio.removeAttribute('src'); this.audio.load(); } this.track = null; },
   get playing() { return !!this.audio && !!this.track && !this.audio.paused && !this.audio.ended; },
   play() {
-    this.wire();
+    this.wire(); this.wantPlaying = true;
     if (Synth.ctx && Synth.ctx.state !== 'running') Synth.ctx.resume();
     if (!this.node) this.el().volume = volGain();
     const t = this.track;
     Promise.resolve(this.ready).then(() => { if (this.track !== t) return; const p = this.el().play(); if (p) p.catch(() => {}); });
   },
-  pause() { if (this.audio) this.audio.pause(); },
+  pause() { this.wantPlaying = false; if (this.audio) this.audio.pause(); },
   restart() { try { this.el().currentTime = 0; } catch (e) {} this.play(); },
   seek(t) {
     const a = this.el();
@@ -4494,8 +4507,9 @@ function syncLinkResult(tid) {
         if (!here || !targets.length || here.downloads) return false;
         openModal({ title: 'YouTube downloads are on another server', confirm: false, cancel: 'Not now', html: `
             <p><b>${esc(here.name)}</b> can play YouTube songs but can’t download them. Switch to ${targets.map(x => `<b>${esc(x.name)}</b>`).join(' or ')} to download.</p>
-            <div class="acct-list">${targets.map(x => `<button type="button" class="acct-row" data-act="pick-server" data-name="${esc(x.name)}"><span class="ar-ic">${icon('server')}</span><span class="ar-label">Switch to ${esc(x.name)}</span><span class="ar-chev">${icon('chev')}</span></button>`).join('')}</div>
+            <div class="acct-list">${targets.map(x => `<button type="button" class="acct-row" data-act="pick-server" data-name="${esc(x.name)}"><span class="ar-ic">${icon('server')}</span><span class="ar-label">Switch to ${esc(x.name)} <span class="small" data-srv-state="${esc(normalizeServer(x.url))}">· Checking…</span></span><span class="ar-chev">${icon('chev')}</span></button>`).join('')}</div>
             <p class="small">Each server keeps its own music and sign-ins, so you may be asked to sign in there.</p>` });
+        checkServerList();   // shows whether the download server is on before anyone taps it
         return true;
     }
 
@@ -5015,12 +5029,32 @@ function discoverShelfHTML() {
 
 /* ================= sign-in (Docker server only) ================= */
 const PIN_ATTRS = 'type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4" required autocomplete="off" class="pin"';
-async function getStatus(base) {
-  const r = await fetch(joinUrl(base, 'api/auth/status'), { cache: 'no-store', headers: base ? authHeaders() : {} });
+/* A server that's switched off (the laptop asleep behind Tailscale Funnel) doesn't refuse the connection, it
+   just never answers, so every check gives up after a few seconds instead of hanging for a minute or more. */
+async function getStatus(base, ms = 8000, token = remote.token) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+  let r;
+  try { r = await fetch(joinUrl(base, 'api/auth/status'), { cache: 'no-store', signal: ctl.signal, headers: base && token ? { Authorization: 'Bearer ' + token } : {} }); }
+  finally { clearTimeout(t); }
   if (!r.ok) throw new Error();
   const st = await r.json();
   if (!st || typeof st.setup !== 'boolean') throw new Error();
   return st;
+}
+/* Ask every server at once and use the first one in order of preference that answers, so a switched-off
+   server costs a few seconds at most instead of one long wait per server. A second, more patient round
+   covers a slow phone connection before Murmur decides nothing can be reached. */
+async function firstServer(bases) {
+  for (const ms of [5000, 15000]) {
+    const keep = { ...remote };
+    const checks = bases.map(b => {
+      remote.base = b; loadToken();   // each server has its own sign-in
+      return getStatus(b, ms, remote.token).then(st => ({ base: b, st }), () => null);
+    });
+    Object.assign(remote, keep);
+    for (const c of checks) { const r = await c; if (r) return r; }
+  }
+  return null;
 }
 async function checkAuth() {
   let st = null;
@@ -5035,17 +5069,22 @@ async function checkAuth() {
       return c ? 'offline-expired' : 'demo';
     }
     const tries = [normalizeServer(base), ...SERVERS.map(x => normalizeServer(x.url))].filter((v, i, a) => v && a.indexOf(v) === i);
-    for (const b of tries) {
-      remote.base = b; loadToken();
-      try { st = await getStatus(b); break; } catch (e) { st = null; }
-    }
-    if (!st) {
+    const found = await firstServer(tries);
+    if (!found) {
       remote.base = tries[0]; loadToken();
       const c = store.get('auth', null);
       if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
       return 'unreachable';
     }
-    if (remote.base !== tries[0]) setTimeout(() => toast(`${serverLabel(tries[0])} isn’t reachable, so you’re on ${serverLabel(remote.base)}`), 1500);
+    st = found.st; remote.base = found.base; loadToken();
+    // Say so when the chosen server is off, but not on every launch while it stays off.
+    if (remote.base !== tries[0]) {
+      const note = tries[0] + '>' + remote.base, last = store.get('fallbackNote', null);
+      if (!last || last.k !== note || Date.now() - last.at > 12 * 3600e3) {
+        store.set('fallbackNote', { k: note, at: Date.now() });
+        setTimeout(() => toast(`${serverLabel(tries[0])} is off right now, so you’re on ${serverLabel(remote.base)}`), 1500);
+      }
+    }
   }
   server.auth = true;
   if (!st.setup) return 'setup';
@@ -5514,6 +5553,19 @@ async function addPerson(form) {
     // Server unreachable: show what's saved on this device.
     server.offlineMode = true;
     saved.filter(r => r.meta).forEach(r => addServerTrack(r.meta));
+  }
+  // Offline because no server answered: keep checking quietly and reconnect once one does (after the song, if one is playing).
+  if (mode === 'offline') {
+    const bases = [remote.base, ...SERVERS.map(x => normalizeServer(x.url))].filter((v, i, a) => v && a.indexOf(v) === i);
+    let checking = false;
+    const retry = async () => {
+      if (checking || updateWaiting || document.visibilityState === 'hidden') return;
+      checking = true;
+      try { if (await firstServer(bases)) { updateWaiting = true; applyUpdateIfIdle(); } } finally { checking = false; }
+    };
+    setInterval(retry, 30e3);
+    window.addEventListener('online', retry);
+    document.addEventListener('visibilitychange', retry);
   }
   if (me) await loadUserData();
   rebuildUploadAlbums();
