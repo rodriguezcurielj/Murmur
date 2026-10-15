@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015005159">
+<meta name="murmur-build" content="20261015005756">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -720,6 +720,20 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .full-cover{height:min(calc(100vh - 70px),42vw)}
 }
 @media (prefers-reduced-motion:reduce){.dl-btn.busy{animation:none}*{transition:none!important}.eq i{animation:none;height:10px}.toast.show{animation:none}}
+.eq-presets{padding:0}
+.eq-bands{display:flex;flex-direction:column;gap:2px;transition:opacity .2s}
+.eq-bands.off{opacity:.4}
+.eq-band{display:grid;grid-template-columns:52px 1fr 52px;align-items:center;gap:10px}
+.eq-f{font-size:13px;font-weight:700;color:var(--fg)}
+.eq-f small{font-size:10px;font-weight:500;color:var(--muted);margin-left:2px}
+.eq-val{font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.eq-band input{height:26px}
+.eq-band input::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--accent) var(--p),var(--line) var(--p))}
+.eq-band input::-webkit-slider-thumb{opacity:1;width:16px;height:16px;margin-top:-5px;background:var(--fg)}
+.eq-band input::-moz-range-track{height:6px;border-radius:3px}
+.eq-band input::-moz-range-progress{height:6px;border-radius:3px;background:var(--accent)}
+.eq-band input::-moz-range-thumb{width:16px;height:16px}
+.full-top-r{display:flex;gap:4px}
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
 .theme-sw{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:6px;border-radius:12px;border:2px solid transparent;background:none;color:var(--fg);font:inherit;font-size:12px;font-weight:600;cursor:pointer;text-align:center}
 .theme-sw:hover{background:var(--hover)}
@@ -780,6 +794,8 @@ const STROKE = {
   volume: 'M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13',
   mute: 'M11 5 6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6',
   queue: 'M4 6h16M4 12h16M4 18h10',
+  eq: 'M6 4v16M12 4v16M18 4v16M3.5 14h5M9.5 8h5M15.5 16h5',
+  palette: 'M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.1-4-7.6-9-7.6zM7.5 12.5h.01M9.5 8h.01M14.5 8h.01M17 11.5h.01',
   panel: 'M3 4h18v16H3zM15 4v16',
   close: 'M6 6l12 12M18 6 6 18',
   down: 'M6 9l6 6 6-6',
@@ -1530,6 +1546,54 @@ const visCurated = () => CURATED.filter(p => !state.hiddenCols.has(p.id));
 const visArtists = () => ARTISTS.filter(a => ALBUMS.some(x => x.artist === a && x.trackIds.some(visible)));
 
 /* ================= audio engine ================= */
+/* Equalizer settings, saved on this device: { on, preset, gains: [10 numbers in dB] }. */
+const EQ_BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const EQ_PRESETS = {
+  Flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  'Bass boost': [6, 5, 4, 2, 0, 0, 0, 0, 0, 0],
+  'Bass cut': [-6, -5, -3, -1, 0, 0, 0, 0, 0, 0],
+  'Treble boost': [0, 0, 0, 0, 0, 1, 2, 4, 5, 6],
+  Vocal: [-2, -2, -1, 1, 3, 4, 3, 1, 0, -1],
+  Pop: [-1, 0, 2, 3, 3, 1, 0, 1, 2, 2],
+  Rock: [4, 3, 1, -1, -2, -1, 1, 3, 4, 4],
+  'Hip-Hop': [5, 4, 2, 1, -1, -1, 1, 0, 1, 2],
+  Latin: [3, 2, 0, -1, -1, 1, 2, 3, 3, 2],
+  Electronic: [4, 4, 1, 0, -2, 0, 1, 2, 4, 4],
+  Acoustic: [2, 2, 1, 0, 1, 1, 2, 3, 2, 1],
+  'Late night': [3, 2, 1, 0, -1, -1, 0, 1, 2, 1],
+  'Small speakers': [-4, -2, 2, 3, 2, 1, 1, 2, 1, 0]
+};
+const eqState = () => { const e = store.get('eq', null); return e && Array.isArray(e.gains) && e.gains.length === 10 ? e : { on: true, preset: 'Flat', gains: EQ_PRESETS.Flat.slice() }; };
+const eqGain = i => { const e = eqState(); return e.on ? clamp(Number(e.gains[i]) || 0, -12, 12) : 0; };
+function applyEq() {
+  if (!Synth.eq) return;
+  Synth.eq.forEach((b, i) => b.gain.setTargetAtTime(eqGain(i), Synth.ctx.currentTime, .03));
+}
+function saveEq(e) { store.set('eq', e); applyEq(); }
+const eqLabel = f => f >= 1000 ? (f / 1000) + 'k' : String(f);
+function openEqualizer() {
+  const e = eqState();
+  openModal({ title: 'Equalizer', confirm: false, cancel: 'Done', html: `
+    <label class="switch"><input type="checkbox" id="eqOn" ${e.on ? 'checked' : ''}><span>Equalizer on</span></label>
+    <div class="chips eq-presets" role="group" aria-label="Presets">${Object.keys(EQ_PRESETS).map(n => `<button type="button" class="chip${e.preset === n ? ' on' : ''}" data-act="eq-preset" data-k="${esc(n)}" aria-pressed="${e.preset === n}">${esc(n)}</button>`).join('')}${e.preset === 'Custom' ? '<button type="button" class="chip on" aria-pressed="true">Custom</button>' : ''}</div>
+    <div class="eq-bands${e.on ? '' : ' off'}" id="eqBands">${EQ_BANDS.map((f, i) => `<label class="eq-band"><span class="eq-f">${eqLabel(f)}<small>Hz</small></span>
+      <input type="range" min="-12" max="12" step="1" value="${e.gains[i]}" data-eq="${i}" aria-label="${eqLabel(f)} Hz" style="--p:${(e.gains[i] + 12) / 24 * 100}%"><span class="eq-val" id="eqv${i}">${fmtDb(e.gains[i])}</span></label>`).join('')}</div>
+    <p class="small">Works on songs in Murmur: uploads, songs from YouTube you brought in, and downloads. Songs that play inside YouTube’s player can’t be changed. Saved on this device.</p>` });
+}
+const fmtDb = g => (g > 0 ? '+' : '') + g + ' dB';
+document.addEventListener('input', ev => {
+  const i = ev.target.dataset && ev.target.dataset.eq; if (i == null) return;
+  const e = eqState(); e.gains[+i] = +ev.target.value; e.preset = 'Custom';
+  const v = $('#eqv' + i); if (v) v.textContent = fmtDb(+ev.target.value);
+  ev.target.style.setProperty('--p', (+ev.target.value + 12) / 24 * 100 + '%');
+  $$('.eq-presets .chip').forEach(c => { c.classList.toggle('on', false); c.setAttribute('aria-pressed', 'false'); });
+  saveEq(e);
+});
+document.addEventListener('change', ev => {
+  if (ev.target.id !== 'eqOn') return;
+  const e = eqState(); e.on = ev.target.checked; saveEq(e);
+  const b = $('#eqBands'); if (b) b.classList.toggle('off', !e.on);
+});
 const Synth = {
   ctx: null, track: null, g: null, playing: false, offset: 0, timer: null, nodes: null, onEnd: null,
   ensure() {
@@ -1540,7 +1604,15 @@ const Synth = {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = .005; comp.release.value = .2;
     this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 128; this.analyser.smoothingTimeConstant = .82;
-    this.master.connect(comp); comp.connect(this.analyser); this.analyser.connect(ctx.destination);
+    // Equalizer: ten filters between the volume and the compressor (see EQ below).
+    this.eq = EQ_BANDS.map((f, i) => {
+      const b = ctx.createBiquadFilter();
+      b.type = i === 0 ? 'lowshelf' : i === EQ_BANDS.length - 1 ? 'highshelf' : 'peaking';
+      b.frequency.value = f; b.Q.value = 1.1; b.gain.value = eqGain(i);
+      return b;
+    });
+    this.master.connect(this.eq[0]); this.eq.forEach((b, i) => b.connect(this.eq[i + 1] || comp));
+    comp.connect(this.analyser); this.analyser.connect(ctx.destination);
     const sr = ctx.sampleRate;
     const nb = ctx.createBuffer(1, sr * 2, sr), nd = nb.getChannelData(0);
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
@@ -2697,6 +2769,7 @@ function buildShell() {
       <div class="seek-row"><span data-pos>0:00</span><input type="range" data-seek id="pSeek" min="0" max="1000" value="0" aria-label="Seek"><span data-dur>0:00</span></div>
     </div>
     <div class="p-right">
+      <button class="icon-btn" data-act="eq-open" aria-label="Equalizer" title="Equalizer">${icon('eq')}</button>
       <button class="icon-btn" data-act="nav" data-to="queue" id="qBtn" aria-label="Queue">${icon('queue')}</button>
       <button class="icon-btn" data-act="np-toggle" id="npBtn" aria-label="Now playing panel">${icon('panel')}</button>
       <button class="icon-btn" data-act="mute" id="muteBtn" aria-label="Mute">${icon('volume')}</button>
@@ -2722,7 +2795,7 @@ function buildShell() {
     <div class="full-top">
       <button class="icon-btn" data-act="full-close" aria-label="Close player">${icon('down')}</button>
       <div class="full-ctx"><span class="eyebrow">Playing from</span><b class="ell" id="fCtx"></b></div>
-      <button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button>
+      <span class="full-top-r"><button class="icon-btn" data-act="eq-open" aria-label="Equalizer">${icon('eq')}</button><button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button></span>
     </div>
     <img class="cover full-cover" id="fCover" alt="">
     <div class="video-switch" id="fVideoSwitch" role="group" aria-label="Show for YouTube songs" hidden>
@@ -3341,6 +3414,9 @@ function act(el, e) {
     case 'disc-genre': setDiscoverGenre(d.g); break;
     case 'disc-genre-more': pickDiscoverGenre(); break;
     case 'theme': setTheme(d.k); break;
+    case 'acct-theme': openModal({ title: 'Theme', confirm: false, cancel: 'Done', html: themePickerHTML() }); break;
+    case 'eq-open': if (!$('#modal').hidden) closeModal(); openEqualizer(); break;
+    case 'eq-preset': { const e = eqState(); e.preset = d.k; e.gains = EQ_PRESETS[d.k].slice(); saveEq(e); openEqualizer(); break; }
     case 'avatar-remove': setAvatar(null); break;
     case 'album-hide': hideAlbums([d.id]); break;
     case 'album-unhide': state.hiddenCols.delete('album:' + d.id); store.set('hiddenCols', [...state.hiddenCols]); toast('Back in your library'); render(); break;
@@ -4823,8 +4899,9 @@ function openAccount() {
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Choose server</span></button>` : ''}
+      <button type="button" class="text-btn" data-act="acct-theme">${icon('palette')}<span>Theme: ${esc(((window.MURMUR_THEMES || []).find(t => t.id === (document.documentElement.dataset.theme || 'murmur')) || { name: 'Murmur' }).name)}</span></button>
+      <button type="button" class="text-btn" data-act="eq-open">${icon('eq')}<span>Equalizer</span></button>
     </div>
-    ${themePickerHTML()}
     ${appsSectionHTML()}`, onSubmit: () => {} });
 }
 /* Themes (defined at the top of the page so they apply before it draws). Saved on this device. */
@@ -4833,8 +4910,7 @@ function themePickerHTML() {
   const sw = t => `<button type="button" class="theme-sw${t.id === cur ? ' on' : ''}" data-act="theme" data-k="${t.id}" aria-pressed="${t.id === cur}">
     <i style="background:${t.c[1]};--sw-fg:${t.c[5]};--sw-accent:${t.c[7]}"></i>${esc(t.name)}</button>`;
   const all = window.MURMUR_THEMES || [];
-  return `<section aria-labelledby="themeTitle"><h3 id="themeTitle" style="margin:6px 0 8px;font-size:15px;color:var(--fg)">Theme</h3>
-    <p class="small" style="margin:0 0 4px">Dark</p><div class="theme-grid">${all.filter(t => !t.light).map(sw).join('')}</div>
+  return `<section aria-label="Themes"><p class="small" style="margin:0 0 4px">Dark</p><div class="theme-grid">${all.filter(t => !t.light).map(sw).join('')}</div>
     <p class="small" style="margin:10px 0 4px">Light</p><div class="theme-grid">${all.filter(t => t.light).map(sw).join('')}</div></section>`;
 }
 function setTheme(id) {
