@@ -899,8 +899,15 @@ const cfg = window.MURMUR_CONFIG || null;
 const remote = { base: '', token: null, mediaKey: null };
 /* config.js can list several servers, e.g. the laptop and the Azure one. People pick one on the
    connect screen; if it can't be reached, Murmur quietly uses another one from the list. */
+/* Used when config.js can't load (e.g. a page cached from a server that's gone), so people can still reach a server. Keep in step with config.js. */
+const DEFAULT_SERVERS = [
+  { name: 'Laptop', url: 'https://murmur-laptop.tail05789d.ts.net' },
+  { name: 'Laptop (native)', url: 'https://murmur-laptop.tail05789d.ts.net:8443' },
+  { name: 'Azure', url: 'https://murmur.tail05789d.ts.net' }
+];
 const SERVERS = ((cfg && Array.isArray(cfg.servers) && cfg.servers.length) ? cfg.servers
-  : (cfg && cfg.server ? [{ name: 'My server', url: cfg.server }] : [])).filter(x => x && x.url).map(x => ({ name: String(x.name || x.url), url: x.url }));
+  : (cfg && cfg.server ? [{ name: 'My server', url: cfg.server }]
+  : location.protocol === 'https:' && !/claude/i.test(location.hostname) ? DEFAULT_SERVERS : [])).filter(x => x && x.url).map(x => ({ name: String(x.name || x.url), url: x.url }));
 const namedServer = () => { const n = store.get('serverName', null); return n ? SERVERS.find(x => x.name === n) || null : null; };
 const savedServer = () => { const n = namedServer(); return n ? n.url : store.get('server', null) || (SERVERS[0] && SERVERS[0].url) || ''; };
 const serverLabel = base => { const x = SERVERS.find(v => normalizeServer(v.url) === normalizeServer(base)); return x ? x.name : base; };
@@ -4142,7 +4149,7 @@ function showGate(step, msg = '') {
     html = card(`Hi, ${esc(me ? me.name : '')}`, 'Remember this computer? You’ll stay signed in here for 90 days, then Murmur asks for your PIN again. Don’t choose this on a shared or public computer.',
       `<div class="gate-form"><button class="m-ok gate-ok" data-act="gate-remember" data-v="1">Yes, remember for 90 days</button>
        <button class="text-btn gate-alt" data-act="gate-remember" data-v="0">No, just this time</button></div>`);
-  } else if (step === 'connect' || step === 'unreachable') {
+  } else if (step === 'connect' || step === 'unreachable' || step === 'offline-expired') {
     const addr = remote.base || savedServer();
     const cur = normalizeServer(addr);
     const picks = SERVERS.length ? `<div class="srv-list" role="list">${SERVERS.map(x => `<button type="button" class="srv-pick${normalizeServer(x.url) === cur ? ' on' : ''}" data-act="pick-server" data-name="${esc(x.name)}" role="listitem">
@@ -4150,13 +4157,11 @@ function showGate(step, msg = '') {
         <p class="small srv-or">Or type another address:</p>` : '';
     html = card(step === 'connect' ? 'Choose your server' : 'Can’t reach your Murmur server',
       step === 'connect' ? (SERVERS.length ? 'Pick which Murmur server to use. Each one keeps its own music and sign-ins.' : 'Enter the address of the Murmur server that holds your music. You’ll sign in with your name and PIN next.')
+        : step === 'offline-expired' ? 'Your sign-in on this device has ended, and this server can’t be reached. Pick another server or type its address.'
         : `Murmur couldn’t connect to <b>${esc(serverLabel(addr))}</b>. Pick another server, or check that it’s running and try again.`,
       `${picks}<form id="gForm" data-step="server" class="gate-form">
         <div class="field"><label for="gServer">Server address</label><input id="gServer" name="server" required autocomplete="url" inputmode="url" placeholder="https://murmur.example.com" value="${esc(addr)}"></div>
         ${err}<button class="m-ok gate-ok" type="submit">Connect</button></form>`);
-  } else if (step === 'offline-expired') {
-    html = card('Can’t reach your Murmur server', 'Your sign-in on this device has ended, and signing in again needs a connection to your server. Your downloaded songs unlock once you’re signed in.',
-      `<div class="gate-form">${err}<button class="m-ok gate-ok" data-act="retry">Try again</button></div>`);
   } else {
     const expired = step === 'expired';
     html = card(expired ? 'Please sign in again' : 'Sign in', expired ? 'Your sign-in ended, or the owner changed your access. Enter your name and PIN to keep using Murmur.' : 'Enter your name and 4-digit PIN.',
@@ -4168,9 +4173,9 @@ function showGate(step, msg = '') {
         <p class="small">Don’t have a PIN? Ask the person who runs this Murmur to add you.</p></form>`);
   }
   if (['setup', 'login', 'expired'].includes(step)) html = html.replace(/<\/div>$/, `${gateServerHTML()}</div>`);
-  if (['setup', 'login', 'expired', 'connect', 'unreachable'].includes(step)) html = `<div class="gate-col">${html}${gateAppsHTML()}</div>`;
+  if (['setup', 'login', 'expired', 'connect', 'unreachable', 'offline-expired'].includes(step)) html = `<div class="gate-col">${html}${gateAppsHTML()}</div>`;
   g.innerHTML = html; g.hidden = false;
-  if (step === 'connect' || step === 'unreachable') checkServerList();
+  if (step === 'connect' || step === 'unreachable' || step === 'offline-expired') checkServerList();
   const f = (lastName && $('#gPin')) || $('#gName') || g.querySelector('button');
   if (f) setTimeout(() => f.focus(), 0);
 }
@@ -4273,7 +4278,27 @@ async function signOut() {
   try { await pushUserData(true); } catch (e) {}   // save any last changes to their library first
   try { await api('POST', 'api/auth/logout'); } catch (e) {}
   forgetUser();
+  forgetAllServers();
   location.reload();
+}
+/* Signing out signs out everywhere on this device: every server's saved sign-in is ended and forgotten,
+   so switching to another server asks for a name and PIN again. */
+function forgetAllServers() {
+  const tokens = {};
+  try {
+    for (const st of [localStorage, sessionStorage]) {
+      Object.keys(st).forEach(k => {
+        const m = k.match(/^murmur:(token|mkey)(?:@(.+))?$/);
+        if (!m) return;
+        if (m[1] === 'token' && st.getItem(k)) tokens[m[2] || ''] = st.getItem(k);
+        st.removeItem(k);
+      });
+    }
+    localStorage.removeItem('murmur:auth'); localStorage.removeItem('murmur:lastName');
+  } catch (e) {}
+  Object.entries(tokens).forEach(([base, tok]) => {
+    fetch(joinUrl(base, 'api/auth/logout'), { method: 'POST', keepalive: true, headers: { Authorization: 'Bearer ' + tok } }).catch(() => {});
+  });
 }
 function forgetUser() {
   userSync.ready = false;

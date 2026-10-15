@@ -2,7 +2,7 @@
 // Downloaded songs are stored separately in IndexedDB by the page, so audio
 // (/media) and the library API (/api) are never cached here: when the server
 // is unreachable the page falls back to what's saved on the device.
-const SHELL_CACHE = 'murmur-shell-v41';
+const SHELL_CACHE = 'murmur-shell-v42';
 const RUNTIME_CACHE = 'murmur-runtime-v1';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const BASE = new URL(self.registration.scope).pathname;
@@ -47,7 +47,8 @@ self.addEventListener('fetch', event => {
   if (url.origin === self.location.origin) {
     const path = url.pathname;
     if (path.startsWith(BASE + 'api/') || path.startsWith(BASE + 'media/')) return;
-    if (req.mode === 'navigate' || path === BASE || path.endsWith('.html') || path.endsWith('.webmanifest')) {
+    // config.js holds the server list, so keep a copy for when this site itself can't be reached.
+    if (req.mode === 'navigate' || path === BASE || path.endsWith('.html') || path.endsWith('.webmanifest') || path === BASE + 'config.js') {
       event.respondWith(networkFirst(req));
     } else if (path.startsWith(BASE + 'covers/') || path.startsWith(BASE + 'icons/')) {
       event.respondWith(cacheFirst(req));
