@@ -102,6 +102,8 @@ svg.i{width:20px;height:20px;flex:none}
 .chip.on{background:var(--fg);color:var(--bg)}
 body.drag-selecting{user-select:none;-webkit-user-select:none;cursor:grabbing}
 body.drag-selecting .tracks{touch-action:none}
+/* iPhone Safari zooms the page into any text box with text smaller than 16px; keep them at 16px on touch screens. */
+@media (pointer:coarse){input:not([type=range]):not([type=file]):not([type=checkbox]):not([type=radio]),textarea,select{font-size:max(16px,1em)}}
 /* Song rows never select text: on Android a press-and-hold would start text selection (~400ms) and take the touch away from drag-to-select. */
 .tracks .row{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .genre-chips{padding:2px 0 14px}
