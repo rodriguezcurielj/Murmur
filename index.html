@@ -3818,7 +3818,6 @@ function syncLinkResult(tid) {
 
             const res = await fetch(backendUrl, {
                 method: 'POST',
-                credentials: 'include',
                 headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ links: [youtubeUrl], format: 'mp3' })
             });
