@@ -3811,14 +3811,15 @@ function syncLinkResult(tid) {
             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
                 backendUrl = 'http://localhost:8765/convert'; // Local laptop testing
             } else {
-                backendUrl = 'https://murmur.tail05789d.ts.net/convert'; // Your live Azure/Tailscale backend
+                backendUrl = apiUrl('convert'); // The Murmur server you're signed in to (Azure or Laptop)
             }
 
             progressBox.textContent += `\nSending to ${backendUrl}...\n`;
 
             const res = await fetch(backendUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ links: [youtubeUrl], format: 'mp3' })
             });
 
