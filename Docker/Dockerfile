@@ -1,15 +1,22 @@
 FROM node:20-alpine
 
-# ffmpeg reads tags and cover art, and pulls audio out of video files
-RUN apk add --no-cache ffmpeg
+# Install ffmpeg and python3/py3-pip to install yt-dlp
+RUN apk add --no-cache ffmpeg python3 py3-pip && \
+    pip install --no-cache-dir --break-system-packages yt-dlp
 
 WORKDIR /app
-# Build context is the repo root (see docker-compose.yml), so paths here are relative to it.
+
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
+
+# Copy Murmur core files
 COPY server.js auth.js youtube.js spotify.js discover.js userdata.js sync.js sources.js ./
 COPY sources ./sources
-# The web app lives at the repo root (for GitHub Pages); the server serves it from ./public
+
+# Copy your yt2audio converter files into the container
+COPY youtube_stuff ./youtube_stuff
+
+# The web app lives at the repo root; the server serves it from ./public
 COPY index.html config.js manifest.webmanifest sw.js ./public/
 COPY icons ./public/icons
 
