@@ -181,6 +181,7 @@ const YT_LINK = /^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{6,20}$/;
 const jobView = j => ({ id: j.id, label: j.label, ctx: j.ctx, createdAt: j.createdAt, startedAt: j.startedAt, finishedAt: j.finishedAt, cancelled: !!j.cancelled,
     items: j.items.map(x => ({ title: x.title, state: x.state, pct: x.pct, msg: x.msg, track: x.track })) });
 
+async function linkToSpotify(key, fileId, user) { try { await spotify.setFileMatch(key, fileId, user); } catch (e) { console.error('Could not link the song:', e.message); } }
 function convertOne(link, onPct) {
     return new Promise(resolve => {
         const work = path.join(DIRS.tmp, 'yt-' + crypto.randomBytes(6).toString('hex'));
@@ -193,23 +194,32 @@ function convertOne(link, onPct) {
             else if (/^\[(Metadata|EmbedThumbnail)\]/.test(line)) onPct(95);
             else if (/has already been recorded in the archive/.test(line)) skipped = true;
             else if (/^ERROR:/.test(line)) lastErr = line.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?([\w-]+:\s*)?/, '');
-        }, code => resolve({ code, work, skipped, error: lastErr }), { outDir: work, archive: path.join(DATA, 'youtube-done.txt') });
+        }, code => resolve({ code, work, skipped, error: lastErr }), { outDir: work, archive: false });
     });
 }
 async function runJob(job) {
     job.startedAt = Date.now();
     for (const item of job.items) {
         if (job.cancelled) { if (item.state === 'waiting') item.state = 'cancelled'; continue; }
+        const vid = (item.link.match(/[?&]v=([\w-]+)/) || [])[1];
+        const have = library.find(t => t.ytId && t.ytId === vid);
+        if (have) {
+            item.state = 'skipped'; item.msg = 'Already in Murmur'; item.track = have.id; item.pct = 100;
+            if (item.key) await linkToSpotify(item.key, have.id, job.user);
+            continue;
+        }
         item.state = 'working';
         for (let attempt = 1; attempt <= 2 && item.state === 'working'; attempt++) {
             item.pct = 0;
-            const r = await convertOne(item.link, p => { item.pct = Math.max(item.pct, p); });
+            const r = await convertOne(item.link, p => { item.pct = Math.max(item.pct, p); }, vid);
             try {
                 const files = listAudio(r.work);
                 if (files.length) {
-                    const track = await addMediaFile(files[0], path.basename(files[0]), job.user);
+                    const track = await addMediaFile(files[0], path.basename(files[0]), job.user, { ytId: vid });
                     item.track = track.id; item.state = 'done'; job.added++;
-                } else if (r.skipped) { item.state = 'skipped'; item.msg = 'Downloaded before'; }
+                    // A song from an imported Spotify playlist now plays this file ("In Murmur").
+                    if (item.key) await linkToSpotify(item.key, track.id, job.user);
+                }
                 else if (attempt === 2) { item.state = 'failed'; item.msg = r.error || 'YouTube didn’t give the audio'; }
             } catch (err) {
                 if (attempt === 2) { item.state = 'failed'; item.msg = err.message; }
@@ -227,7 +237,7 @@ app.post('/api/convert/jobs', auth.requireUser, auth.requireEdit, (req, res) => 
     if (items.length > MAX_JOB_SONGS) return res.status(400).json({ error: `That’s ${items.length} songs. Murmur gets up to ${MAX_JOB_SONGS} at a time; pick fewer and do the rest after.` });
     const job = { id: crypto.randomBytes(6).toString('hex'), userId: req.user.id, user: req.user, label: String(b.label || '').slice(0, 120),
         ctx: String(b.ctx || '').slice(0, 120), createdAt: Date.now(), added: 0,
-        items: items.map(x => ({ link: x.link, title: String(x.title || '').slice(0, 200) || 'YouTube song', state: 'waiting', pct: 0, msg: '' })) };
+        items: items.map(x => ({ link: x.link, title: String(x.title || '').slice(0, 200) || 'YouTube song', key: String(x.key || '').slice(0, 400), state: 'waiting', pct: 0, msg: '' })) };
     jobs.set(job.id, job);
     jobChain = jobChain.then(() => runJob(job)).catch(err => console.error('YouTube job failed:', err));
     // Forget finished jobs after a day.
@@ -305,6 +315,7 @@ async function addMediaFile(srcPath, original, user, extra = {}) {
             uploadedBy: user.id,
             uploaderName: user.name,
             ...(extra.source ? { source: extra.source } : {}),
+            ...(extra.ytId ? { ytId: extra.ytId } : {}),
             addedAt: new Date().toISOString()
         };
         library.push(track);

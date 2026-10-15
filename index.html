@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015012859">
+<meta name="murmur-build" content="20261015014025">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -4488,7 +4488,7 @@ function syncLinkResult(tid) {
             // A YouTube song someone picked by hand is already the one they want.
             if (t.yt) items.push({ link: `https://www.youtube.com/watch?v=${t.ytId}`, title: t.title });
             else {
-                try { const best = await bestYouTubeFor(t); if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title }); else missed.push(t.title); }
+                try { const best = await bestYouTubeFor(t); if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title, key: t.sp ? t.key : '' }); else missed.push(t.title); }
                 catch (e) { missed.push(t.title); if (/quota|daily/i.test(e.message)) { toast(e.message); break; } }
             }
             ytJobs.finding.done++; renderUploadStatus(); updateJobUI();
@@ -4546,7 +4546,11 @@ function syncLinkResult(tid) {
             watchUpdate();
             renderUploadStatus(); updateJobUI();
             // New songs: refresh the library now and then (not on every poll) so they show up while the rest download.
-            if (refresh && (Date.now() - ytJobs.lastRefresh > 10e3 || !ytJobs.list.some(jobRunning))) { ytJobs.lastRefresh = Date.now(); connectServer().catch(() => {}); }
+            if (refresh && (Date.now() - ytJobs.lastRefresh > 10e3 || !ytJobs.list.some(jobRunning))) {
+                ytJobs.lastRefresh = Date.now();
+                // New files, and which imported Spotify songs they belong to (so those show "In Murmur").
+                connectServer().then(() => api('GET', 'api/matches')).then(m => { sp.matches = (m && m.matches) || sp.matches; if (state.view.name === 'collection') render(); else renderSidebar(); }).catch(() => {});
+            }
             if (ytJobs.list.some(jobRunning)) pollYtJobs(2000);
         }, delay);
     }

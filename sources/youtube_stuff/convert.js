@@ -19,7 +19,8 @@ const OUT_DIR = path.join(os.homedir(), 'Music', 'yt2audio');
 //                  list of finished videos in a different file.
 function convert(links, format, onLine, done, opts = {}) {
     const outDir = opts.outDir || OUT_DIR;
-    const archive = opts.archive || path.join(OUT_DIR, '.done.txt');
+    // archive: false turns off yt-dlp's "already downloaded" list (Murmur checks its own library instead).
+    const archive = opts.archive === false ? null : opts.archive || path.join(OUT_DIR, '.done.txt');
 
 // Options passed to yt-dlp
     const args = [
@@ -27,7 +28,6 @@ function convert(links, format, onLine, done, opts = {}) {
         '--audio-quality', '0',                                      // best quality
         '--embed-metadata',                                          // store title/artist inside the file
         '--embed-thumbnail',                                         // store the video thumbnail as cover art
-        '--download-archive', archive,                               // remembers finished videos so re-runs skip them
         '--ignore-errors',                                           // one bad video doesn't stop the rest
         '--no-overwrites',                                           // never replace a file that already exists
         '--newline',                                                 // print progress one line at a time
@@ -38,6 +38,7 @@ function convert(links, format, onLine, done, opts = {}) {
         '-o', path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
     ];
 
+    if (archive) args.push('--download-archive', archive);           // remembers finished videos so re-runs skip them
     // YouTube sign-in cookies (cookies.txt) are private: they live in the server's data folder (DATA_DIR), never in
     // git or the Docker image. The project folder is still checked for older setups.
     const cookiesPath = [process.env.DATA_DIR && path.join(process.env.DATA_DIR, 'cookies.txt'), path.resolve(__dirname, '../../cookies.txt')]
