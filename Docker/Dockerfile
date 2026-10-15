@@ -1,8 +1,11 @@
 FROM node:20-alpine
 
-# Install ffmpeg, deno (yt-dlp's JS runtime, see convert.js), python, and yt-dlp with the EJS package solver
-RUN apk add --no-cache ffmpeg deno python3 py3-pip && \
+# Install ffmpeg, python, and yt-dlp with the EJS package solver
+RUN apk add --no-cache ffmpeg python3 py3-pip && \
     pip install --no-cache-dir --break-system-packages yt-dlp yt-dlp-ejs
+
+# Deno is yt-dlp's preferred JS runtime (see convert.js). Alpine has no Deno for 32-bit ARM; Node is used there.
+RUN apk add --no-cache deno || echo "Deno isn't available on this platform; yt-dlp will use Node.js"
 
 WORKDIR /app
 
