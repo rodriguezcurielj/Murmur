@@ -2121,9 +2121,10 @@ const FileEng = {
         $$('[data-dur]').forEach(s => s.textContent = fmt(this.duration));
         if (this.pendingSeek) { try { a.currentTime = clamp(this.pendingSeek, 0, this.duration); } catch (e) {} this.pendingSeek = 0; }
       });
-      a.addEventListener('playing', () => { this.netRetries = 0; });
+      a.addEventListener('playing', () => { this.netRetries = 0; if (this.track && this.track.yt) ytAudioPlaying(this.track); });
       a.addEventListener('error', () => {
         if (!this.track || !a.getAttribute('src')) return;
+        if (this.track.yt && !this.track.src) { ytAudioFailed(this.track, !!this.wantPlaying); return; }
         if (this.netTrack !== this.track) { this.netTrack = this.track; this.netRetries = 0; }
         // A dropped connection (phone waking up, switching Wi-Fi/data): quietly pick up where it stopped, twice, before saying anything.
         if (a.error && a.error.code === 2 && !offline.has(this.track.id) && (this.netRetries || 0) < 2) {
@@ -2147,15 +2148,18 @@ const FileEng = {
     try { this.node = Synth.ctx.createMediaElementSource(this.el()); this.node.connect(Synth.master); } catch (e) {}
   },
   /* Downloaded songs play from the copy saved on this device; others stream from the server. */
-  load(t) {
+  load(t, src0) {
     const a = this.el(); this.track = t;
     a.pause();
     this.ready = (async () => {
-      let src = t.src;
+      let src = src0 || t.src;
       if (offline.has(t.id)) {
         try { const rec = await Offline.get(t.id); if (rec && rec.blob) { if (this.obj) URL.revokeObjectURL(this.obj); src = this.obj = URL.createObjectURL(rec.blob); } } catch (e) {}
       }
       if (this.track !== t) return;
+      // Audio from another site needs CORS to go through Web Audio (equalizer, crossfade), or it plays silent.
+      let other = false; try { other = /^https?:/.test(src) && new URL(src, location.href).origin !== location.origin; } catch (e) {}
+      if (other) a.crossOrigin = 'anonymous'; else a.removeAttribute('crossorigin');
       a.src = src; a.load();
     })();
   },
@@ -2361,10 +2365,47 @@ function syncVideoSwitch() {
   if (isYt) $$('#fVideoSwitch button').forEach(b => { const on = (b.dataset.v === 'video') === ytVideoOn(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
 }
 window.addEventListener('resize', placeYtBox);
+/* Ad-free YouTube songs where no ad blocker can run (Safari on iPhone or Mac, or a browser without the Murmur
+   Ad Blocker extension): the song plays as plain audio that a Murmur server gets from YouTube (ytaudio.js), instead
+   of in YouTube's player. No ads, and it keeps playing with the screen locked. If this server can't get it (YouTube
+   blocks some cloud servers), the other servers are tried, then YouTube's own player. */
+const ytAudio = { fails: {}, until: {} };
+const ytAudioOn = () => !window.MurmurAndroid && !document.documentElement.dataset.murmurAdblock && server.on && !store.get('ytPlayerOnly', false);
+const ytAudioBases = () => [remote.base || location.origin, ...SERVERS.map(x => normalizeServer(x.url))]
+  .filter((b, i, a) => b && a.indexOf(b) === i && !((ytAudio.until[b] || 0) > Date.now()));
+const ytAudioUrl = (base, t, extra = '') => joinUrl(base, 'ytaudio/' + encodeURIComponent(t.ytId)) + '?' + (remote.mediaKey ? 'k=' + encodeURIComponent(remote.mediaKey) + '&' : '') + extra;
+function ytAudioSrc(t, skip = []) { const b = ytAudioBases().find(x => !skip.includes(x)); return b ? ytAudioUrl(b, t) : null; }
+function ytAudioFailed(t, wasPlaying) {
+  const src = FileEng.audio && FileEng.audio.getAttribute('src') || '';
+  const tried = t.ytTried = t.ytTried || [];
+  const base = ytAudioBases().find(b => src.startsWith(b.replace(/\/+$/, '') + '/ytaudio/'));
+  if (base) {
+    tried.push(base);
+    // Two songs in a row failing on a server: leave it out for 10 minutes.
+    ytAudio.fails[base] = (ytAudio.fails[base] || 0) + 1;
+    if (ytAudio.fails[base] >= 2) ytAudio.until[base] = Date.now() + 10 * 60e3;
+  }
+  if (Engine.mode !== 'file' || FileEng.track !== t) return;
+  const next = ytAudioSrc(t, tried);
+  if (next) { FileEng.load(t, next); if (wasPlaying) FileEng.play(); return; }
+  // No server could get it: YouTube's own player.
+  t.ytTried = null;
+  FileEng.unload(); Engine.mode = 'yt'; YTEng.load(t); if (wasPlaying) YTEng.play();
+}
+function ytAudioPlaying(t) {
+  const src = FileEng.audio.getAttribute('src') || '';
+  Object.keys(ytAudio.fails).forEach(b => { if (src.startsWith(b)) ytAudio.fails[b] = 0; });
+  t.ytTried = null;
+  // Look up the next song now, so it starts without a wait.
+  const nx = TRACKS[state.list[state.order[state.pos + 1]]];
+  if (nx && nx.yt && !nx.src) { const u = ytAudioSrc(nx); if (u) fetch(u + 'prep=1', { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); }
+}
 const Engine = {
   mode: 'synth',
   get e() { return this.mode === 'file' ? FileEng : this.mode === 'yt' ? YTEng : Synth; },
   load(t) {
+    const ya = t.yt && ytAudioOn() ? ytAudioSrc(t) : null;
+    if (ya) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t, ya); return; }
     if (t.yt) { Synth.unload(); FileEng.unload(); this.mode = 'yt'; YTEng.load(t); return; }
     YTEng.unload();
     if (t.src) { Synth.unload(); this.mode = 'file'; FileEng.load(t); }

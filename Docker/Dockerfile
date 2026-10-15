@@ -13,7 +13,7 @@ COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
 # Copy Murmur core files
-COPY server.js auth.js youtube.js spotify.js discover.js userdata.js sync.js sources.js ./
+COPY server.js auth.js youtube.js ytaudio.js spotify.js discover.js userdata.js sync.js sources.js ./
 COPY sources ./sources
 
 # YouTube cookies are NOT built into the image (it's public). Put cookies.txt in the data folder (/data) instead.

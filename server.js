@@ -382,6 +382,7 @@ app.patch('/api/tracks', auth.requireEdit, async (req, res) => {
     res.json({ tracks });
 });
 
+require('./ytaudio')(app, auth, DATA);   // ad-free YouTube audio through this server
 app.use('/media', auth.requireUserFiles, express.static(DIRS.music, { maxAge: '7d', fallthrough: false }));
 app.use('/covers', auth.requireUserFiles, express.static(DIRS.covers, { maxAge: '7d', fallthrough: false }));
 app.use(express.static(path.join(__dirname, 'public'), {
