@@ -117,7 +117,7 @@ module.exports = function createAuth(file, opts = {}) {
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Expose-Headers', 'Content-Length');
       if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
         res.setHeader('Access-Control-Max-Age', '600');
         if (req.headers['access-control-request-private-network']) res.setHeader('Access-Control-Allow-Private-Network', 'true');

@@ -2,7 +2,7 @@
 // Downloaded songs are stored separately in IndexedDB by the page, so audio
 // (/media) and the library API (/api) are never cached here: when the server
 // is unreachable the page falls back to what's saved on the device.
-const SHELL_CACHE = 'murmur-shell-v42';
+const SHELL_CACHE = 'murmur-shell-v43';
 const RUNTIME_CACHE = 'murmur-runtime-v1';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const BASE = new URL(self.registration.scope).pathname;
@@ -19,15 +19,15 @@ self.addEventListener('activate', event => {
   );
 });
 
+// On a weak connection (one bar, captive Wi-Fi) the network can take a minute to fail, so after a few seconds
+// the saved copy is used if there is one; the fresh copy still updates the cache for next time.
 async function networkFirst(request) {
   const cache = await caches.open(SHELL_CACHE);
-  try {
-    const res = await fetch(request);
-    if (res.ok) cache.put(request, res.clone());
-    return res;
-  } catch (err) {
-    return (await cache.match(request, { ignoreSearch: true })) || (await cache.match('index.html')) || Response.error();
-  }
+  const saved = () => cache.match(request, { ignoreSearch: true }).then(r => r || cache.match('index.html'));
+  const net = fetch(request).then(res => { if (res.ok) cache.put(request, res.clone()); return res; });
+  const slow = new Promise(ok => setTimeout(ok, 4000)).then(saved).then(r => r || net);
+  try { return await Promise.race([net, slow]); }
+  catch (err) { return (await saved()) || Response.error(); }
 }
 
 async function cacheFirst(request) {
