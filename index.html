@@ -3,13 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015002633">
+<meta name="murmur-build" content="20261015002928">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<script>
+/* Themes: each is a set of colours for the whole app. Applied here, before the page draws, so it never flashes the default. */
+window.MURMUR_THEMES = [
+  { id: 'murmur', name: 'Murmur', c: ['#120e17', '#1b1522', '#251d2e', '#2f2639', '#3b3048', '#f5eff9', '#a798b4', '#ffb070', '#2b1505'] },
+  { id: 'midnight', name: 'Midnight', c: ['#0b1020', '#121a30', '#1a2440', '#22305a', '#2c3b66', '#eef2ff', '#9aa8cc', '#6ea8ff', '#08142e'] },
+  { id: 'ocean', name: 'Ocean', c: ['#071419', '#0d1f26', '#132a33', '#19363f', '#22454f', '#e8f8fb', '#8fb5bf', '#3fd0c9', '#032523'] },
+  { id: 'forest', name: 'Forest', c: ['#0d1410', '#142019', '#1b2b22', '#22362b', '#2d4637', '#ecf7ee', '#9bb8a3', '#8fd16a', '#10240a'] },
+  { id: 'sunset', name: 'Sunset', c: ['#1a0e12', '#24131a', '#311a23', '#3d212c', '#4c2a37', '#fff0f3', '#c79aa7', '#ff7a6b', '#2e0905'] },
+  { id: 'crimson', name: 'Crimson', c: ['#0f0a0a', '#181010', '#221616', '#2c1c1c', '#3a2424', '#fbeeee', '#b89a9a', '#ff4d5e', '#2a0408'] },
+  { id: 'lavender', name: 'Lavender', c: ['#15121f', '#1d1930', '#272140', '#30294f', '#3c3460', '#f3f0ff', '#ada6cf', '#b9a2ff', '#1c1236'] },
+  { id: 'sakura', name: 'Sakura', c: ['#1a1016', '#24151e', '#301c28', '#3b2332', '#4a2d40', '#fff0f7', '#c9a0b6', '#ff9ecb', '#3a0a22'] },
+  { id: 'gold', name: 'Gold', c: ['#0f0d08', '#1a160d', '#252014', '#302a1b', '#3f3724', '#fbf6e8', '#bdb294', '#f2c14e', '#2a1f02'] },
+  { id: 'coffee', name: 'Coffee', c: ['#16110d', '#201913', '#2b221a', '#362b21', '#45372b', '#f7efe6', '#bba892', '#d9a066', '#2a1606'] },
+  { id: 'neon', name: 'Neon', c: ['#07070d', '#0f0f1a', '#171728', '#202036', '#2b2b47', '#f1f1ff', '#9d9dc4', '#ff3df2', '#2a0127'] },
+  { id: 'noir', name: 'Noir', c: ['#000000', '#0e0e0e', '#1a1a1a', '#242424', '#333333', '#ffffff', '#a0a0a0', '#ffffff', '#000000'] },
+  { id: 'paper', name: 'Paper', light: true, c: ['#faf7f2', '#ffffff', '#f1ece4', '#e8e1d6', '#ddd4c6', '#1f1a15', '#6b6157', '#d96a1e', '#ffffff'] },
+  { id: 'daylight', name: 'Daylight', light: true, c: ['#f4f6fb', '#ffffff', '#e9edf6', '#dde3f0', '#cfd7e8', '#121826', '#5a6478', '#2f6bff', '#ffffff'] },
+  { id: 'mint', name: 'Mint', light: true, c: ['#f2f8f4', '#ffffff', '#e3f0e7', '#d5e8db', '#c3dccb', '#10201a', '#52695d', '#1f9d63', '#ffffff'] },
+  { id: 'blossom', name: 'Blossom', light: true, c: ['#fdf3f6', '#ffffff', '#f6e3ea', '#efd5df', '#e5c3d0', '#2a1420', '#7a5767', '#d6457f', '#ffffff'] }
+];
+window.murmurApplyTheme = function (id) {
+  var t = window.MURMUR_THEMES.filter(function (x) { return x.id === id; })[0] || window.MURMUR_THEMES[0];
+  var r = document.documentElement.style, n = ['--bg', '--panel', '--raise', '--hover', '--line', '--fg', '--muted', '--accent', '--accent-ink'];
+  n.forEach(function (k, i) { r.setProperty(k, t.c[i]); });
+  r.setProperty('--danger', t.light ? '#c0392b' : '#ff8e8e');
+  r.setProperty('color-scheme', t.light ? 'light' : 'dark');
+  document.documentElement.dataset.theme = t.id;
+  var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t.c[0]);
+  return t.id;
+};
+try { window.murmurApplyTheme(JSON.parse(localStorage.getItem('murmur:theme') || '"murmur"')); } catch (e) {}
+</script>
 <script src="config.js"></script>
 </head>
 <title>Murmur Player</title>
@@ -20,7 +52,7 @@
 :root{
   /* Layout: three-pane shell (library rail · main stage · now-playing card) over a transport bar; phones collapse to stage + mini player + tab bar */
   --bg:#120e17; --panel:#1b1522; --raise:#251d2e; --hover:#2f2639; --line:#3b3048;
-  --fg:#f5eff9; --muted:#a798b4; --accent:#ffb070; --accent-ink:#2b1505;
+  --fg:#f5eff9; --muted:#a798b4; --accent:#ffb070; --accent-ink:#2b1505; --danger:#ff8e8e;
   --font-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
   --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --r:10px;
@@ -166,7 +198,7 @@ svg.i{width:20px;height:20px;flex:none}
 .actions .icon-btn svg{width:24px;height:24px}
 .text-btn{padding:8px 14px;border-radius:999px;border:1px solid var(--line);font-weight:600;font-size:14px;color:var(--muted)}
 .text-btn:hover{color:var(--fg);border-color:var(--muted)}
-.text-btn.danger{color:#ff8e8e;border-color:#ff8e8e}
+.text-btn.danger{color:var(--danger);border-color:var(--danger)}
 
 .tracks{display:flex;flex-direction:column}
 .thead,.row{display:grid;grid-template-columns:28px minmax(0,4fr) minmax(0,3fr) 36px 48px 36px;align-items:center;gap:12px;padding:6px 12px;border-radius:6px}
@@ -325,7 +357,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .drop-overlay div{border:3px dashed var(--accent);border-radius:16px;padding:48px 32px;color:var(--fg);text-align:center;display:flex;flex-direction:column;gap:10px;pointer-events:none}
 .drop-overlay b{font:800 clamp(22px,4vw,34px)/1.15 var(--font-display)}
 .drop-overlay span{color:var(--muted);font-size:14px}
-.danger-text{color:#ff8e8e}
+.danger-text{color:var(--danger)}
 
 /* ---------- selection ---------- */
 .head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -354,7 +386,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .sb svg{width:16px;height:16px}
 .sb:hover:not(:disabled){background:var(--hover)}
 .sb:disabled{opacity:.4;cursor:default}
-.sb.danger{color:#ff8e8e}
+.sb.danger{color:var(--danger)}
 .sb.done{background:var(--fg);color:var(--bg);margin-left:4px}
 .sb.done:hover{background:var(--fg)!important;opacity:.9}
 .sb-sep{width:1px;align-self:stretch;background:var(--line);margin:4px 4px}
@@ -364,8 +396,8 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate-card{width:min(400px,100%);display:flex;flex-direction:column;gap:6px}
 .gate-brand{padding:0 0 22px}
 .dls-list{display:grid;gap:8px;margin-top:6px}
-.dls-opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:inherit;font:inherit;cursor:pointer}
-.dls-opt:hover:not(:disabled){background:rgba(255,255,255,.08)}
+.dls-opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);background:color-mix(in srgb,var(--fg) 4%,transparent);color:inherit;font:inherit;cursor:pointer}
+.dls-opt:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 8%,transparent)}
 .dls-opt:disabled{opacity:.5;cursor:default}
 .dls-opt svg{width:20px;height:20px;flex:none;color:var(--accent)}
 .dls-opt b{display:block}
@@ -394,22 +426,23 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 @media (prefers-reduced-motion:reduce){.ytdl-bar.busy span{animation:none;width:100%;opacity:.5}}
 .ytp-play{flex:none;margin-left:auto}
 .src-results{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px;max-height:50vh;overflow-y:auto;overflow-x:hidden}
-.src-row{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;background:rgba(255,255,255,.04);min-width:0}
+.src-row{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;background:color-mix(in srgb,var(--fg) 4%,transparent);min-width:0}
 .src-row img,.src-row .ver-ph{width:48px;height:48px;border-radius:6px;object-fit:cover;flex:none}
 .src-meta{flex:1;min-width:0;display:flex;flex-direction:column}
 .src-meta b,.src-meta .small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .src-lic a{color:inherit}
 .src-add{flex:none}
-.src-set{padding:8px 0;border-top:1px solid rgba(255,255,255,.08)}
+.src-set{padding:8px 0;border-top:1px solid color-mix(in srgb,var(--fg) 8%,transparent)}
 .admin-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;padding:10px 14px;border-radius:12px;background:rgba(255,176,112,.12);border:1px solid rgba(255,176,112,.35)}
 .admin-banner svg{width:18px;height:18px;color:var(--accent);flex:none}
 .admin-banner span{flex:1;min-width:200px}
 .admin-plays{margin:0 0 18px;padding-left:22px;display:grid;gap:4px}
 .srv-list{display:grid;gap:8px;margin:0 0 6px}
-.srv-pick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:inherit;font:inherit;cursor:pointer}
-.srv-pick:hover{background:rgba(255,255,255,.08)}
+.srv-pick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);background:color-mix(in srgb,var(--fg) 4%,transparent);color:inherit;font:inherit;cursor:pointer}
+.srv-pick:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}
 .srv-pick.on{border-color:var(--accent)}
 .srv-pick b{display:block}
+.srv-note{display:block;color:var(--accent);font-weight:600}
 .srv-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#7a6f86}
 .srv-dot.ok{background:#3ecf6e}
 .srv-or{margin:10px 0 0}
@@ -420,15 +453,15 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate-ok{padding:13px 20px;font-size:15px}
 .gate-ok:disabled{opacity:.6}
 .gate-alt{justify-content:center;padding:12px}
-.gate-err{margin:0;color:#ff9a9a;font-size:14px}
+.gate-err{margin:0;color:var(--danger);font-size:14px}
 .gate-notyou{align-self:flex-start;margin-top:-6px;font-size:14px}
-.gate-srv{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}
+.gate-srv{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:18px;padding-top:14px;border-top:1px solid color-mix(in srgb,var(--fg) 10%,transparent)}
 .gate-col{width:min(400px,100%);display:flex;flex-direction:column;gap:28px}
-.gate-apps{border-top:1px solid rgba(255,255,255,.1);padding-top:20px}
+.gate-apps{border-top:1px solid color-mix(in srgb,var(--fg) 10%,transparent);padding-top:20px}
 .gate-apps h2{font:700 17px var(--font-display);margin:0 0 12px}
 .gd-tabs{display:flex;gap:6px;margin:0 0 12px}
-.gd-tab{flex:1;padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:transparent;color:inherit;font:inherit;font-size:14px;cursor:pointer}
-.gd-tab.on{background:var(--accent);border-color:var(--accent);color:#1b1522;font-weight:600}
+.gd-tab{flex:1;padding:8px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--fg) 14%,transparent);background:transparent;color:inherit;font:inherit;font-size:14px;cursor:pointer}
+.gd-tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .gd-panel .steps{margin:0 0 10px;padding-left:20px;display:grid;gap:6px}
 .gd-panel .steps svg{width:15px;height:15px;vertical-align:-2px}
 .gd-panel p{margin:0 0 12px}
@@ -457,7 +490,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .person-meta{min-width:0;display:flex;flex-direction:column}
 .person-meta h3{margin:0;font:700 18px var(--font-display)}
 .person-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
-.text-btn.danger{color:#ff8e8e;border-color:color-mix(in srgb,#ff8e8e 50%,transparent)}
+.text-btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 50%,transparent)}
 .devices{list-style:none;margin:0;padding:10px 0 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
 .device{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .device>div{display:flex;flex-direction:column;min-width:0}
@@ -484,8 +517,8 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .row.ghost:hover .t{opacity:.85}
 .sp-chip{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:1px 7px;border-radius:999px;margin-right:6px;vertical-align:1px;border:1px solid var(--line);color:var(--muted)}
 .sp-chip.in{border-color:transparent;background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
-.sp-chip.yt{border-color:transparent;background:color-mix(in srgb,#e0473f 22%,transparent);color:#ff8f88}
-.sp-chip.none{border-color:color-mix(in srgb,#ff8e8e 40%,transparent);color:#ff9a9a}
+.sp-chip.yt{border-color:transparent;background:color-mix(in srgb,#e0473f 22%,transparent);color:var(--danger)}
+.sp-chip.none{border-color:color-mix(in srgb,var(--danger) 40%,transparent);color:var(--danger)}
 .sp-av{background:#2fa36b;color:#fff}
 .disc-badge{background:#5d8bf4}
 .sp-av svg{width:16px;height:16px}
@@ -527,7 +560,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .field input:focus,.field textarea:focus{border-color:var(--accent);outline:none}
 .m-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 .m-ok{padding:9px 20px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:700}
-.m-ok.danger{background:#ff8e8e;color:#2a0707}
+.m-ok.danger{background:var(--danger);color:#2a0707}
 
 /* ---------- responsive ---------- */
 @media (max-width:1100px){
@@ -676,6 +709,13 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .full-cover{height:min(calc(100vh - 70px),42vw)}
 }
 @media (prefers-reduced-motion:reduce){.dl-btn.busy{animation:none}*{transition:none!important}.eq i{animation:none;height:10px}.toast.show{animation:none}}
+.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.theme-sw{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:6px;border-radius:12px;border:2px solid transparent;background:none;color:var(--fg);font:inherit;font-size:12px;font-weight:600;cursor:pointer;text-align:center}
+.theme-sw:hover{background:var(--hover)}
+.theme-sw.on{border-color:var(--accent)}
+.theme-sw i{display:block;height:44px;border-radius:8px;position:relative;overflow:hidden;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 12%,transparent)}
+.theme-sw i::before{content:"";position:absolute;left:8px;right:40%;top:10px;height:6px;border-radius:3px;background:var(--sw-fg);opacity:.85}
+.theme-sw i::after{content:"";position:absolute;right:8px;bottom:8px;width:18px;height:18px;border-radius:50%;background:var(--sw-accent)}
 </style>
 
 <div class="app" id="app"></div>
@@ -929,14 +969,16 @@ const remote = { base: '', token: null, mediaKey: null };
    connect screen; if it can't be reached, Murmur quietly uses another one from the list. */
 /* Used when config.js can't load (e.g. a page cached from a server that's gone), so people can still reach a server. Keep in step with config.js. */
 const DEFAULT_SERVERS = [
-  { name: 'Laptop', url: 'https://murmur-laptop.tail05789d.ts.net' },
-  { name: 'Laptop (native)', url: 'https://murmur-laptop.tail05789d.ts.net:8443' },
-  { name: 'Azure', url: 'https://murmur.tail05789d.ts.net' }
+  { name: 'Port Server', url: 'https://murmur-laptop.tail05789d.ts.net' },
+  { name: 'Port Down Server', url: 'https://murmur-laptop.tail05789d.ts.net:8443', note: 'Allows YouTube downloads' },
+  { name: 'Hike Server', url: 'https://murmur.tail05789d.ts.net' }
 ];
 const SERVERS = ((cfg && Array.isArray(cfg.servers) && cfg.servers.length) ? cfg.servers
   : (cfg && cfg.server ? [{ name: 'My server', url: cfg.server }]
-  : location.protocol === 'https:' && !/claude/i.test(location.hostname) ? DEFAULT_SERVERS : [])).filter(x => x && x.url).map(x => ({ name: String(x.name || x.url), url: x.url }));
-const namedServer = () => { const n = store.get('serverName', null); return n ? SERVERS.find(x => x.name === n) || null : null; };
+  : location.protocol === 'https:' && !/claude/i.test(location.hostname) ? DEFAULT_SERVERS : [])).filter(x => x && x.url).map(x => ({ name: String(x.name || x.url), url: x.url, note: String(x.note || '') }));
+// Servers were renamed; a choice saved under an old name still finds its server.
+const OLD_SERVER_NAMES = { 'Laptop': 'Port Server', 'Laptop (native)': 'Port Down Server', 'Azure': 'Hike Server' };
+const namedServer = () => { const n = store.get('serverName', null); return n ? SERVERS.find(x => x.name === n || x.name === OLD_SERVER_NAMES[n]) || null : null; };
 const savedServer = () => { const n = namedServer(); return n ? n.url : store.get('server', null) || (SERVERS[0] && SERVERS[0].url) || ''; };
 const serverLabel = base => { const x = SERVERS.find(v => normalizeServer(v.url) === normalizeServer(base)); return x ? x.name : base; };
 const joinUrl = (base, u) => base ? base.replace(/\/+$/, '') + '/' + u : u;
@@ -3255,6 +3297,7 @@ function act(el, e) {
     case 'album-genre': { const a = ALBUM_MAP[d.id]; if (a) openGenrePicker(a.trackIds.filter(visible), { album: true }); break; }
     case 'disc-genre': setDiscoverGenre(d.g); break;
     case 'disc-genre-more': pickDiscoverGenre(); break;
+    case 'theme': setTheme(d.k); break;
     case 'sel-dl': {
       const ids = dlTargets(selIds());
       if (ids.every(id => offline.has(id))) confirmRemoveDownloads(ids); else { downloadTracks(ids); clearSel(); }
@@ -4456,7 +4499,7 @@ function showGate(step, msg = '') {
     const addr = remote.base || savedServer();
     const cur = normalizeServer(addr);
     const picks = SERVERS.length ? `<div class="srv-list" role="list">${SERVERS.map(x => `<button type="button" class="srv-pick${normalizeServer(x.url) === cur ? ' on' : ''}" data-act="pick-server" data-name="${esc(x.name)}" role="listitem">
-        <span class="srv-dot" data-srv="${esc(normalizeServer(x.url))}"></span><span><b>${esc(x.name)}</b><span class="small" data-srv-state="${esc(normalizeServer(x.url))}">Checking…</span></span></button>`).join('')}</div>
+        <span class="srv-dot" data-srv="${esc(normalizeServer(x.url))}"></span><span><b>${esc(x.name)}</b>${x.note ? `<span class="small srv-note">${esc(x.note)}</span>` : ''}<span class="small" data-srv-state="${esc(normalizeServer(x.url))}">Checking…</span></span></button>`).join('')}</div>
         <p class="small srv-or">Or type another address:</p>` : '';
     html = card(step === 'connect' ? 'Choose your server' : 'Can’t reach your Murmur server',
       step === 'connect' ? (SERVERS.length ? 'Pick which Murmur server to use. Each one keeps its own music and sign-ins.' : 'Enter the address of the Murmur server that holds your music. You’ll sign in with your name and PIN next.')
@@ -4554,7 +4597,7 @@ function gateServerHTML() {
   const cur = normalizeServer(remote.base || location.origin);
   const others = SERVERS.filter(x => normalizeServer(x.url) !== cur);
   return `<div class="gate-srv small"><span>Server: <b>${esc(serverLabel(cur))}</b></span>
-    ${others.map(x => `<button type="button" class="link-btn" data-act="pick-server" data-name="${esc(x.name)}">Switch to ${esc(x.name)}</button>`).join('')}
+    ${others.map(x => `<button type="button" class="link-btn" data-act="pick-server" data-name="${esc(x.name)}">Switch to ${esc(x.name)}${x.note ? ` (${esc(x.note.toLowerCase())})` : ''}</button>`).join('')}
     <button type="button" class="link-btn" data-act="gate-servers">All servers…</button></div>`;
 }
 async function gateSubmit(form) {
@@ -4636,7 +4679,7 @@ function openAccount() {
   if (!me) return;
   const until = me.remembered ? `Remembered on this computer until <b>${when(me.expiresAt)}</b>.` : 'Signed in for this visit only. You’ll need your PIN again after 12 hours or when the browser closes.';
   const others = SERVERS.filter(x => normalizeServer(x.url) !== remote.base);
-  const where = remote.base ? `<p>Server: <b>${esc(serverLabel(remote.base))}</b>${others.map(x => ` · <button type="button" class="link-btn" data-act="pick-server" data-name="${esc(x.name)}">Switch to ${esc(x.name)}</button>`).join('')}</p>` : '';
+  const where = remote.base ? `<p>Server: <b>${esc(serverLabel(remote.base))}</b>${others.map(x => ` · <button type="button" class="link-btn" data-act="pick-server" data-name="${esc(x.name)}">Switch to ${esc(x.name)}${x.note ? ` (${esc(x.note.toLowerCase())})` : ''}</button>`).join('')}</p>` : '';
   // YouTube ad blocker status: built into the phone apps, or the Murmur Ad Blocker extension in a desktop browser.
   const adOn = window.MurmurAndroid ? 'On (built into the app)' : document.documentElement.dataset.murmurAdblock ? 'On (Murmur Ad Blocker extension)' : '';
   const adLine = !yt.enabled ? '' : adOn ? `<p>YouTube ad blocker: <b>${adOn}</b></p>`
@@ -4649,7 +4692,23 @@ function openAccount() {
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Choose server</span></button>` : ''}
     </div>
+    ${themePickerHTML()}
     ${appsSectionHTML()}`, onSubmit: () => {} });
+}
+/* Themes (defined at the top of the page so they apply before it draws). Saved on this device. */
+function themePickerHTML() {
+  const cur = document.documentElement.dataset.theme || 'murmur';
+  const sw = t => `<button type="button" class="theme-sw${t.id === cur ? ' on' : ''}" data-act="theme" data-k="${t.id}" aria-pressed="${t.id === cur}">
+    <i style="background:${t.c[1]};--sw-fg:${t.c[5]};--sw-accent:${t.c[7]}"></i>${esc(t.name)}</button>`;
+  const all = window.MURMUR_THEMES || [];
+  return `<section aria-labelledby="themeTitle"><h3 id="themeTitle" style="margin:6px 0 8px;font-size:15px;color:var(--fg)">Theme</h3>
+    <p class="small" style="margin:0 0 4px">Dark</p><div class="theme-grid">${all.filter(t => !t.light).map(sw).join('')}</div>
+    <p class="small" style="margin:10px 0 4px">Light</p><div class="theme-grid">${all.filter(t => t.light).map(sw).join('')}</div></section>`;
+}
+function setTheme(id) {
+  const applied = window.murmurApplyTheme ? window.murmurApplyTheme(id) : id;
+  store.set('theme', applied);
+  $$('.theme-sw').forEach(b => { const on = b.dataset.k === applied; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
 }
 /* "Get the apps": downloads live on the GitHub Pages download page. The device you're on is listed first. */
 const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
