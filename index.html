@@ -1004,7 +1004,7 @@ const YTALBUM = { id: 'youtube', title: 'From YouTube', artist: 'YouTube', year:
   colors: ['#e0473f', '#2a1416', '#ffb070'], desc: 'YouTube songs you’ve played, liked or saved to playlists.', trackIds: [] };
 YTALBUM.cover = makeCover(YTALBUM);
 ALBUM_MAP.youtube = YTALBUM;
-const yt = { enabled: false, shelves: [], results: new Map(), loading: new Set(), error: '', searchesLeft: null };
+const yt = { enabled: false, shelves: [], results: new Map(), loading: new Set(), error: '', searchesLeft: null, keys: [] };
 function addYtTrack(v, genreTag) {
   const id = 'yt-' + v.id;
   const old = TRACKS[id];
@@ -4089,8 +4089,15 @@ function act(el, e) {
     case 'tq-clear': { const q = $('#tq'); q.value = ''; onSearchInput(''); q.focus(); if (state.view.name === 'search') { state.search = ''; refreshSearch(); } break; }
     case 'drop-pick': pickDrop(+d.k); break;
     case 'go-settings': people = null; navigate({ name: 'people' }); break;
+    case 'yt-key-del':
+      api('DELETE', 'api/settings/youtube?k=' + encodeURIComponent(d.k)).then(async r => {
+        yt.enabled = !!r.enabled;
+        try { yt.keys = (await api('GET', 'api/youtube/status')).keys || []; } catch (e) { yt.keys = []; }
+        toast('Key removed'); render();
+      }).catch(err => toast(err.message));
+      break;
     case 'yt-key-remove':
-      api('DELETE', 'api/settings/youtube').then(() => { yt.enabled = false; yt.shelves = []; toast('YouTube disconnected'); render(); }).catch(err => toast(err.message));
+      api('DELETE', 'api/settings/youtube').then(() => { yt.enabled = false; yt.keys = []; yt.shelves = []; toast('YouTube disconnected'); render(); }).catch(err => toast(err.message));
       break;
     case 'p-edit': {
       const on = el.checked;
@@ -4207,8 +4214,10 @@ document.addEventListener('submit', async e => {
     e.preventDefault();
     const btn = e.target.querySelector('.m-ok'); btn.disabled = true; btn.textContent = 'Checking key…';
     try {
+      const had = yt.enabled;
       await api('PUT', 'api/settings/youtube', { key: new FormData(e.target).get('key') });
-      yt.enabled = true; toast('YouTube connected. Suggestions are on Home.'); render(); loadSuggestions();
+      try { const ys = await api('GET', 'api/youtube/status'); yt.keys = ys.keys || []; } catch (er) {}
+      yt.enabled = true; toast(had ? 'Key added. Murmur moves to it when the others run out.' : 'YouTube connected. Suggestions are on Home.'); render(); if (!had) loadSuggestions();
     } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = 'Connect YouTube'; }
     return;
   }
@@ -5816,7 +5825,14 @@ function ytSettingsHTML() {
   return `<section class="person yt-settings" aria-labelledby="ytSetTitle">
     <header class="person-head"><span class="avatar yt-av">${icon('play')}</span>
       <div class="person-meta"><h3 id="ytSetTitle">YouTube</h3><span class="small">${status}</span></div></header>
-    ${yt.enabled ? `<div class="person-actions"><button class="text-btn danger" data-act="yt-key-remove">Disconnect YouTube</button></div>` : `
+    ${yt.enabled ? `<div class="acct-list yt-keys">${(yt.keys || []).map((k, i) => `<div class="acct-row static"><span class="ar-ic">${icon('play')}</span><span class="ar-label">Key ${i + 1} <span class="small">…${esc(k.tail)}</span></span><span class="ar-val">${k.left ? `${k.left} searches left today` : 'Used up today'}</span><button type="button" class="link-btn danger" data-act="yt-key-del" data-k="${esc(k.tail)}">Remove</button></div>`).join('')}</div>
+    <p class="small">Murmur uses the keys in order: when one key’s searches for the day are used up, it moves to the next. After all of them, it keeps searching YouTube without a key (a little slower).</p>
+    <form id="ytKeyForm" class="person-add yt-key-form">
+      <div class="field"><label for="ytKey">Add another YouTube API key</label><input id="ytKey" name="key" required autocomplete="off" spellcheck="false" placeholder="AIza…"></div>
+      <button class="m-ok" type="submit">Add key</button>
+    </form>
+    <p class="small">More keys: in <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud</a>, make a new project, turn on the YouTube Data API v3 there, and create an API key. Each project gets its own daily searches.</p>
+    <div class="person-actions"><button class="text-btn danger" data-act="yt-key-remove">Disconnect YouTube</button></div>` : `
     <ol class="steps small">
       <li>Open <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a> in Google Cloud and sign in with your Google account. Create a project if it asks, then click <b>Enable</b>.</li>
       <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials</a>, click <b>Create credentials</b> then <b>API key</b>, and copy the key.</li>
@@ -5849,7 +5865,7 @@ async function addPerson(form) {
   renderAcctBtn();
   if (mode === 'ok') {
     await connectServer();
-    try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
+    try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.keys = ys.keys || []; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
     await loadSpotify();
     queueGenreGuess();

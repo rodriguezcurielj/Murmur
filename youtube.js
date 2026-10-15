@@ -44,25 +44,29 @@ module.exports = function createYouTube(file, auth) {
   const DAILY_UNITS = 10000, SEARCH_UNITS = 101;
   const usageFile = path.join(path.dirname(file), 'youtube-usage.json');
   const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
-  let usage = { day: today(), units: 0 };
-  try { const u = JSON.parse(fs.readFileSync(usageFile, 'utf8')); if (u && u.day === today()) usage = u; } catch { /* first run */ }
-  function spend(units) {
-    if (usage.day !== today()) usage = { day: today(), units: 0 };
-    usage.units = Math.min(DAILY_UNITS, usage.units + units);
+  // Several keys can be added: when one key's searches for the day are used up, the next one is used.
+  const keys = () => [settings.youtubeKey, ...(Array.isArray(settings.youtubeKeys) ? settings.youtubeKeys : [])].filter((k, i, a) => k && a.indexOf(k) === i);
+  const tail = k => String(k).slice(-4);
+  let usage = { day: today(), byKey: {} };   // byKey: last 4 characters of a key -> units used today
+  try { const u = JSON.parse(fs.readFileSync(usageFile, 'utf8')); if (u && u.day === today() && u.byKey) usage = u; } catch { /* first run */ }
+  function spend(key, units) {
+    if (usage.day !== today()) usage = { day: today(), byKey: {} };
+    usage.byKey[tail(key)] = Math.min(DAILY_UNITS, (usage.byKey[tail(key)] || 0) + units);
     fsp.writeFile(usageFile, JSON.stringify(usage)).catch(() => {});
   }
-  const searchesLeft = () => usage.day !== today() ? Math.floor(DAILY_UNITS / SEARCH_UNITS) : Math.max(0, Math.floor((DAILY_UNITS - usage.units) / SEARCH_UNITS));
+  const leftFor = key => usage.day !== today() ? Math.floor(DAILY_UNITS / SEARCH_UNITS) : Math.max(0, Math.floor((DAILY_UNITS - (usage.byKey[tail(key)] || 0)) / SEARCH_UNITS));
+  const searchesLeft = () => keys().reduce((a, k) => a + leftFor(k), 0);
 
   async function call(path, params, key) {
     const url = `${API}/${path}?${new URLSearchParams({ ...params, key })}`;
     const res = await fetch(url);
     const body = await res.json().catch(() => ({}));
-    if (res.ok) spend(path === 'search' ? 100 : 1);
+    if (res.ok) spend(key, path === 'search' ? 100 : 1);
     if (!res.ok) {
       const reason = body.error && body.error.errors && body.error.errors[0] && body.error.errors[0].reason;
       // Google reports the daily search limit as quotaExceeded or (newer) rateLimitExceeded "Search Queries per day".
       const daily = reason === 'quotaExceeded' || (reason === 'rateLimitExceeded' && /per day/i.test((body.error && body.error.message) || ''));
-      if (daily) spend(DAILY_UNITS);
+      if (daily) spend(key, DAILY_UNITS);
       const msg = daily ? 'YouTube’s free daily limit is used up. Suggestions come back tomorrow.'
         : reason === 'keyInvalid' || res.status === 400 ? 'YouTube didn’t accept that API key.'
         : reason === 'accessNotConfigured' ? 'The YouTube Data API isn’t turned on for that key’s Google Cloud project.'
@@ -135,9 +139,14 @@ module.exports = function createYouTube(file, auth) {
       cache.set(q, { at: Date.now(), items }); saveCache();
       return items;
     };
-    if (searchesLeft() === 0) return fallback(null);
-    try { return await apiSearch(q, key); }
-    catch (e) { if (e.daily) return fallback(e); throw e; }
+    // Each key with searches left today, in order; a used-up (or broken) key moves on to the next.
+    let last = null;
+    for (const k of keys()) {
+      if (!leftFor(k)) continue;
+      try { return await apiSearch(q, k); }
+      catch (e) { last = e; if (!e.daily) { console.log(`YouTube key …${tail(k)}: ${e.message}`); if (e.status === 400 || /accept|turned on/i.test(e.message)) spend(k, DAILY_UNITS); } }   // a rejected key rests until tomorrow
+    }
+    return fallback(last);
   }
   async function apiSearch(q, key) {
     const s = await call('search', { part: 'snippet', type: 'video', videoCategoryId: '10', videoEmbeddable: 'true', videoSyndicated: 'true', safeSearch: 'moderate', maxResults: '20', q }, key);
@@ -165,10 +174,12 @@ module.exports = function createYouTube(file, auth) {
   };
 
   function routes(app) {
-    app.get('/api/youtube/status', (req, res) => res.json({ enabled: !!settings.youtubeKey, searchesLeft: searchesLeft(), unlimited: true }));   // web search / yt-dlp after the API runs out
+    // unlimited: after the API searches run out, YouTube's web search / yt-dlp take over. The owner also sees each key.
+    app.get('/api/youtube/status', (req, res) => res.json({ enabled: keys().length > 0, searchesLeft: searchesLeft(), unlimited: true,
+      ...(req.user && req.user.role === 'owner' ? { keys: keys().map(k => ({ tail: tail(k), left: leftFor(k) })) } : {}) }));
 
     app.get('/api/youtube/search', async (req, res) => {
-      if (!settings.youtubeKey) return res.status(501).json({ error: 'YouTube isn’t connected yet. The owner can add an API key under People & settings.' });
+      if (!keys().length) return res.status(501).json({ error: 'YouTube isn’t connected yet. The owner can add an API key under People & settings.' });
       const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
       if (!q) return res.status(400).json({ error: 'Type something to search for.' });
       try {
@@ -203,14 +214,23 @@ module.exports = function createYouTube(file, auth) {
       if (!/^[\w-]{20,60}$/.test(key)) return res.status(400).json({ error: 'That doesn’t look like a YouTube API key. It should be one long code with no spaces.' });
       try { await call('search', { part: 'snippet', type: 'video', maxResults: '1', q: 'music' }, key); }
       catch (e) { return res.status(400).json({ error: e.message }); }
-      settings.youtubeKey = key; await save();
-      console.log('YouTube connected');
-      res.json({ enabled: true });
+      // The first key, or one more to move on to when the others' searches are used up.
+      if (!settings.youtubeKey) settings.youtubeKey = key;
+      else if (!keys().includes(key)) settings.youtubeKeys = [...(Array.isArray(settings.youtubeKeys) ? settings.youtubeKeys : []), key];
+      await save();
+      console.log('YouTube key added (' + keys().length + ' in all)');
+      res.json({ enabled: true, keys: keys().length });
     });
 
+    // ?k=<last 4 characters> removes that key; without it, all keys.
     app.delete('/api/settings/youtube', auth.requireOwner, async (req, res) => {
-      delete settings.youtubeKey; await save();
-      res.json({ enabled: false });
+      const k = String(req.query.k || '');
+      const left = k ? keys().filter(x => tail(x) !== k) : [];
+      settings.youtubeKey = left[0]; settings.youtubeKeys = left.slice(1);
+      if (!settings.youtubeKey) delete settings.youtubeKey;
+      if (!settings.youtubeKeys.length) delete settings.youtubeKeys;
+      await save();
+      res.json({ enabled: left.length > 0 });
     });
   }
   return { syncCollection, routes };
