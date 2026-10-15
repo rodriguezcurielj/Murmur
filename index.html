@@ -3782,6 +3782,7 @@ function syncLinkResult(tid) {
      * streams the live progress, and completes the download workflow.
      */
     /* Takes the chosen video ID (v) and track info (y), posts it to your yt2audio server, and streams real-time progress. */
+
     async function showYouTubeLink(v, y) {
         const youtubeUrl = `https://www.youtube.com/watch?v=${v}`;
 
@@ -3794,7 +3795,7 @@ function syncLinkResult(tid) {
         <p style="font-size: 12px; color: var(--sub);">${esc(y.artist || 'Unknown Artist')}</p>
       </div>
       <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">
-        Connecting to yt2audio server...
+        Connecting to conversion backend...
       </div>
     `,
             confirm: false
@@ -3803,10 +3804,14 @@ function syncLinkResult(tid) {
         const progressBox = document.getElementById('download-progress');
 
         try {
-            progressBox.textContent += `\nSending link to http://localhost:8765/convert...\n`;
+            progressBox.textContent += `\nPreparing to send link...`;
 
-            // Post directly to your yt2audio server.js endpoint
-            const res = await fetch('http://localhost:8765/convert', {
+            // Automatically use the correct backend URL based on how you're running it
+            const backendUrl = window.location.port === '8080' ? '/convert' : 'http://localhost:8765/convert';
+
+            progressBox.textContent += `\nSending to ${backendUrl}...\n`;
+
+            const res = await fetch(backendUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ links: [youtubeUrl], format: 'mp3' })
