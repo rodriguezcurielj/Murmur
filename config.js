@@ -7,8 +7,8 @@ window.MURMUR_CONFIG = {
   // Servers people can pick from on the "Choose your server" screen. The first is the default;
   // if the chosen one can't be reached, Murmur uses another one from this list.
   servers: [
-    // This laptop. The address comes from `docker logs murmur-tunnel` and changes if the tunnel restarts.
-    { name: 'Laptop', url: 'https://arguments-salad-wireless-produced.trycloudflare.com' },
+    // This laptop (Tailscale Funnel). This address doesn't change.
+    { name: 'Laptop', url: 'https://murmur-laptop.tail05789d.ts.net' },
     // The always-on Azure server (Tailscale Funnel). This address doesn't change.
     { name: 'Azure', url: 'https://murmur.tail05789d.ts.net' }
   ]
