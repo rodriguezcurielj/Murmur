@@ -43,7 +43,8 @@ jobs:
             SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build | tail -n 30
           test -d build/Release-iphoneos/Murmur.app
-          test -d build/Release-iphoneos/Murmur.app/PlugIns/MurmurAdBlock.appex
+          test -f build/Release-iphoneos/Murmur.app/PlugIns/MurmurAdBlock.appex/manifest.json
+          test -f build/Release-iphoneos/Murmur.app/PlugIns/MurmurAdBlock.appex/youtube-strip.js
 
       - name: Package Murmur.ipa
         run: |

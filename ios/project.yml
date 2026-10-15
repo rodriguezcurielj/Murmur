@@ -51,9 +51,11 @@ targets:
     platform: iOS
     sources:
       - path: MurmurAdBlock/SafariWebExtensionHandler.swift
+      # Added file by file (not as a folder) so manifest.json sits at the top of the extension, where Safari looks.
       - path: MurmurAdBlock/Resources
-        type: folder
         buildPhase: resources
+        excludes:
+          - .gitignore
     info:
       path: MurmurAdBlock/Info.plist
       properties:
