@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015010734">
+<meta name="murmur-build" content="20261015010916">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -2979,6 +2979,7 @@ function buildShell() {
 /* ================= render & update ================= */
 function render() {
   const v = state.view, el = $('#view');
+  const qb = $('#qBtn'); if (qb) { qb.classList.toggle('on', v.name === 'queue'); qb.setAttribute('aria-pressed', v.name === 'queue'); }
   if (v.name === 'home') el.innerHTML = viewHome();
   else if (v.name === 'search') el.innerHTML = viewSearch();
   else if (v.name === 'library') el.innerHTML = viewLibrary();
@@ -3484,7 +3485,11 @@ function openEdit(tids, o = {}) {
 function act(el, e) {
   const d = el.dataset;
   switch (d.act) {
-    case 'nav': navigate({ name: d.to }); break;
+    case 'nav':
+      // The queue button toggles: tapping it again goes back to what you were looking at (and where you'd scrolled to).
+      if (d.to === 'queue' && state.view.name === 'queue') { if (hist.i > 0) history.back(); else navigate({ name: 'home' }); }
+      else navigate({ name: d.to });
+      break;
     case 'logo-home': {
       state.search = ''; const q = $('#tq'); if (q) { q.value = ''; const c = $('#tqClear'); if (c) c.hidden = true; }
       if (state.view.name === 'home') { closeMenu(); $('#full').hidden = true; render(); $('#main').scrollTop = 0; }
