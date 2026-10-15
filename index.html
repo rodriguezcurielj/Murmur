@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015005756">
+<meta name="murmur-build" content="20261015010129">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -720,6 +720,23 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .full-cover{height:min(calc(100vh - 70px),42vw)}
 }
 @media (prefers-reduced-motion:reduce){.dl-btn.busy{animation:none}*{transition:none!important}.eq i{animation:none;height:10px}.toast.show{animation:none}}
+.pb-list{display:flex;flex-direction:column}
+.pb-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--line)}
+.pb-row:last-child{border-bottom:0}
+.pb-row>div{min-width:0}
+.pb-row b{display:block;color:var(--fg);font-size:14px}
+.pb-row .text-btn{flex:none}
+.pb-sel{flex:none;background:var(--raise);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px}
+.pb-fade{display:flex;align-items:center;gap:10px;flex:none;width:170px}
+.pb-fade input::-webkit-slider-thumb{opacity:1}
+.pb-fade span{width:34px;text-align:right;font-size:12px;color:var(--muted)}
+.pb-sw{position:relative;flex:none;width:44px;height:26px;cursor:pointer}
+.pb-sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.pb-sw span{position:absolute;inset:0;border-radius:13px;background:var(--line);transition:background .2s;pointer-events:none}
+.pb-sw span::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:var(--fg);transition:transform .2s}
+.pb-sw input:checked+span{background:var(--accent)}
+.pb-sw input:checked+span::after{transform:translateX(18px);background:var(--accent-ink)}
+.pb-sw input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .eq-presets{padding:0}
 .eq-bands{display:flex;flex-direction:column;gap:2px;transition:opacity .2s}
 .eq-bands.off{opacity:.4}
@@ -1546,6 +1563,100 @@ const visCurated = () => CURATED.filter(p => !state.hiddenCols.has(p.id));
 const visArtists = () => ARTISTS.filter(a => ALBUMS.some(x => x.artist === a && x.trackIds.some(visible)));
 
 /* ================= audio engine ================= */
+/* Playback settings (like Spotify's), saved on this device. Most change the sound of songs in Murmur
+   (uploads and downloads); songs inside YouTube's player only get speed and autoplay. */
+const PB_DEFAULT = { fade: 0, normalize: true, level: 'normal', mono: false, autoplay: true, speed: 1 };
+const pbState = () => ({ ...PB_DEFAULT, ...(store.get('playback', null) || {}) });
+const PB_LEVELS = { quiet: { threshold: -26, ratio: 4, gain: 0.85 }, normal: { threshold: -16, ratio: 3, gain: 1 }, loud: { threshold: -10, ratio: 6, gain: 1.3 } };
+function applyPlayback() {
+  const pb = pbState();
+  if (Synth.ctx && Synth.comp) {
+    const L = PB_LEVELS[pb.level] || PB_LEVELS.normal, now = Synth.ctx.currentTime;
+    Synth.comp.threshold.setTargetAtTime(pb.normalize ? L.threshold : 0, now, .05);
+    Synth.comp.ratio.setTargetAtTime(pb.normalize ? L.ratio : 1, now, .05);
+    Synth.makeup.gain.setTargetAtTime(pb.normalize ? L.gain : 1, now, .05);
+    // Mono: mix both channels into one, then play it out of both speakers.
+    Synth.master.channelCount = pb.mono ? 1 : 2;
+    Synth.master.channelCountMode = pb.mono ? 'explicit' : 'max';
+  }
+  applySpeed();
+}
+function applySpeed() {
+  const sp = pbState().speed || 1;
+  if (FileEng.audio && FileEng.audio.playbackRate !== sp) { FileEng.audio.playbackRate = sp; FileEng.audio.preservesPitch = true; }
+  try { if (Engine.mode === 'yt' && YTEng.player && YTEng.player.getPlaybackRate && YTEng.player.getPlaybackRate() !== sp) YTEng.player.setPlaybackRate(sp); } catch (e) {}
+}
+function savePlayback(changes) { store.set('playback', { ...pbState(), ...changes }); applyPlayback(); }
+// Crossfade: the song fades out over its last seconds and the next one fades in.
+let fadingOut = false;
+function fadeIn() {
+  const f = pbState().fade; if (!Synth.fadeG) return;
+  const now = Synth.ctx.currentTime; fadingOut = false;
+  Synth.fadeG.gain.cancelScheduledValues(now);
+  if (f > 0) { Synth.fadeG.gain.setValueAtTime(0.0001, now); Synth.fadeG.gain.exponentialRampToValueAtTime(1, now + f); }
+  else Synth.fadeG.gain.setValueAtTime(1, now);
+}
+setInterval(() => {
+  const f = pbState().fade;
+  if (!f || !Synth.fadeG || Engine.mode !== 'file' || !Engine.playing) return;
+  const left = (Engine.duration - Engine.position()) / (pbState().speed || 1);
+  // Skipped back out of the fade: full volume again.
+  if (fadingOut) { if (left > f + 1) { fadingOut = false; const now = Synth.ctx.currentTime; Synth.fadeG.gain.cancelScheduledValues(now); Synth.fadeG.gain.setTargetAtTime(1, now, .1); } return; }
+  if (Engine.duration > f * 3 && left > 0 && left <= f) {
+    fadingOut = true;
+    const now = Synth.ctx.currentTime;
+    Synth.fadeG.gain.cancelScheduledValues(now); Synth.fadeG.gain.setValueAtTime(Synth.fadeG.gain.value || 1, now);
+    Synth.fadeG.gain.linearRampToValueAtTime(0.0001, now + left);
+  }
+}, 250);
+// Sleep timer: pause after some minutes, or at the end of the song.
+const sleep = { until: 0, endOfTrack: false, timer: null };
+function setSleep(min) {
+  clearTimeout(sleep.timer); sleep.until = 0; sleep.endOfTrack = false;
+  if (min === 'end') { sleep.endOfTrack = true; toast('Music stops at the end of this song'); }
+  else if (min > 0) {
+    sleep.until = Date.now() + min * 60e3;
+    sleep.timer = setTimeout(() => { sleep.until = 0; if (Engine.playing) { Engine.pause(); updatePlayIcons(); highlight(); } toast('Sleep timer: music paused'); }, min * 60e3);
+    toast(`Music stops in ${min} minutes`);
+  } else toast('Sleep timer off');
+}
+const sleepLabel = () => sleep.endOfTrack ? 'End of this song' : sleep.until ? `${Math.max(1, Math.round((sleep.until - Date.now()) / 60e3))} min left` : 'Off';
+// Autoplay: when the list ends, keep going with songs like the ones you play (Discover), or your Liked Songs.
+function autoplayNext() {
+  if (!pbState().autoplay) return false;
+  const played = new Set(state.list);
+  if (server.on && disc.ids.some(id => visible(id) && !played.has(id))) { playFrom('discover', 'mix', disc.ids.findIndex(id => visible(id) && !played.has(id))); toast('Autoplay: similar songs from Discover'); return true; }
+  const liked = getCollection('liked', 'liked');
+  if (liked && liked.tracks.length && !(state.ctx && state.ctx.type === 'liked')) { playFrom('liked', 'liked', Math.floor(Math.random() * liked.tracks.length)); toast('Autoplay: your Liked Songs'); return true; }
+  return false;
+}
+function openPlayback() {
+  const pb = pbState(), sel = (name, opts, cur) => `<select class="pb-sel" data-pb="${name}">${opts.map(([v, l]) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+  const row = (title, sub, ctl) => `<div class="pb-row"><div><b>${title}</b>${sub ? `<span class="small">${sub}</span>` : ''}</div>${ctl}</div>`;
+  const sw = (name, on) => `<label class="pb-sw"><input type="checkbox" data-pb="${name}"${on ? ' checked' : ''}><span></span></label>`;
+  openModal({ title: 'Playback', confirm: false, cancel: 'Done', html: `<div class="pb-list">
+    ${row('Crossfade', 'Fades each song out and the next one in', `<span class="pb-fade"><input type="range" min="0" max="12" step="1" value="${pb.fade}" data-pb="fade" style="--p:${pb.fade / 12 * 100}%" aria-label="Crossfade seconds"><span id="pbFade">${pb.fade ? pb.fade + ' s' : 'Off'}</span></span>`)}
+    ${row('Autoplay', 'When your music ends, keep playing similar songs', sw('autoplay', pb.autoplay))}
+    ${row('Normalize volume', 'Same loudness for every song', sw('normalize', pb.normalize))}
+    ${row('Volume level', 'How loud normalized songs play', sel('level', [['quiet', 'Quiet'], ['normal', 'Normal'], ['loud', 'Loud']], pb.level))}
+    ${row('Mono audio', 'Both speakers play the same sound', sw('mono', pb.mono))}
+    ${row('Playback speed', '', sel('speed', [[0.5, '0.5×'], [0.75, '0.75×'], [0.9, '0.9×'], [1, 'Normal'], [1.1, '1.1×'], [1.25, '1.25×'], [1.5, '1.5×'], [2, '2×']], pb.speed))}
+    ${row('Sleep timer', `<span id="pbSleep">${sleepLabel()}</span>`, sel('sleep', [['', 'Choose…'], [0, 'Off'], [5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 hour'], ['end', 'End of this song']], ''))}
+    ${row('Equalizer', `${eqState().on ? esc(eqState().preset) : 'Off'}`, `<button type="button" class="text-btn" data-act="eq-open">${icon('eq')}<span>Open</span></button>`)}
+    </div><p class="small">Crossfade, volume, mono and the equalizer change songs in Murmur (uploads, songs brought in from YouTube, downloads). Songs inside YouTube’s player get speed and autoplay. Saved on this device.</p>` });
+}
+document.addEventListener('input', ev => {
+  if (ev.target.dataset && ev.target.dataset.pb === 'fade') {
+    const v = +ev.target.value; ev.target.style.setProperty('--p', v / 12 * 100 + '%');
+    const l = $('#pbFade'); if (l) l.textContent = v ? v + ' s' : 'Off';
+    savePlayback({ fade: v });
+  }
+});
+document.addEventListener('change', ev => {
+  const k = ev.target.dataset && ev.target.dataset.pb; if (!k || k === 'fade') return;
+  if (k === 'sleep') { if (ev.target.value !== '') setSleep(ev.target.value === 'end' ? 'end' : +ev.target.value); const l = $('#pbSleep'); if (l) l.textContent = sleepLabel(); ev.target.value = ''; return; }
+  savePlayback({ [k]: ev.target.type === 'checkbox' ? ev.target.checked : k === 'speed' ? +ev.target.value : ev.target.value });
+});
 /* Equalizer settings, saved on this device: { on, preset, gains: [10 numbers in dB] }. */
 const EQ_BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 const EQ_PRESETS = {
@@ -1611,8 +1722,11 @@ const Synth = {
       b.frequency.value = f; b.Q.value = 1.1; b.gain.value = eqGain(i);
       return b;
     });
-    this.master.connect(this.eq[0]); this.eq.forEach((b, i) => b.connect(this.eq[i + 1] || comp));
-    comp.connect(this.analyser); this.analyser.connect(ctx.destination);
+    this.fadeG = ctx.createGain();   // fades songs in and out (Crossfade setting)
+    this.comp = comp; this.makeup = ctx.createGain();   // Normalize volume
+    this.master.connect(this.fadeG); this.fadeG.connect(this.eq[0]); this.eq.forEach((b, i) => b.connect(this.eq[i + 1] || comp));
+    comp.connect(this.makeup); this.makeup.connect(this.analyser); this.analyser.connect(ctx.destination);
+    applyPlayback();
     const sr = ctx.sampleRate;
     const nb = ctx.createBuffer(1, sr * 2, sr), nd = nb.getChannelData(0);
     for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
@@ -2042,7 +2156,7 @@ const Engine = {
     if (t.src) { Synth.unload(); this.mode = 'file'; FileEng.load(t); }
     else { FileEng.unload(); this.mode = 'synth'; Synth.load(t); }
   },
-  play() { this.e.play(); },
+  play() { this.e.play(); if (this.mode === 'file') fadeIn(); setTimeout(applySpeed, 600); },
   pause() { this.e.pause(); },
   restart() { this.e.restart(); },
   seek(t) { this.e.seek(t); },
@@ -2383,11 +2497,15 @@ function togglePlay() {
   updatePlayIcons(); highlight();
 }
 function next(auto) {
+  if (auto && sleep.endOfTrack) { sleep.endOfTrack = false; updatePlayIcons(); highlight(); toast('Sleep timer: music stopped'); return; }
   if (auto && state.repeat === 'one') { Engine.restart(); updatePlayIcons(); return; }
   if (state.manual.length) { loadAndPlay(state.manual.shift(), true); refreshQueueView(); return; }
   if (!state.order.length) return;
   if (state.pos < state.order.length - 1) { state.pos++; loadAndPlay(curId(), true); }
-  else { state.pos = 0; loadAndPlay(curId(), !(auto && state.repeat === 'off')); }
+  else {
+    if (auto && state.repeat === 'off' && autoplayNext()) { refreshQueueView(); return; }
+    state.pos = 0; loadAndPlay(curId(), !(auto && state.repeat === 'off'));
+  }
   refreshQueueView();
 }
 function prev(force) {
@@ -2769,7 +2887,7 @@ function buildShell() {
       <div class="seek-row"><span data-pos>0:00</span><input type="range" data-seek id="pSeek" min="0" max="1000" value="0" aria-label="Seek"><span data-dur>0:00</span></div>
     </div>
     <div class="p-right">
-      <button class="icon-btn" data-act="eq-open" aria-label="Equalizer" title="Equalizer">${icon('eq')}</button>
+      <button class="icon-btn" data-act="pb-open" aria-label="Playback settings" title="Playback settings">${icon('eq')}</button>
       <button class="icon-btn" data-act="nav" data-to="queue" id="qBtn" aria-label="Queue">${icon('queue')}</button>
       <button class="icon-btn" data-act="np-toggle" id="npBtn" aria-label="Now playing panel">${icon('panel')}</button>
       <button class="icon-btn" data-act="mute" id="muteBtn" aria-label="Mute">${icon('volume')}</button>
@@ -2795,7 +2913,7 @@ function buildShell() {
     <div class="full-top">
       <button class="icon-btn" data-act="full-close" aria-label="Close player">${icon('down')}</button>
       <div class="full-ctx"><span class="eyebrow">Playing from</span><b class="ell" id="fCtx"></b></div>
-      <span class="full-top-r"><button class="icon-btn" data-act="eq-open" aria-label="Equalizer">${icon('eq')}</button><button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button></span>
+      <span class="full-top-r"><button class="icon-btn" data-act="pb-open" aria-label="Playback settings">${icon('eq')}</button><button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button></span>
     </div>
     <img class="cover full-cover" id="fCover" alt="">
     <div class="video-switch" id="fVideoSwitch" role="group" aria-label="Show for YouTube songs" hidden>
@@ -3416,6 +3534,7 @@ function act(el, e) {
     case 'theme': setTheme(d.k); break;
     case 'acct-theme': openModal({ title: 'Theme', confirm: false, cancel: 'Done', html: themePickerHTML() }); break;
     case 'eq-open': if (!$('#modal').hidden) closeModal(); openEqualizer(); break;
+    case 'pb-open': if (!$('#modal').hidden) closeModal(); openPlayback(); break;
     case 'eq-preset': { const e = eqState(); e.preset = d.k; e.gains = EQ_PRESETS[d.k].slice(); saveEq(e); openEqualizer(); break; }
     case 'avatar-remove': setAvatar(null); break;
     case 'album-hide': hideAlbums([d.id]); break;
@@ -4900,7 +5019,7 @@ function openAccount() {
       ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
       ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Choose server</span></button>` : ''}
       <button type="button" class="text-btn" data-act="acct-theme">${icon('palette')}<span>Theme: ${esc(((window.MURMUR_THEMES || []).find(t => t.id === (document.documentElement.dataset.theme || 'murmur')) || { name: 'Murmur' }).name)}</span></button>
-      <button type="button" class="text-btn" data-act="eq-open">${icon('eq')}<span>Equalizer</span></button>
+      <button type="button" class="text-btn" data-act="pb-open">${icon('eq')}<span>Playback & equalizer</span></button>
     </div>
     ${appsSectionHTML()}`, onSubmit: () => {} });
 }
