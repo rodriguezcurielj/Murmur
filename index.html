@@ -3806,12 +3806,12 @@ function syncLinkResult(tid) {
         try {
             progressBox.textContent += `\nPreparing to send link...`;
 
-            // --- REPLACED THE OLD LINE WITH THIS SMART AUTO-DETECT LOGIC ---
+            // --- SMART AUTO-DETECT LOGIC ---
             let backendUrl;
             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                backendUrl = 'http://localhost:8765/convert';
+                backendUrl = 'http://localhost:8765/convert'; // Local laptop testing
             } else {
-                backendUrl = window.location.origin + '/convert';
+                backendUrl = 'https://murmur.tail05789d.ts.net/convert'; // Your live Azure/Tailscale backend
             }
 
             progressBox.textContent += `\nSending to ${backendUrl}...\n`;
