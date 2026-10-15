@@ -18,4 +18,11 @@ $env:MAX_UPLOAD_MB = 2048
 # Pages allowed to use this server: GitHub Pages plus the Murmur pages hosted on the tailnet.
 $env:ALLOWED_ORIGINS = 'https://rodriguezcurielj.github.io,https://murmur-laptop.tail05789d.ts.net,https://murmur-laptop.tail05789d.ts.net:8443,https://murmur.tail05789d.ts.net'
 
+# Two-way sync with the other servers (sync.js): reuse MURMUR_SYNC_KEY and MURMUR_PEERS from Docker\.env (not in git).
+$envFile = Join-Path $PSScriptRoot 'Docker\.env'
+if (Test-Path $envFile) {
+    Get-Content $envFile | Where-Object { $_ -match '^\s*(MURMUR_SYNC_KEY|MURMUR_PEERS)\s*=\s*(.*)$' } |
+        ForEach-Object { Set-Item "env:$($Matches[1])" $Matches[2].Trim() }
+}
+
 node server.js

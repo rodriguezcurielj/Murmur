@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
-# Install ffmpeg, python, and yt-dlp with the EJS package solver
-RUN apk add --no-cache ffmpeg python3 py3-pip && \
+# Install ffmpeg, deno (yt-dlp's JS runtime, see convert.js), python, and yt-dlp with the EJS package solver
+RUN apk add --no-cache ffmpeg deno python3 py3-pip && \
     pip install --no-cache-dir --break-system-packages yt-dlp yt-dlp-ejs
 
 WORKDIR /app
