@@ -3789,15 +3789,15 @@ function syncLinkResult(tid) {
         openModal({
             title: 'Downloading YouTube Audio',
             html: `
-      <div style="text-align: center; margin-bottom: 12px;">
-        <img src="${esc(y.cover || '')}" style="max-width: 100%; border-radius: 6px; max-height: 120px; object-fit: cover;" />
-        <p style="font-weight: 600; margin: 8px 0 4px;">${esc(y.title || 'YouTube Track')}</p>
-        <p style="font-size: 12px; color: var(--sub);">${esc(y.artist || 'Unknown Artist')}</p>
-      </div>
-      <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">
-        Connecting to conversion backend...
-      </div>
-    `,
+  <div style="text-align: center; margin-bottom: 12px;">
+    <img src="${esc(y.cover || '')}" style="max-width: 100%; border-radius: 6px; max-height: 120px; object-fit: cover;" />
+    <p style="font-weight: 600; margin: 8px 0 4px;">${esc(y.title || 'YouTube Track')}</p>
+    <p style="font-size: 12px; color: var(--sub);">${esc(y.artist || 'Unknown Artist')}</p>
+  </div>
+  <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">
+    Connecting to conversion backend...
+  </div>
+`,
             confirm: false
         });
 
@@ -3806,8 +3806,13 @@ function syncLinkResult(tid) {
         try {
             progressBox.textContent += `\nPreparing to send link...`;
 
-            // Automatically use the correct backend URL based on how you're running it
-            const backendUrl = window.location.port === '8080' ? '/convert' : 'http://localhost:8765/convert';
+            // --- REPLACED THE OLD LINE WITH THIS SMART AUTO-DETECT LOGIC ---
+            let backendUrl;
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                backendUrl = 'http://localhost:8765/convert';
+            } else {
+                backendUrl = window.location.origin + '/convert';
+            }
 
             progressBox.textContent += `\nSending to ${backendUrl}...\n`;
 
