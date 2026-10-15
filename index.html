@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015010429">
+<meta name="murmur-build" content="20261015010734">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -479,6 +479,30 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .avatar img,.acct-btn img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
 .avatar-lg{width:72px;height:72px;font-size:30px}
 .acct-photo{display:flex;align-items:center;gap:16px}
+.acct-head{display:flex;align-items:center;gap:14px;padding:2px 0 6px}
+.acct-av{position:relative;flex:none;cursor:pointer;border-radius:50%}
+.acct-av .avatar-lg{width:64px;height:64px;font-size:26px}
+.acct-cam{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--fg);color:var(--bg);border:2px solid var(--panel)}
+.acct-cam svg{width:13px;height:13px}
+.acct-av:hover .avatar-lg{filter:brightness(1.1)}
+.acct-who{display:flex;flex-direction:column;gap:2px;min-width:0}
+.acct-who b{font:800 20px/1.2 var(--font-display);color:var(--fg)}
+.acct-photo-links{margin-top:2px}
+.acct-photo-links label{cursor:pointer}
+.acct-group h3{margin:6px 0 6px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.acct-list{display:flex;flex-direction:column;border-radius:12px;background:var(--raise);overflow:hidden}
+.acct-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;background:none;border:0;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);color:var(--fg);font:inherit;font-size:14px;font-weight:600;text-align:left;text-decoration:none;cursor:pointer}
+.acct-row:first-child{border-top:0}
+.acct-row:hover{background:var(--hover)}
+.acct-row.static{cursor:default}
+.acct-row.static:hover{background:none}
+.acct-row.danger,.acct-row.danger .ar-ic{color:var(--danger)}
+.ar-ic{display:grid;place-items:center;flex:none;color:var(--muted)}
+.ar-ic svg,.ar-chev svg{width:18px;height:18px}
+.ar-label{flex:1;min-width:0}
+.ar-val{max-width:45%;color:var(--muted);font-weight:500;font-size:13px}
+.ar-chev{display:grid;place-items:center;flex:none;color:var(--muted);opacity:.7}
+.apps-box.bare{border-top:0;padding-top:0;margin-top:0}
 .acct-photo-btns{display:flex;flex-wrap:wrap;gap:8px}
 .acct-photo-btns label{cursor:pointer}
 .acct-actions{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
@@ -811,6 +835,13 @@ const STROKE = {
   volume: 'M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13',
   mute: 'M11 5 6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6',
   queue: 'M4 6h16M4 12h16M4 18h10',
+  chev: 'M9 6l6 6-6 6',
+  camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
+  lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+  logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+  server: 'M4 5h16v6H4zM4 13h16v6H4zM8 8h.01M8 16h.01',
+  shield: 'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z',
+  phone: 'M8 3h8v18H8zM11 18h2',
   eq: 'M6 4v16M12 4v16M18 4v16M3.5 14h5M9.5 8h5M15.5 16h5',
   palette: 'M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.1-4-7.6-9-7.6zM7.5 12.5h.01M9.5 8h.01M14.5 8h.01M17 11.5h.01',
   panel: 'M3 4h18v16H3zM15 4v16',
@@ -3555,6 +3586,7 @@ function act(el, e) {
     case 'disc-genre-more': pickDiscoverGenre(); break;
     case 'theme': setTheme(d.k); break;
     case 'acct-theme': openModal({ title: 'Theme', confirm: false, cancel: 'Done', html: themePickerHTML() }); break;
+    case 'acct-apps': openModal({ title: 'Get the apps', confirm: false, cancel: 'Done', html: appsSectionHTML(true) }); break;
     case 'eq-open': if (!$('#modal').hidden) closeModal(); openEqualizer(); break;
     case 'pb-open': if (!$('#modal').hidden) closeModal(); openPlayback(); break;
     case 'eq-preset': { const e = eqState(); e.preset = d.k; e.gains = EQ_PRESETS[d.k].slice(); saveEq(e); openEqualizer(); break; }
@@ -5020,31 +5052,43 @@ async function setAvatar(file) {
     toast(file ? 'Profile picture updated' : 'Profile picture removed');
   } catch (e) { toast(e.message); }
 }
-document.addEventListener('change', e => { if (e.target.id === 'avatarFile' && e.target.files && e.target.files[0]) setAvatar(e.target.files[0]); });
+document.addEventListener('change', e => { if ((e.target.id === 'avatarFile' || e.target.hasAttribute('data-avatar')) && e.target.files && e.target.files[0]) setAvatar(e.target.files[0]); });
+/* The account window: who you are at the top, then settings grouped into short lists of rows. */
 function openAccount() {
   if (!me) return;
-  const until = me.remembered ? `Remembered on this computer until <b>${when(me.expiresAt)}</b>.` : 'Signed in for this visit only. You’ll need your PIN again after 12 hours or when the browser closes.';
-  const others = SERVERS.filter(x => normalizeServer(x.url) !== remote.base);
-  const where = remote.base ? `<p>Server: <b>${esc(serverLabel(remote.base))}</b>${others.map(x => ` · <button type="button" class="link-btn" data-act="pick-server" data-name="${esc(x.name)}">Switch to ${esc(x.name)}${x.note ? ` (${esc(x.note.toLowerCase())})` : ''}</button>`).join('')}</p>` : '';
-  // YouTube ad blocker status: built into the phone apps, or the Murmur Ad Blocker extension in a desktop browser.
-  const adOn = window.MurmurAndroid ? 'On (built into the app)' : document.documentElement.dataset.murmurAdblock ? 'On (Murmur Ad Blocker extension)' : '';
-  const adLine = !yt.enabled ? '' : adOn ? `<p>YouTube ad blocker: <b>${adOn}</b></p>`
-    : `<p>YouTube ad blocker: <b>Off</b>. In a desktop browser, <a href="https://rodriguezcurielj.github.io/Murmur/apps/#extension" target="_blank" rel="noopener">install the Murmur Ad Blocker</a> to remove YouTube ads.</p>`;
-  openModal({ title: esc(me.name), confirm: 'Done', html: `${server.on ? `<div class="acct-photo">${avatarHTML(me, 'avatar avatar-lg')}
-      <div class="acct-photo-btns"><label class="text-btn" tabindex="0">${icon('upload')}<span>${me.avatar ? 'Change photo' : 'Add a profile picture'}</span><input type="file" accept="image/*" id="avatarFile" hidden></label>
-      ${me.avatar ? `<button type="button" class="text-btn" data-act="avatar-remove">${icon('trash')}<span>Remove</span></button>` : ''}</div></div>` : ''}
-    <p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}${adLine}
-    <div class="acct-actions">
-      ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
-      ${server.on && srcs.list.length ? `<button type="button" class="text-btn" data-act="acct-sources">${icon('download')}<span>My download sources</span></button>` : ''}
-      ${server.on ? `<button type="button" class="text-btn" data-act="acct-pin">${icon('edit')}<span>Change my PIN</span></button>` : ''}
-      ${server.on ? `<button type="button" class="text-btn" data-act="acct-out">${icon('back')}<span>Sign out</span></button>` : ''}
-      ${remote.base || cfg ? `<button type="button" class="text-btn" data-act="acct-server">${icon('cloudOff')}<span>Choose server</span></button>` : ''}
-      <button type="button" class="text-btn" data-act="acct-theme">${icon('palette')}<span>Theme: ${esc(((window.MURMUR_THEMES || []).find(t => t.id === (document.documentElement.dataset.theme || 'murmur')) || { name: 'Murmur' }).name)}</span></button>
-      <button type="button" class="text-btn" data-act="pb-open">${icon('eq')}<span>Playback & equalizer</span></button>
-    </div>
-    ${appsSectionHTML()}`, onSubmit: () => {} });
+  const until = server.offlineMode ? 'You’re offline right now' : me.remembered ? `Remembered here until ${when(me.expiresAt)}` : 'Signed in for this visit only';
+  const themeName = ((window.MURMUR_THEMES || []).find(t => t.id === (document.documentElement.dataset.theme || 'murmur')) || { name: 'Murmur' }).name;
+  // YouTube ad blocker: built into the phone apps, or the Murmur Ad Blocker extension in a desktop browser.
+  const adOn = !!window.MurmurAndroid || !!document.documentElement.dataset.murmurAdblock;
+  const row = (act, ic, label, value = '', o = {}) => {
+    const inner = `<span class="ar-ic">${icon(ic)}</span><span class="ar-label">${label}</span>${value ? `<span class="ar-val ell">${value}</span>` : ''}${o.noChev ? '' : `<span class="ar-chev">${icon('chev')}</span>`}`;
+    return o.href ? `<a class="acct-row${o.cls ? ' ' + o.cls : ''}" href="${o.href}" target="_blank" rel="noopener">${inner}</a>`
+      : `<button type="button" class="acct-row${o.cls ? ' ' + o.cls : ''}" data-act="${act}">${inner}</button>`;
+  };
+  const group = (title, rows) => rows.filter(Boolean).length ? `<section class="acct-group">${title ? `<h3>${title}</h3>` : ''}<div class="acct-list">${rows.filter(Boolean).join('')}</div></section>` : '';
+  const head = `<div class="acct-head">
+      ${server.on ? `<label class="acct-av" title="Change profile picture">${avatarHTML(me, 'avatar avatar-lg')}<span class="acct-cam">${icon('camera')}</span><input type="file" accept="image/*" id="avatarFile" hidden></label>` : avatarHTML(me, 'avatar avatar-lg')}
+      <div class="acct-who"><b class="ell">${esc(me.name)}</b><span class="small">${esc(roleLabel(me))} · ${until}</span>
+        ${server.on ? `<span class="acct-photo-links small"><label class="link-btn" tabindex="0">${me.avatar ? 'Change photo' : 'Add a photo'}<input type="file" accept="image/*" hidden data-avatar></label>${me.avatar ? ` · <button type="button" class="link-btn" data-act="avatar-remove">Remove</button>` : ''}</span>` : ''}</div>
+    </div>`;
+  openModal({ title: 'Account', confirm: false, cancel: 'Done', html: head
+    + group('Listening', [
+        row('pb-open', 'eq', 'Playback & equalizer', eqState().on && eqState().preset !== 'Flat' ? esc(eqState().preset) : ''),
+        row('acct-theme', 'palette', 'Theme', esc(themeName)),
+        yt.enabled ? (adOn ? row('', 'shield', 'YouTube ad blocker', 'On', { noChev: true, cls: 'static' }) : row('', 'shield', 'YouTube ad blocker', 'Off · Get it', { href: APPS_PAGE + '#extension' })) : ''
+      ])
+    + group('Server', [
+        remote.base || cfg ? row('acct-server', 'server', 'Server', esc(serverLabel(remote.base || location.origin))) : '',
+        server.on && srcs.list.length ? row('acct-sources', 'download', 'My download sources') : '',
+        me.role === 'owner' && server.on ? row('acct-people', 'user', 'People & settings') : ''
+      ])
+    + group('Account', [
+        server.on ? row('acct-pin', 'lock', 'Change my PIN') : '',
+        row('acct-apps', 'phone', 'Get the apps'),
+        server.on ? row('acct-out', 'logout', 'Sign out', '', { noChev: true, cls: 'danger' }) : ''
+      ]) });
 }
+
 /* Themes (defined at the top of the page so they apply before it draws). Saved on this device. */
 function themePickerHTML() {
   const cur = document.documentElement.dataset.theme || 'murmur';
@@ -5061,7 +5105,7 @@ function setTheme(id) {
 }
 /* "Get the apps": downloads live on the GitHub Pages download page. The device you're on is listed first. */
 const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
-function appsSectionHTML() {
+function appsSectionHTML(bare) {
   const ua = navigator.userAgent;
   const inApp = window.MurmurAndroid && typeof window.MurmurAndroid.version === 'function' ? String(window.MurmurAndroid.version()) : '';
   const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
@@ -5077,7 +5121,7 @@ function appsSectionHTML() {
     ext: link(APPS_PAGE + '#extension', 'download', 'Ad blocker for computers', 'Removes YouTube ads in Chrome, Edge or Brave', false)
   };
   const order = android ? ['android', 'ios', 'ext'] : ios ? ['ios', 'android', 'ext'] : ['ext', 'android', 'ios'];
-  return `<div class="apps-box"><div class="eyebrow">Get the apps</div>
+  return `<div class="apps-box${bare ? ' bare' : ''}">${bare ? '' : '<div class="eyebrow">Get the apps</div>'}
     ${inApp ? `<p class="small">You’re using the Murmur app (version ${esc(inApp.replace(/^ios-/, ''))}).</p>` : ''}
     <div class="app-links">${order.map(k => items[k]).join('')}</div>
     <a class="small" href="${APPS_PAGE}"${tgt}>All downloads and install steps</a></div>`;
