@@ -17,7 +17,7 @@ const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const EVERY_MS = 10e3;
-const FILE_RE = /^(music|covers)\/[A-Za-z0-9._-]+$/;
+const FILE_RE = /^(music|covers|ytcache)\/[A-Za-z0-9._-]+$/;
 
 module.exports = function createSync(dataDir, collections, opts = {}) {
   const key = String(process.env.MURMUR_SYNC_KEY || '').trim();

@@ -2372,6 +2372,36 @@ window.addEventListener('resize', placeYtBox);
    of in YouTube's player. No ads, and it keeps playing with the screen locked. If this server can't get it (YouTube
    blocks some cloud servers), the other servers are tried, then YouTube's own player. */
 const ytAudio = { fails: {}, until: {} };
+/* Liked songs the server keeps on disk (ytaudio.js): these play from the file in every app and browser, since
+   that's instant and has no ads. Refreshed now and then while Murmur is open. */
+let ytKept = new Set();
+async function loadYtKept() {
+  if (!server.on) return;
+  try { ytKept = new Set((await api('GET', 'api/ytcache')).ids || []); } catch (e) {}
+}
+setInterval(() => { if (document.visibilityState === 'visible') loadYtKept(); }, 5 * 60e3);
+/* Liked Spotify songs without a YouTube match yet get one in the background (a few seconds apart), so the
+   server can keep them and they start instantly the first time too. */
+let matchingLikes = false;
+async function matchLikesInBackground() {
+  if (matchingLikes || !server.on || !yt.enabled || !me) return;
+  matchingLikes = true;
+  try {
+    for (const id of [...state.liked]) {
+      if (document.visibilityState !== 'visible') break;
+      const t = TRACKS[id];
+      if (!t || !t.sp || !t.key) continue;
+      const m = sp.matches[t.key] || {};
+      if (m.file || m.yt || m.none) continue;
+      try {
+        const best = pickBest(t, await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, ''));
+        await saveMatch(t.key, best ? { yt: ytMeta(best) } : { none: true });
+      } catch (e) { if (/limit|quota/i.test(e.message)) break; }
+      await new Promise(r => setTimeout(r, 2500));
+    }
+  } finally { matchingLikes = false; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(matchLikesInBackground, 5000); });
 const ytAudioOn = () => !window.MurmurAndroid && !document.documentElement.dataset.murmurAdblock && server.on && !store.get('ytPlayerOnly', false);
 const ytAudioBases = () => [remote.base || location.origin, ...SERVERS.map(x => normalizeServer(x.url))]
   .filter((b, i, a) => b && a.indexOf(b) === i && !((ytAudio.until[b] || 0) > Date.now()));
@@ -2440,7 +2470,7 @@ const Engine = {
   mode: 'synth',
   get e() { return this.mode === 'file' ? FileEng : this.mode === 'yt' ? YTEng : Synth; },
   load(t) {
-    const ya = t.yt && ytAudioOn() ? ytAudioSrc(t) : null;
+    const ya = t.yt && (ytAudioOn() || (ytKept.has(t.ytId) && server.on)) ? ytAudioSrc(t) : null;
     if (ya) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t, ya); return; }
     if (t.yt) { Synth.unload(); FileEng.unload(); this.mode = 'yt'; YTEng.load(t); return; }
     YTEng.unload();
@@ -5848,6 +5878,7 @@ async function addPerson(form) {
     document.addEventListener('visibilitychange', retry);
   }
   if (me) await loadUserData();
+  loadYtKept(); setTimeout(matchLikesInBackground, 8000);
   rebuildUploadAlbums();
   state.liked = new Set([...state.liked].filter(visible));
   state.playlists.forEach(p => { p.tracks = p.tracks.filter(visible); });

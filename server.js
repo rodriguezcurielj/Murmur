@@ -90,7 +90,7 @@ app.use(auth.sameOrigin);
 
 const deferred = {};
 const sync = createSync(DATA, deferred, {
-    files: () => library.flatMap(t => ['music/' + t.file, ...(t.cover ? ['covers/' + t.cover] : [])])
+    files: () => [...library.flatMap(t => ['music/' + t.file, ...(t.cover ? ['covers/' + t.cover] : [])]), ...(app.locals.ytAudio ? app.locals.ytAudio.files() : [])]
 });
 sync.routes(app);
 app.use(sync.middleware);
@@ -382,7 +382,7 @@ app.patch('/api/tracks', auth.requireEdit, async (req, res) => {
     res.json({ tracks });
 });
 
-app.locals.ytAudio = require('./ytaudio')(app, auth, DATA);   // ad-free YouTube audio through this server
+app.locals.ytAudio = require('./ytaudio')(app, auth, DATA, { userRecords: () => userData.syncCollection.get(), matches: () => spotify.syncCollections.matches.get() });   // ad-free YouTube audio through this server
 app.use('/media', auth.requireUserFiles, express.static(DIRS.music, { maxAge: '7d', fallthrough: false }));
 app.use('/covers', auth.requireUserFiles, express.static(DIRS.covers, { maxAge: '7d', fallthrough: false }));
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -418,7 +418,8 @@ Object.assign(deferred, {
     matches: spotify.syncCollections.matches,
     spotifyApp: spotify.syncCollections.spotifyApp,
     youtube: youtube.syncCollection,
-    sources: sources.syncCollection
+    sources: sources.syncCollection,
+    ytcache: app.locals.ytAudio.syncCollection   // liked songs kept on disk (their files sync too)
 });
 sync.start();
 

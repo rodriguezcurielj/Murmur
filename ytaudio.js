@@ -7,11 +7,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 
 const ID = /^[A-Za-z0-9_-]{11}$/;
 const KEEP_MS = 4 * 3600e3;   // YouTube's stream addresses last about 6 hours
 
-module.exports = function ytAudio(app, auth, dataDir) {
+module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
   const found = new Map();     // id -> { url, headers, at } or { failed, at }
   const busy = new Map();      // id -> Promise (one lookup per song at a time)
   // Stream addresses are kept on disk too, so songs looked up before a restart still start right away.
@@ -114,6 +115,11 @@ module.exports = function ytAudio(app, auth, dataDir) {
   app.get('/ytaudio/:id', auth.requireUserFiles, async (req, res) => {
     const id = req.params.id;
     if (!ID.test(id)) return res.status(400).end();
+    // Kept on disk (a liked song): straight from the file, instant, and it works where YouTube blocks the server.
+    if (fs.existsSync(cached(id))) {
+      if (req.query.prep) return res.status(204).end();
+      return res.sendFile(cached(id), { headers: { 'Content-Type': 'audio/mp4', 'Cache-Control': 'private, max-age=86400' } });
+    }
     try {
       let s = await stream(id);
       if (req.query.prep) return res.status(204).end();
@@ -140,5 +146,91 @@ module.exports = function ytAudio(app, auth, dataDir) {
 
   // Get songs ready ahead of time (the top search results while the player picks one), unless this server
   // can't get YouTube audio at the moment.
-  return { prep(ids) { if (failsInARow >= 3) return; for (const id of ids) if (ID.test(id)) stream(id).catch(() => {}); } };
+
+  /* ---------- liked songs kept on disk ----------
+     Everyone's liked YouTube songs (and the YouTube matches of liked Spotify songs) are downloaded here in the
+     background, one at a time, up to 3 GB. They then start instantly, and server sync copies the files to the
+     other servers, so a server YouTube blocks (the cloud one) still plays them ad-free. A song nobody has liked
+     for a day is removed again. */
+  const CACHE_DIR = path.join(dataDir, 'ytcache');
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  const MAX_CACHE = 3 * 1024 ** 3;
+  const recFile = path.join(dataDir, 'ytcache.json');
+  let recs = {};   // id -> { at, size, unwanted? }: synced between servers, so the files follow
+  try { recs = JSON.parse(fs.readFileSync(recFile, 'utf8')); } catch { /* none yet */ }
+  const saveRecs = () => fs.promises.writeFile(recFile + '.tmp', JSON.stringify(recs)).then(() => fs.promises.rename(recFile + '.tmp', recFile)).catch(() => {});
+  const cached = id => path.join(CACHE_DIR, id + '.m4a');
+  // Same ids as the player gives imported Spotify songs (addSpTrack in index.html).
+  const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const spId = key => 'sp-' + hashStr(key).toString(36) + hashStr('m' + key).toString(36);
+  function wanted() {
+    const out = new Set();
+    if (!opts.userRecords || !opts.matches) return out;
+    const users = {};
+    for (const [k, v] of Object.entries(opts.userRecords())) { const i = k.indexOf('/'); (users[k.slice(0, i)] = users[k.slice(0, i)] || {})[k.slice(i + 1)] = v; }
+    const matches = opts.matches();
+    for (const d of Object.values(users)) {
+      const liked = new Set(Array.isArray(d.liked) ? d.liked : []);
+      for (const id of liked) if (/^yt-/.test(id) && ID.test(id.slice(3))) out.add(id.slice(3));
+      for (const x of Array.isArray(d.spTracks) ? d.spTracks : []) {
+        if (!x || !x.key || !liked.has(spId(x.key))) continue;
+        const m = matches[x.key];
+        if (m && m.yt && ID.test(m.yt.id || '') && !m.file) out.add(m.yt.id);
+      }
+    }
+    return out;
+  }
+  async function download(id) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const s = await stream(id, attempt > 0);
+      const r = await fetch(s.url, { headers: { ...s.headers, Range: 'bytes=0-' }, signal: AbortSignal.timeout(180e3) });
+      if ((r.status === 403 || r.status === 410) && attempt === 0) continue;
+      if (!r.ok || !r.body) throw new Error('YouTube answered ' + r.status);
+      const tmp = cached(id) + '.part';
+      await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(tmp));
+      const size = fs.statSync(tmp).size;
+      if (size < 100e3) { fs.rmSync(tmp, { force: true }); throw new Error('file too small'); }
+      fs.renameSync(tmp, cached(id));
+      return size;
+    }
+    throw new Error('stream address expired');
+  }
+  let filling = false;
+  async function fillCache() {
+    if (filling) return;
+    filling = true;
+    try {
+      const want = wanted(), now = Date.now();
+      let changed = false;
+      for (const [id, r] of Object.entries(recs)) {
+        if (want.has(id)) { if (r.unwanted) { delete r.unwanted; changed = true; } continue; }
+        if (!r.unwanted) { r.unwanted = now; changed = true; }
+        else if (now - r.unwanted > 24 * 3600e3) { delete recs[id]; fs.rm(cached(id), { force: true }, () => {}); changed = true; }
+      }
+      if (changed) saveRecs();
+      let total = Object.values(recs).reduce((a, r) => a + (r.size || 0), 0);
+      for (const id of want) {
+        if (failsInARow >= 3) break;   // YouTube is blocking this server: the files come from the others by sync
+        if (recs[id] || total > MAX_CACHE) continue;
+        try { const size = await download(id); recs[id] = { at: Date.now(), size }; total += size; saveRecs(); }
+        catch { /* tried again next round */ }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    } finally { filling = false; }
+  }
+  setTimeout(fillCache, 30e3);
+  setInterval(fillCache, 5 * 60e3).unref();
+
+  // Which songs are on disk here, so the player plays them from the file even where it would use YouTube's player.
+  app.get('/api/ytcache', (req, res) => res.json({ ids: Object.keys(recs).filter(id => fs.existsSync(cached(id))) }));
+
+  return {
+    prep(ids) { if (failsInARow >= 3) return; for (const id of ids) if (ID.test(id) && !fs.existsSync(cached(id))) stream(id).catch(() => {}); },
+    // For server-to-server sync: the list of kept songs, and their files.
+    files: () => Object.keys(recs).map(id => 'ytcache/' + id + '.m4a'),
+    syncCollection: {
+      get: () => ({ ...recs }),
+      set: o => { for (const id of Object.keys(recs)) if (!o[id]) fs.rm(cached(id), { force: true }, () => {}); recs = { ...o }; saveRecs(); }
+    }
+  };
 };
