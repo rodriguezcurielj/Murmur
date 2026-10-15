@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015010129">
+<meta name="murmur-build" content="20261015010429">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -1159,8 +1159,22 @@ function renderUploadStatus() {
   } else { el.hidden = true; return; }
   el.hidden = false;
 }
+/* Network trouble (a dropped connection, a phone waking up, a server restarting after an update) makes fetch
+   fail with "Failed to fetch". Requests that are safe to repeat are tried again a few times before giving up,
+   and the error people see says what's going on. */
+const NET_ERR = /failed to fetch|networkerror|load failed|network ?error|network connection was lost|err_internet|err_network/i;
+const netError = () => Object.assign(new Error('Can’t reach the Murmur server right now. It may be restarting or your connection dropped. Try again in a moment.'), { network: true });
+const safeToRepeat = (method, url) => method !== 'POST' || /^api\/(genres|discover|catalog|spotify\/(link|profile))/.test(url);
 async function api(method, url, body) {
-  const r = await fetch(apiUrl(url), { method, headers: authHeaders({ 'Content-Type': 'application/json' }), body: body ? JSON.stringify(body) : undefined });
+  let r;
+  for (let attempt = 1; ; attempt++) {
+    try { r = await fetch(apiUrl(url), { method, headers: authHeaders({ 'Content-Type': 'application/json' }), body: body ? JSON.stringify(body) : undefined }); break; }
+    catch (e) {
+      if (!NET_ERR.test(String(e && e.message)) && !(e instanceof TypeError)) throw e;
+      if (attempt >= 4 || !safeToRepeat(method, url)) throw netError();
+      await new Promise(res => setTimeout(res, [0, 800, 2000, 4500][attempt]));
+    }
+  }
   let j = null; try { j = await r.json(); } catch (e) {}
   if (r.status === 401 && server.auth && !/api\/auth\/(login|setup)$/.test(url)) { showGate('expired'); throw new Error('Please sign in again.'); }
   if (!r.ok) throw new Error((j && j.error) || `The server said no (error ${r.status}).`);
@@ -1431,6 +1445,8 @@ async function pushUserData(leaving) {
   }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') pushUserData(true); });
+// Back online: send library changes that couldn't be saved, and catch up on downloads.
+window.addEventListener('online', () => { pushUserData(); if (typeof pollYtJobs === 'function') pollYtJobs(); });
 window.addEventListener('pagehide', () => pushUserData(true));
 function legacyGet(k) { try { const v = localStorage.getItem('murmur:' + k); return v == null ? null : JSON.parse(v); } catch (e) { return null; } }
 async function loadUserData() {
@@ -2477,7 +2493,7 @@ async function loadSuggestions() {
       }
       cat.results.set(key, catIds(items));
       yt.error = '';
-    } catch (e) { yt.error = e.message; }
+    } catch (e) { yt.error = NET_ERR.test(e.message) ? netError().message : e.message; }
   }));
   if (state.view.name === 'home') render();
 }
@@ -3181,10 +3197,16 @@ function renderMenu() {
 }
 function closeMenu() { menuEl.hidden = true; menuState = null; }
 let toastTimer;
+let lastToast = { msg: '', at: 0 };
 function toast(msg) {
+  // Raw browser network errors become a plain message, and the same message isn't repeated within a few seconds.
+  msg = String(msg == null ? '' : msg);
+  if (NET_ERR.test(msg)) msg = netError().message;
+  if (!msg || (msg === lastToast.msg && Date.now() - lastToast.at < 8000)) return;
+  lastToast = { msg, at: Date.now() };
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, msg.length > 70 ? 4500 : 2600);
 }
 let modalSubmit = null, modalReturn = null;
 function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit }) {
@@ -4677,7 +4699,7 @@ async function loadDiscover(force, retried) {
       items = res.items || [];
       try { store.set(cacheKey, { at: Date.now(), seeds, items }); } catch (e) {}
       disc.error = '';
-    } catch (e) { disc.error = e.message; items = (cached && cached.items) || []; }
+    } catch (e) { disc.error = NET_ERR.test(e.message) ? netError().message : e.message; items = (cached && cached.items) || []; }
     disc.loading = false;
   }
   const owned = ownedKeys();
