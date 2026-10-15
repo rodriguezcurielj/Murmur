@@ -1,6 +1,6 @@
 FROM node:20-alpine
 
-# Install ffmpeg and python3/py3-pip to install yt-dlp
+# Install ffmpeg, python, and yt-dlp
 RUN apk add --no-cache ffmpeg python3 py3-pip && \
     pip install --no-cache-dir --break-system-packages yt-dlp
 
@@ -13,8 +13,8 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY server.js auth.js youtube.js spotify.js discover.js userdata.js sync.js sources.js ./
 COPY sources ./sources
 
-# Copy your yt2audio converter files into the container
-COPY youtube_stuff ./youtube_stuff
+# FIX: Copy from sources/youtube_stuff since that's where it lives in your repo structure
+COPY sources/youtube_stuff ./youtube_stuff
 
 # The web app lives at the repo root; the server serves it from ./public
 COPY index.html config.js manifest.webmanifest sw.js ./public/
