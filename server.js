@@ -1,6 +1,7 @@
 // Murmur server: serves the player and stores uploaded media in DATA_DIR.
 // Audio-only files browsers can play are kept as-is; everything else
 // (video files, WMA, AIFF, ...) has its audio extracted to MP3 with ffmpeg.
+const { convert, OUT_DIR } = require('./sources/youtube_stuff/convert');
 const express = require('express');
 const multer = require('multer');
 const { execFile } = require('child_process');
@@ -105,6 +106,23 @@ const sources = createSources(DATA, auth, {
   linkToSong: (key, fileId, user) => spotify.setFileMatch(key, fileId, user)
 });
 sources.routes(app);
+
+// YouTube CC Audio Converter Route (integrated from youtube_stuff)
+app.post('/convert', express.json(), async (req, res) => {
+    const links = (req.body.links || []).filter(l => /^https?:\/\//.test(l));
+    const format = req.body.format === 'm4a' ? 'm4a' : 'mp3';
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.write(`Saving ${format} files to ${OUT_DIR}\n`);
+
+    convert(links, format,
+        line => res.write(line + '\n'),
+        code => res.end(code === 0 ? 'Finished.\n' : `Finished with errors (code ${code}).\n`)
+    );
+});
+
+fs.mkdirSync(OUT_DIR, { recursive: true });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.get('/api/tracks', (req, res) => res.json({ tracks: library }));
