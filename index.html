@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261014143911">
+<meta name="murmur-build" content="20261014233646">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -279,7 +279,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .menu button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:5px;font-size:14px;font-weight:500}
 .menu button:hover,.menu button:focus-visible{background:var(--hover)}
 .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
-.toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:70;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100vw - 32px)}
+.toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:110;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100vw - 32px)}
 .toast.show{animation:pop .2s ease-out}
 @keyframes pop{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 
@@ -4227,8 +4227,19 @@ function checkServerList() {
     Promise.race([getStatus(b), new Promise((_, no) => setTimeout(no, 6000))]).then(() => show(true), () => show(false));
   });
 }
-function pickServer(name) {
+/* Check a server answers before switching, so a dead one leaves people where they were with a note
+   instead of reloading onto whichever server still works. */
+let switching = false;
+async function reachable(url, label) {
+  if (switching) return false;
+  switching = true; toast(`Connecting to ${label}…`);
+  try { await Promise.race([getStatus(url), new Promise((_, no) => setTimeout(no, 6000))]); return true; }
+  catch (e) { toast(`Can’t get into ${label}. It’s off or unreachable right now.`); return false; }
+  finally { switching = false; }
+}
+async function pickServer(name) {
   const x = SERVERS.find(v => v.name === name); if (!x) return;
+  if (!await reachable(normalizeServer(x.url), x.name)) return;
   store.set('serverName', x.name); store.set('server', null); store.set('auth', null);
   // A page served by a Murmur server always talks to that server, so go to the other server's own page.
   if (remote.hosted && normalizeServer(x.url) !== normalizeServer(location.origin)) { location.href = x.url; return; }
@@ -4250,6 +4261,7 @@ async function gateSubmit(form) {
     if (!addr) { showGate('connect', 'Enter the server address.'); return; }
     const named = SERVERS.find(x => normalizeServer(x.url) === addr);
     if (named) { pickServer(named.name); return; }
+    if (!await reachable(addr, addr)) return;
     store.set('serverName', null); store.set('server', addr); store.set('auth', null);
     if (remote.hosted && addr !== normalizeServer(location.origin)) { location.href = addr; return; }
     location.reload(); return;
