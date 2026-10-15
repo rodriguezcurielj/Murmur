@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261014235638">
+<meta name="murmur-build" content="20261015000348">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -365,6 +365,23 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .ytp-ver>span{flex:1;min-width:0}
 .ytp-ver b,.ytp-ver .small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ver-list:has(.ytp-ver){overflow-x:hidden}
+.ytdl{display:flex;flex-direction:column;gap:10px}
+.ytdl-song{display:flex;align-items:center;gap:12px;min-width:0}
+.ytdl-song img{width:56px;height:56px;border-radius:8px;object-fit:cover;flex:none;background:var(--raise)}
+.ytdl-song>span{min-width:0}
+.ytdl-song b,.ytdl-song .small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ytdl-stage{color:var(--fg);font-weight:600;margin-top:4px}
+.ytdl-bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;position:relative}
+.ytdl-bar span{display:block;height:100%;width:0;background:var(--accent);border-radius:4px;transition:width .3s ease}
+.ytdl-bar.busy span{width:35%;position:absolute;animation:ytdl-slide 1.2s ease-in-out infinite}
+.ytdl-bar.ok span{background:#5ccf8a}
+.ytdl-bar.bad span{background:#ff6b6b}
+@keyframes ytdl-slide{from{left:-35%}to{left:100%}}
+.ytdl-meta{display:flex;justify-content:space-between;gap:10px;min-height:1.3em}
+.ytdl-meta span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ytdl-log summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.ytdl-log pre{margin:8px 0 0;max-height:160px;overflow:auto;padding:10px;border-radius:8px;background:var(--bg);border:1px solid var(--line);font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.ytdl-bar.busy span{animation:none;width:100%;opacity:.5}}
 .ytp-play{flex:none;margin-left:auto}
 .src-results{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px;max-height:50vh;overflow-y:auto;overflow-x:hidden}
 .src-row{display:flex;align-items:center;gap:12px;padding:8px;border-radius:10px;background:rgba(255,255,255,.04);min-width:0}
@@ -2765,11 +2782,11 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
 }
 let modalSubmit = null, modalReturn = null;
-function openModal({ title, html, confirm = 'OK', danger = false, onSubmit }) {
+function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit }) {
   modalReturn = document.activeElement;
   $('#modal').innerHTML = `<form class="modal" id="mForm" role="dialog" aria-modal="true" aria-labelledby="mTitle">
     <h2 id="mTitle">${title}</h2><div class="m-body">${html}</div>
-    <div class="m-actions"><button type="button" class="text-btn" data-act="modal-close">Cancel</button><button type="submit" class="m-ok${danger ? ' danger' : ''}">${confirm}</button></div></form>`;
+    <div class="m-actions"><button type="button" class="text-btn" data-act="modal-close">${cancel}</button>${confirm ? `<button type="submit" class="m-ok${danger ? ' danger' : ''}">${confirm}</button>` : ''}</div></form>`;
   modalSubmit = onSubmit; $('#modal').hidden = false; closeMenu();
   const f = $('#mForm input') || $('#mForm .m-ok'); if (f) { f.focus(); if (f.select) f.select(); }
 }
@@ -3732,7 +3749,7 @@ function syncLinkResult(tid) {
         const opt = (act, ic, title, sub, off) => `<button type="button" class="dls-opt" data-act="${act}" data-tid="${esc(tid)}"${off ? ' disabled' : ''}>
       ${icon(ic)}<span><b>${title}</b><span class="small">${sub}</span></span></button>`;
         const sourcesOn = srcs.list.filter(x => x.ready).map(x => x.name);
-        openModal({ title: `Download “${esc(t.title)}”`, confirm: 'Close', html: `<p class="small">Where do you want it from?</p>
+        openModal({ title: `Download “${esc(t.title)}”`, confirm: false, cancel: 'Close', html: `<p class="small">Where do you want it from?</p>
     <div class="dls-list">
       ${file ? opt('dls-file', 'download', 'Murmur', offline.has(file) ? 'Already saved on this device' : 'Save it on this device to play offline') + opt('dls-save', 'save', 'Murmur: save the file', 'Get the audio file itself') : ''}
       ${sourcesOn.length && canEditMusic() ? opt('dls-sources', 'list', 'Download sources', 'Find a copy you can keep on ' + esc(sourcesOn.join(', '))) : ''}
@@ -3761,7 +3778,7 @@ function syncLinkResult(tid) {
 
         openModal({
             title: `Which one is “${esc(t.title)}”?`,
-            confirm: 'Get the link',
+            confirm: 'Download',
             html: `<p class="small">${t.duration ? `The song is <b>${fmt(t.duration)}</b> long. ` : ''}Tap ▶ to listen before you pick.</p>
     <div class="ytp-frame" id="ytpFrame" hidden></div>
     <div class="ver-list">${ids.map((id, i) => {
@@ -3797,52 +3814,60 @@ function syncLinkResult(tid) {
     /* Takes the chosen video ID (v) and track info (y), posts it to your yt2audio server, and streams real-time progress. */
 
     async function showYouTubeLink(v, y) {
-        const youtubeUrl = `https://www.youtube.com/watch?v=${v}`;
-
-        openModal({
-            title: 'Downloading YouTube Audio',
-            html: `
-  <div style="text-align: center; margin-bottom: 12px;">
-    <img src="${esc(y.cover || '')}" style="max-width: 100%; border-radius: 6px; max-height: 120px; object-fit: cover;" />
-    <p style="font-weight: 600; margin: 8px 0 4px;">${esc(y.title || 'YouTube Track')}</p>
-    <p style="font-size: 12px; color: var(--sub);">${esc(y.artist || 'Unknown Artist')}</p>
-  </div>
-  <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 160px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">
-    Connecting to conversion backend...
-  </div>
-`,
-            confirm: false
-        });
-
-        await streamConvert([youtubeUrl], document.getElementById('download-progress'));
+        const dl = ytProgress({ title: 'Downloading from YouTube', cover: y.cover, name: y.title || 'YouTube song', by: y.artist || '' });
+        await streamConvert([`https://www.youtube.com/watch?v=${v}`], dl);
     }
 
-    /* Selected songs → one YouTube video each (the one already matched, or the top search result),
+    /* Selected songs → one YouTube video each (the original artist's studio upload when there is one),
        then the server downloads them all in one go. */
     async function getManyFromYouTube(ids) {
         const todo = ids.map(id => TRACKS[id]).filter(t => t && !t.src);
         if (!todo.length) { toast('Those songs are already in your library.'); return; }
-        openModal({
-            title: `Getting ${plural(todo.length, 'song')} from YouTube`,
-            html: `<p class="small">Each song uses its matched YouTube video, or the top search result. Keep this open until it says Finished.</p>
-  <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 240px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">Finding the videos...</div>`,
-            confirm: false
-        });
-        const box = document.getElementById('download-progress');
-        const say = line => { box.textContent += '\n' + line; box.scrollTop = box.scrollHeight; };
+        const dl = ytProgress({ title: `Getting ${plural(todo.length, 'song')} from YouTube` });
         const links = [];
-        for (const t of todo) {
+        for (const [i, t] of todo.entries()) {
+            dl.stage(`Finding the right videos (${i + 1} of ${todo.length})…`, null);
             // A YouTube song someone picked by hand is already the one they want.
-            if (t.yt) { links.push(`https://www.youtube.com/watch?v=${t.ytId}`); say(`Using "${t.title}"`); continue; }
+            if (t.yt) { links.push(`https://www.youtube.com/watch?v=${t.ytId}`); dl.log(`Using "${t.title}"`); continue; }
             let best;
             try { best = await bestYouTubeFor(t); }
-            catch (e) { say(`Couldn't search for "${t.title}": ${e.message}`); continue; }
-            if (best) { links.push(`https://www.youtube.com/watch?v=${best.ytId}`); say(`"${t.title}" → ${best.title} (${best.artist})`); }
-            else say(`No studio version of "${t.title}" by ${cleanArtist(t.artist)} found, skipping`);
+            catch (e) { dl.log(`Couldn't search for "${t.title}": ${e.message}`); continue; }
+            if (best) { links.push(`https://www.youtube.com/watch?v=${best.ytId}`); dl.log(`"${t.title}" → ${best.title} (${best.artist})`); }
+            else dl.log(`No studio version of "${t.title}" by ${cleanArtist(t.artist)} found, skipping`);
         }
-        if (!links.length) { say('Nothing to download.'); return; }
-        await streamConvert(links, box);
+        if (!links.length) { dl.finish(false, 'Couldn’t find any of those songs on YouTube.'); return; }
+        if (links.length < todo.length) dl.log(`Skipping ${todo.length - links.length}; see above.`);
+        await streamConvert(links, dl);
     }
+
+    /* The download popup: song, what's happening now, a progress bar, and the server's raw output
+       tucked under "Details". stage(text, pct) with pct null shows a moving bar while the length is unknown. */
+    function ytProgress({ title, cover, name, by }) {
+        openModal({ title, confirm: false, cancel: 'Hide', html: `<div class="ytdl">
+            ${name ? `<div class="ytdl-song">${cover ? `<img src="${esc(cover)}" alt="">` : ''}<span><b>${esc(name)}</b>${by ? `<span class="small">${esc(by)}</span>` : ''}</span></div>` : ''}
+            <div class="ytdl-stage" id="ytdlStage" role="status">Connecting…</div>
+            <div class="ytdl-bar busy" id="ytdlBar"><span></span></div>
+            <div class="ytdl-meta small"><span id="ytdlNote"></span><span id="ytdlPct"></span></div>
+            <details class="ytdl-log"><summary>Details</summary><pre id="ytdlLog"></pre></details></div>` });
+        const $in = id => document.getElementById(id);
+        return {
+            stage(text, pct) {
+                if ($in('ytdlStage')) $in('ytdlStage').textContent = text;
+                const bar = $in('ytdlBar'); if (!bar) return;
+                bar.classList.toggle('busy', pct == null);
+                bar.firstElementChild.style.width = pct == null ? '' : Math.round(pct) + '%';
+                $in('ytdlPct').textContent = pct == null ? '' : Math.round(pct) + '%';
+            },
+            note(text) { if ($in('ytdlNote')) $in('ytdlNote').textContent = text; },
+            log(line) { const l = $in('ytdlLog'); if (l) { l.textContent += line + '\n'; l.scrollTop = l.scrollHeight; } },
+            finish(ok, text) {
+                this.stage(text, 100);
+                const bar = $in('ytdlBar'); if (bar) bar.classList.add(ok ? 'ok' : 'bad');
+                const c = document.querySelector('#modal [data-act="modal-close"]'); if (c) c.textContent = 'Done';
+            }
+        };
+    }
+
 
     /* Scores a YouTube result (y) as a copy of song t: the original artist's channel (best of all their
        auto-made "Artist - Topic" one), the right title and length, and no live / music video / remix / cover
@@ -3887,47 +3912,65 @@ function syncLinkResult(tid) {
         return ranked.length && ranked[0].s > 0 ? ranked[0].y : null;
     }
 
-    /* Sends YouTube links to the signed-in Murmur server and shows its progress as it streams in. */
-    async function streamConvert(links, progressBox) {
-        try {
-            progressBox.textContent += `\nPreparing to send ${links.length > 1 ? links.length + ' links' : 'link'}...`;
-
-            // --- SMART AUTO-DETECT LOGIC ---
-            let backendUrl;
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                backendUrl = 'http://localhost:8765/convert'; // Local laptop testing
-            } else {
-                backendUrl = apiUrl('convert'); // The Murmur server you're signed in to (Azure or Laptop)
+    /* Sends YouTube links to the signed-in Murmur server and turns its yt-dlp output into the progress bar:
+       each song is downloading (to 80%), converting, then saved, and finally added to the library. */
+    async function streamConvert(links, dl) {
+        const n = links.length;
+        let done = 0, part = 0, added = 0, errors = 0, started = false, counted = false;
+        const show = text => dl.stage(text, Math.min(99, (done + part) / n * 100));
+        const label = () => n > 1 ? `Song ${Math.min(done + 1, n)} of ${n}` : '';
+        const onLine = line => {
+            dl.log(line);
+            let m;
+            if (/^\[youtube\] Extracting URL/.test(line)) {
+                // A new song starting means the one before it is finished.
+                if (started && !counted) done = Math.min(n, done + 1);
+                started = true; counted = false; part = 0;
+                dl.note(label()); show('Getting the video info…');
             }
-
-            progressBox.textContent += `\nSending to ${backendUrl}...\n`;
-
-            const res = await fetch(backendUrl, {
+            else if ((m = line.match(/^\[download\] Destination: (.+)$/))) dl.note([label(), m[1].split(/[\\/]/).pop().replace(/\.[^.]+$/, '')].filter(Boolean).join(' · '));
+            else if ((m = line.match(/^\[download\]\s+([\d.]+)%/))) { part = Math.max(part, parseFloat(m[1]) / 100 * 0.8); show('Downloading…'); }
+            else if (/has already been recorded in the archive/.test(line)) { done++; counted = true; part = 0; show('Already downloaded before, skipping…'); }
+            else if (/^\[ExtractAudio\]/.test(line)) { part = Math.max(part, 0.85); show('Converting to MP3…'); }
+            else if (/^\[(Metadata|EmbedThumbnail)\]/.test(line)) { part = Math.max(part, 0.95); show('Adding the cover and song info…'); }
+            else if (/^ERROR:/.test(line)) errors++;
+            else if (/^Added ".*" to Murmur$/.test(line)) {
+                if (started && !counted) { done = n; counted = true; part = 0; }   // yt-dlp is through; the server is filing them
+                added++; show('Adding to your library…');
+            }
+        };
+        try {
+            dl.stage('Connecting to your Murmur server…', null);
+            // Local laptop testing talks to the standalone converter; otherwise the Murmur server you're signed in to.
+            const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            const res = await fetch(local ? 'http://localhost:8765/convert' : apiUrl('convert'), {
                 method: 'POST',
                 headers: authHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ links, format: 'mp3' })
             });
-
-            if (!res.ok) throw new Error('Server responded with status ' + res.status);
-
-            // Read the streamed response from convert.js line by line
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-
+            if (!res.ok) throw new Error(res.status === 403 ? 'You don’t have permission to add music on this server.' : 'The server answered with error ' + res.status + '.');
+            dl.stage('Starting…', null);
+            const reader = res.body.getReader(), decoder = new TextDecoder();
+            let buf = '';
             while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                const text = decoder.decode(value, { stream: true });
-                progressBox.textContent += text;
-                progressBox.scrollTop = progressBox.scrollHeight;
+                const { value, done: end } = await reader.read();
+                if (end) break;
+                buf += decoder.decode(value, { stream: true });
+                const parts = buf.split(/\r?\n/); buf = parts.pop();
+                parts.forEach(l => l && onLine(l));
             }
-
-            toast('YouTube audio converted successfully!');
-            await connectServer();   // show the new songs in the library
-
+            if (buf) onLine(buf);
+            const ok = added > 0 || (!errors && done >= n);
+            const msg = added ? `Added ${plural(added, 'song')} to your library${errors ? ` (${plural(errors, 'problem')}, see Details)` : ''}`
+                : errors ? 'Couldn’t download that. Open Details to see why.' : 'Already in your library.';
+            dl.note('');
+            dl.finish(ok, msg);
+            toast(msg);
+            if (added) await connectServer();   // show the new songs in the library
         } catch (err) {
-            progressBox.textContent += `\nError: ${err.message}`;
-            toast('Conversion failed.');
+            dl.log('Error: ' + err.message);
+            dl.finish(false, err.message || 'Download failed.');
+            toast('Download failed.');
         }
     }
 
