@@ -10,12 +10,16 @@ targets:
     platform: iOS
     sources:
       - path: Murmur
+    dependencies:
+      # The Safari ad blocker ships inside the app (Settings → Apps → Safari → Extensions turns it on).
+      - target: MurmurAdBlock
+        embed: true
     info:
       path: Info.plist
       properties:
         CFBundleDisplayName: Murmur
-        CFBundleShortVersionString: "1.5"
-        CFBundleVersion: "6"
+        CFBundleShortVersionString: "1.6"
+        CFBundleVersion: "7"
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UIStatusBarStyle: UIStatusBarStyleLightContent
@@ -35,6 +39,34 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.murmur.app
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+
+  # Safari Web Extension: removes YouTube ads from Murmur in Safari (same scripts as the Chrome extension in extension/).
+  MurmurAdBlock:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MurmurAdBlock/SafariWebExtensionHandler.swift
+      - path: MurmurAdBlock/Resources
+        type: folder
+        buildPhase: resources
+    info:
+      path: MurmurAdBlock/Info.plist
+      properties:
+        CFBundleDisplayName: Murmur Ad Blocker
+        CFBundleShortVersionString: "1.6"
+        CFBundleVersion: "7"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.murmur.app.adblock
+        TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
         CODE_SIGN_STYLE: Manual
         CODE_SIGNING_ALLOWED: "NO"

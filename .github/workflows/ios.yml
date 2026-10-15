@@ -9,6 +9,8 @@ on:
     branches: [main]
     paths:
       - 'ios/**'
+      - 'extension/youtube-strip.js'
+      - 'extension/murmur-flag.js'
       - '.github/workflows/ios.yml'
 
 permissions:
@@ -27,6 +29,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Copy the ad blocker scripts into the Safari extension
+        run: cp extension/youtube-strip.js extension/murmur-flag.js extension/icon.png ios/MurmurAdBlock/Resources/
+
       - name: Create the Xcode project
         working-directory: ios
         run: xcodegen generate
@@ -38,6 +43,7 @@ jobs:
             SYMROOT="$PWD/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build | tail -n 30
           test -d build/Release-iphoneos/Murmur.app
+          test -d build/Release-iphoneos/Murmur.app/PlugIns/MurmurAdBlock.appex
 
       - name: Package Murmur.ipa
         run: |

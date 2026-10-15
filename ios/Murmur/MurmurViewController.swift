@@ -32,7 +32,7 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
             return true;
           },
           setNowPlaying: function (json) { window.webkit.messageHandlers.nowPlaying.postMessage(json); },
-          version: function () { return 'ios-1.5'; }
+          version: function () { return 'ios-1.6'; }
         };
         """
         config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))

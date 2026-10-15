@@ -5550,7 +5550,7 @@ function openAccount() {
     + group('Listening', [
         row('pb-open', 'eq', 'Playback & equalizer', eqState().on && eqState().preset !== 'Flat' ? esc(eqState().preset) : ''),
         row('acct-theme', 'palette', 'Theme', esc(themeName)),
-        yt.enabled ? (adOn ? row('', 'shield', 'YouTube ad blocker', 'On', { noChev: true, cls: 'static' }) : row('', 'shield', 'YouTube ad blocker', 'Off · Get it', { href: APPS_PAGE + '#extension' })) : ''
+        yt.enabled ? (adOn ? row('', 'shield', 'YouTube ad blocker', 'On', { noChev: true, cls: 'static' }) : row('', 'shield', 'YouTube ad blocker', 'Off · Get it', { href: APPS_PAGE + (/iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) ? '#safari-adblock' : '#extension') })) : ''
       ])
     + group('Server', [
         remote.base || cfg ? row('acct-server', 'server', 'Server', esc(serverLabel(remote.base || location.origin))) : '',
