@@ -1002,7 +1002,7 @@ const YTALBUM = { id: 'youtube', title: 'From YouTube', artist: 'YouTube', year:
   colors: ['#e0473f', '#2a1416', '#ffb070'], desc: 'YouTube songs you’ve played, liked or saved to playlists.', trackIds: [] };
 YTALBUM.cover = makeCover(YTALBUM);
 ALBUM_MAP.youtube = YTALBUM;
-const yt = { enabled: false, shelves: [], results: new Map(), loading: new Set(), error: '' };
+const yt = { enabled: false, shelves: [], results: new Map(), loading: new Set(), error: '', searchesLeft: null };
 function addYtTrack(v, genreTag) {
   const id = 'yt-' + v.id;
   const old = TRACKS[id];
@@ -3004,7 +3004,7 @@ function viewCollection(type, id) {
   <div class="actions">
     ${n ? playFab(type, id, 'big-play') : ''}
     <button class="icon-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}">${icon('shuffle')}</button>
-    ${dlBtn}${n ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${yt.enabled && canEditMusic() && type !== 'discover' && col.allTracks.some(t => !TRACKS[t].src && !(TRACKS[t].sp && spStatus(t) === 'file')) ? `<button class="text-btn" data-act="col-yt" data-type="${type}" data-id="${esc(id)}">${icon('download')}<span>Get missing songs from YouTube</span></button>` : ''}${editAlbum}${del}${clearDl}
+    ${dlBtn}${n ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
   </div>
   ${server.on ? jobPanelsHTML(type, id) : ''}
   ${body}${rec}${['artist', 'album', 'calbum'].includes(type) ? catExtrasHTML(type, id, col) : ''}`;
@@ -3889,8 +3889,8 @@ function act(el, e) {
     case 'sel-playlist': openMenu(el, selIds(), { sub: true, multi: true }); break;
     case 'sel-queue': addToQueue(selIds()); clearSel(); break;
     case 'sel-edit': openEdit(selIds()); break;
-    case 'sel-yt': { const c = state.sel ? state.sel.type + ':' + state.sel.id : ''; const col = state.sel && getCollection(state.sel.type, state.sel.id); getManyFromYouTube(selIds(), c, col ? col.title : ''); clearSel(); break; }
-    case 'col-yt': { const col = getCollection(d.type, d.id); if (col) getManyFromYouTube(col.allTracks, d.type + ':' + d.id, col.title); break; }
+    case 'sel-yt': { const c = state.sel ? state.sel.type + ':' + state.sel.id : ''; const col = state.sel && getCollection(state.sel.type, state.sel.id); const b = ytBatch(selIds()); if (b.miss.length > b.pick.length && b.pick.length) toast(`Getting ${b.pick.length} of ${b.miss.length} now. Do the rest after.`); getManyFromYouTube(b.miss.length ? b.pick.map(t => t.id) : selIds(), c, col ? col.title : ''); clearSel(); break; }
+    case 'col-yt': { const col = getCollection(d.type, d.id); if (col) getManyFromYouTube(ytBatch(col.allTracks).pick.map(t => t.id), d.type + ':' + d.id, col.title); break; }
     case 'job-cancel': api('DELETE', 'api/convert/jobs/' + d.id).then(() => { toast('Stopping after the song that’s downloading now'); pollYtJobs(); }).catch(e => toast(e.message)); break;
     case 'job-dismiss': api('DELETE', 'api/convert/jobs/' + d.id).catch(() => {}); ytJobs.list = ytJobs.list.filter(j => j.id !== d.id); updateJobUI(); break;
     case 'sel-genre': openGenrePicker(selIds()); break;
@@ -4686,21 +4686,69 @@ function syncLinkResult(tid) {
         const items = [], missed = [];
         ytJobs.finding = { done: 0, total: todo.length, ctx }; renderUploadStatus(); updateJobUI();
         toast(`Finding ${plural(todo.length, 'song')} on YouTube. You can keep using Murmur.`);
-        for (const t of todo) {
+        // Two songs at a time (the server searches two at once).
+        let next = 0, stop = false;
+        const one = async t => {
             // A YouTube song someone picked by hand is already the one they want.
             if (t.yt) items.push({ link: `https://www.youtube.com/watch?v=${t.ytId}`, title: t.title });
+            // Already matched to a video (it plays from YouTube): no search needed.
+            else if (t.sp && sp.matches[t.key] && sp.matches[t.key].yt && sp.matches[t.key].yt.id) items.push({ link: `https://www.youtube.com/watch?v=${sp.matches[t.key].yt.id}`, title: t.title, key: t.key });
             else {
                 try { const best = await bestYouTubeFor(t); if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title, key: t.sp ? t.key : '' }); else missed.push(t.title); }
-                catch (e) { missed.push(t.title); if (/quota|daily/i.test(e.message)) { toast(e.message); break; } }
+                catch (e) { missed.push(t.title); if (/quota|daily/i.test(e.message)) { stop = true; toast(e.message); } }
             }
             ytJobs.finding.done++; renderUploadStatus(); updateJobUI();
-        }
-        ytJobs.finding = null; renderUploadStatus();
+        };
+        const worker = async () => { while (!stop && next < todo.length) await one(todo[next++]); };
+        await Promise.all([worker(), worker()]);
+        // Keep the playlist's order in the download.
+        const order = new Map(todo.map((t, i) => [t.title, i]));
+        items.sort((a, b) => (order.get(a.title) ?? 0) - (order.get(b.title) ?? 0));
+        ytJobs.finding = null; renderUploadStatus(); refreshYtAllowance();
         if (!items.length) { updateJobUI(); toast('Couldn’t find those songs on YouTube.'); return; }
         try { await startYtJob(items, label || plural(items.length, 'song'), ctx, missed); toast(`Getting ${plural(items.length, 'song')} from YouTube in the background${missed.length ? ` (${missed.length} not found)` : ''}.`); }
         catch (e) { toast(e.message); }
         updateJobUI();
     }
+
+    /* "As many as allowed right now": YouTube's free daily allowance (about 98 searches, reset at midnight Pacific)
+       and one job's limit (100 songs). Songs already matched to a video cost nothing; others about one search. */
+    const ytLink = id => `https://www.youtube.com/watch?v=${id}`;
+    function ytMissing(ids) {
+        const queued = new Set();
+        ytJobs.list.filter(jobRunning).forEach(j => j.items.forEach(x => { if (x.key) queued.add(x.key); if (x.link) queued.add(x.link); }));
+        return ids.map(id => TRACKS[id]).filter(t => t && !t.src && !(t.sp && spStatus(t.id) === 'file')
+            && !(t.sp && queued.has(t.key)) && !(t.yt && queued.has(ytLink(t.ytId))));
+    }
+    const ytFree = t => !!(t.yt || (t.sp && sp.matches[t.key] && sp.matches[t.key].yt));
+    function ytBatch(ids) {
+        const miss = ytMissing(ids), pick = [];
+        let left = yt.searchesLeft == null ? Infinity : yt.searchesLeft;
+        for (const t of miss) {
+            if (pick.length >= YT_JOB_MAX) break;
+            if (ytFree(t)) pick.push(t); else if (left > 0) { left--; pick.push(t); }
+        }
+        return { miss, pick };
+    }
+    function ytBatchBtn(type, id, col) {
+        if (!yt.enabled || !canEditMusic() || type === 'discover') return '';
+        const { miss, pick } = ytBatch(col.allTracks);
+        if (!miss.length) return '';
+        if (!pick.length) return `<span class="small yt-limit">${icon('download')} YouTube’s daily limit is used up. More songs tomorrow.</span>`;
+        const all = pick.length === miss.length;
+        const why = all ? '' : miss.length - pick.length > 0 && pick.length >= YT_JOB_MAX ? ' (100 at a time)' : ' (today’s YouTube limit)';
+        return `<button class="text-btn" data-act="col-yt" data-type="${type}" data-id="${esc(id)}" title="Downloads as many songs as YouTube allows right now${why}">${icon('download')}<span>${all ? `Get ${plural(pick.length, 'missing song')} from YouTube` : `Download ${pick.length} of ${miss.length} now${why}`}</span></button>`;
+    }
+    async function refreshYtAllowance() {
+        try {
+            const ys = await api('GET', 'api/youtube/status');
+            const left = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null;
+            if (left === yt.searchesLeft) return;
+            yt.searchesLeft = left;
+            if (state.view.name === 'collection' && !state.sel && $('#modal').hidden) { const y = $('#main').scrollTop; render(); $('#main').scrollTop = y; }
+        } catch (e) {}
+    }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && yt.enabled && server.on) refreshYtAllowance(); });
 
     /* ---------- YouTube downloads are background jobs on the server; the page only watches them ---------- */
     var YT_JOB_MAX = 100;   // var: the corner status reads these before this part of the page has run
@@ -5691,7 +5739,7 @@ async function addPerson(form) {
   renderAcctBtn();
   if (mode === 'ok') {
     await connectServer();
-    try { yt.enabled = !!(await api('GET', 'api/youtube/status')).enabled; } catch (e) {}
+    try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
     await loadSpotify();
     queueGenreGuess();

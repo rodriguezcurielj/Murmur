@@ -143,6 +143,9 @@ public class MainActivity extends Activity {
     private static WebView createWebView(Context ctx) {
         WebView v = new PlayingWebView(ctx);
         v.setBackgroundColor(BG);
+        // Press and hold belongs to Murmur (hold a song, then slide to select several), not to Android's text selection.
+        v.setOnLongClickListener(x -> true);
+        v.setLongClickable(false);
 
         WebSettings s = v.getSettings();
         s.setJavaScriptEnabled(true);

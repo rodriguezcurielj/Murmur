@@ -3,6 +3,7 @@
 // so it never ships to browsers or GitHub. Results are cached to stay inside the free
 // daily quota (a search costs 100 of the 10,000 daily units).
 const fs = require('fs');
+const { spawn } = require('child_process');
 const fsp = fs.promises;
 
 const path = require('path');
@@ -37,24 +38,83 @@ module.exports = function createYouTube(file, auth) {
   }
   const decode = s => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 
+  /* How much of today's free YouTube allowance this server has used (10,000 units a day, reset at midnight
+     Pacific time; a search costs 100, looking up its videos 1). Lets the player say how many songs it can get now.
+     Other servers using the same key also spend it, so this is an estimate; a "limit used up" answer sets it to 0. */
+  const DAILY_UNITS = 10000, SEARCH_UNITS = 101;
+  const usageFile = path.join(path.dirname(file), 'youtube-usage.json');
+  const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  let usage = { day: today(), units: 0 };
+  try { const u = JSON.parse(fs.readFileSync(usageFile, 'utf8')); if (u && u.day === today()) usage = u; } catch { /* first run */ }
+  function spend(units) {
+    if (usage.day !== today()) usage = { day: today(), units: 0 };
+    usage.units = Math.min(DAILY_UNITS, usage.units + units);
+    fsp.writeFile(usageFile, JSON.stringify(usage)).catch(() => {});
+  }
+  const searchesLeft = () => usage.day !== today() ? Math.floor(DAILY_UNITS / SEARCH_UNITS) : Math.max(0, Math.floor((DAILY_UNITS - usage.units) / SEARCH_UNITS));
+
   async function call(path, params, key) {
     const url = `${API}/${path}?${new URLSearchParams({ ...params, key })}`;
     const res = await fetch(url);
     const body = await res.json().catch(() => ({}));
+    if (res.ok) spend(path === 'search' ? 100 : 1);
     if (!res.ok) {
       const reason = body.error && body.error.errors && body.error.errors[0] && body.error.errors[0].reason;
-      const msg = reason === 'quotaExceeded' ? 'YouTube’s free daily limit is used up. Suggestions come back tomorrow.'
+      // Google reports the daily search limit as quotaExceeded or (newer) rateLimitExceeded "Search Queries per day".
+      const daily = reason === 'quotaExceeded' || (reason === 'rateLimitExceeded' && /per day/i.test((body.error && body.error.message) || ''));
+      if (daily) spend(DAILY_UNITS);
+      const msg = daily ? 'YouTube’s free daily limit is used up. Suggestions come back tomorrow.'
         : reason === 'keyInvalid' || res.status === 400 ? 'YouTube didn’t accept that API key.'
         : reason === 'accessNotConfigured' ? 'The YouTube Data API isn’t turned on for that key’s Google Cloud project.'
         : (body.error && body.error.message) || `YouTube answered ${res.status}.`;
-      const err = new Error(msg); err.status = reason === 'quotaExceeded' ? 429 : 502; throw err;
+      const err = new Error(msg); err.status = daily ? 429 : 502; err.daily = daily; throw err;
     }
     return body;
+  }
+
+  /* Searching with yt-dlp instead of the API: no daily limit, a few seconds slower, used once the API's daily
+     searches run out (on servers that have yt-dlp, which all Murmur servers do). Two at a time at most. */
+  let ytdlp = null;   // null = not checked yet
+  const hasYtdlp = () => ytdlp !== null ? Promise.resolve(ytdlp) : new Promise(ok => {
+    const p = spawn('yt-dlp', ['--version']); p.on('error', () => ok(ytdlp = false)); p.on('close', c => ok(ytdlp = c === 0));
+  });
+  hasYtdlp();
+  let running = 0; const waiting = [];
+  async function ytdlpSearch(q) {
+    if (running >= 2) await new Promise(ok => waiting.push(ok));
+    running++;
+    try {
+      const out = await new Promise((ok, no) => {
+        const p = spawn('yt-dlp', ['--flat-playlist', '-J', '--no-warnings', 'ytsearch15:' + q]);
+        let d = ''; const t = setTimeout(() => p.kill(), 30e3);
+        p.stdout.on('data', c => { d += c; }); p.on('error', no);
+        p.on('close', c => { clearTimeout(t); c === 0 ? ok(d) : no(new Error('yt-dlp search failed (' + c + ')')); });
+      });
+      return (JSON.parse(out).entries || []).filter(e => e && e.id && e.ie_key !== 'YoutubeTab').map(e => ({
+        id: e.id,
+        title: String(e.title || ''),
+        channel: String(e.channel || e.uploader || '').replace(/\s+-\s+Topic$/, ''),
+        thumb: `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg`,
+        duration: Math.round(e.duration || 0)
+      })).filter(x => x.duration > 30 && x.duration < 20 * 60);
+    } finally { running--; const n = waiting.shift(); if (n) n(); }
   }
 
   async function search(q, key) {
     const hit = cache.get(q);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.items;
+    // Daily API searches used up: go straight to yt-dlp; if the API says it's used up mid-way, fall back too.
+    const fallback = async e => {
+      if (!(await hasYtdlp())) throw e;
+      const items = await ytdlpSearch(q);
+      cache.set(q, { at: Date.now(), items }); saveCache();
+      return items;
+    };
+    if (searchesLeft() === 0 && await hasYtdlp()) return fallback(null);
+    try { return await apiSearch(q, key); }
+    catch (e) { if (e.daily) return fallback(e); throw e; }
+  }
+  async function apiSearch(q, key) {
     const s = await call('search', { part: 'snippet', type: 'video', videoCategoryId: '10', videoEmbeddable: 'true', videoSyndicated: 'true', safeSearch: 'moderate', maxResults: '20', q }, key);
     const ids = (s.items || []).map(i => i.id && i.id.videoId).filter(Boolean);
     let items = [];
@@ -80,7 +140,7 @@ module.exports = function createYouTube(file, auth) {
   };
 
   function routes(app) {
-    app.get('/api/youtube/status', (req, res) => res.json({ enabled: !!settings.youtubeKey }));
+    app.get('/api/youtube/status', async (req, res) => res.json({ enabled: !!settings.youtubeKey, searchesLeft: searchesLeft(), unlimited: !!(await hasYtdlp()) }));
 
     app.get('/api/youtube/search', async (req, res) => {
       if (!settings.youtubeKey) return res.status(501).json({ error: 'YouTube isn’t connected yet. The owner can add an API key under People & settings.' });
