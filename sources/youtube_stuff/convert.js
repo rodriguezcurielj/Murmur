@@ -14,17 +14,23 @@ const { spawn } = require('child_process'); // runs yt-dlp as a separate program
 // OUTPUT folder. Default: C:\Users\<you>\Music\yt2audio  — change this line to save somewhere else.
 const OUT_DIR = path.join(os.homedir(), 'Music', 'yt2audio');
 
-function convert(links, format, onLine, done) {
+// opts (optional): { outDir, archive } — save somewhere other than OUT_DIR, and keep the
+//                  list of finished videos in a different file.
+function convert(links, format, onLine, done, opts = {}) {
+  const outDir = opts.outDir || OUT_DIR;
+  const archive = opts.archive || path.join(OUT_DIR, '.done.txt');
+
   // Options passed to yt-dlp
   const args = [
     '-x', '--audio-format', format,                              // keep audio only, in the chosen format
     '--audio-quality', '0',                                      // best quality
     '--embed-metadata',                                          // store title/artist inside the file
-    '--download-archive', path.join(OUT_DIR, '.done.txt'),       // remembers finished videos so re-runs skip them
+    '--embed-thumbnail',                                         // store the video thumbnail as cover art
+    '--download-archive', archive,                                // remembers finished videos so re-runs skip them
     '--ignore-errors',                                           // one bad video doesn't stop the rest
     '--no-overwrites',                                           // never replace a file that already exists
     '--newline',                                                 // print progress one line at a time
-    '-o', path.join(OUT_DIR, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
+    '-o', path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
     '--', ...links                                               // INPUT: the links go last
   ];
 

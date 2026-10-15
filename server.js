@@ -112,7 +112,16 @@ const sources = createSources(DATA, auth, {
 sources.routes(app);
 
 // --- SECURED & LIBRARY-INTEGRATED YOUTUBE CONVERTER ROUTE ---
-app.post('/convert', auth.requireUser, express.json(), async (req, res) => {
+// yt-dlp saves into a temporary folder; each finished file is then added to the library like an upload.
+function listAudio(dir) {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) return listAudio(full);
+        return /\.(mp3|m4a)$/i.test(e.name) ? [full] : [];
+    });
+}
+
+app.post('/convert', auth.requireUser, auth.requireEdit, express.json(), async (req, res) => {
     const links = (req.body.links || []).filter(l => /^https?:\/\//.test(l));
     const format = req.body.format === 'm4a' ? 'm4a' : 'mp3';
 
@@ -124,13 +133,28 @@ app.post('/convert', auth.requireUser, express.json(), async (req, res) => {
     res.setHeader('Transfer-Encoding', 'chunked');
     res.write(`Starting conversion for ${links.length} link(s)...\n`);
 
+    const work = path.join(DIRS.tmp, 'yt-' + crypto.randomBytes(6).toString('hex'));
+    fs.mkdirSync(work, { recursive: true });
+
     convert(links, format,
-        async (line) => {
-            res.write(line + '\n');
+        line => res.write(line + '\n'),
+        async code => {
+            let added = 0;
+            for (const file of listAudio(work)) {
+                try {
+                    const track = await addMediaFile(file, path.basename(file), req.user);
+                    added++;
+                    res.write(`Added "${track.title}" to Murmur\n`);
+                } catch (err) {
+                    res.write(`Couldn't add ${path.basename(file)}: ${err.message}\n`);
+                }
+            }
+            await fsp.rm(work, { recursive: true, force: true });
+            res.end(code === 0 ? `Finished. Added ${added} song(s) to your library.\n`
+                : `Finished with errors (code ${code}). Added ${added} song(s) to your library.\n`);
         },
-        async (code) => {
-            res.end(code === 0 ? 'Finished and added to library.\n' : `Finished with errors (code ${code}).\n`);
-        }
+        // The list of finished videos lives in DATA so it survives rebuilds and re-runs skip them.
+        { outDir: work, archive: path.join(DATA, 'youtube-done.txt') }
     );
 });
 

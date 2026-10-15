@@ -3838,7 +3838,7 @@ function syncLinkResult(tid) {
             }
 
             toast('YouTube audio converted successfully!');
-            if (typeof loadFiles === 'function') loadFiles();
+            await connectServer();   // show the new songs in the library
 
         } catch (err) {
             progressBox.textContent += `\nError: ${err.message}`;
