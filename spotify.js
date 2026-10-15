@@ -100,6 +100,43 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
     return { name: e.name || e.title || 'Spotify ' + kind, cover, owner: kind === 'playlist' ? (e.subtitle || '') : (e.subtitle || ''), tracks, total };
   }
 
+  // Profile link (open.spotify.com/user/<id> or spotify:user:<id>) -> user id.
+  function parseProfile(link) {
+    link = str(link, 500).trim();
+    const m = link.match(/^spotify:user:([^\s:/?#]{1,64})$/) || link.match(/^https:\/\/open\.spotify\.com\/(?:intl-[a-z-]+\/)?user\/([^\s/?#]{1,64})/);
+    return m ? { id: decodeURIComponent(m[1]) } : null;
+  }
+  async function profileViaApi({ id }) {
+    const u = await apiGet('users/' + encodeURIComponent(id));
+    const playlists = [];
+    let url = 'users/' + encodeURIComponent(id) + '/playlists?limit=50';
+    while (url && playlists.length < 1000) {
+      const j = await apiGet(url);
+      (j.items || []).filter(Boolean).forEach(p => playlists.push({ id: p.id, name: p.name, cover: ((p.images || [])[0] || {}).url || '',
+        songs: (p.tracks && p.tracks.total) || (p.items && p.items.total) || 0 }));
+      url = j.next;
+    }
+    return { name: u.display_name || id, playlists, total: playlists.length };
+  }
+  async function profileViaPage({ id }) {
+    const r = await fetch('https://open.spotify.com/user/' + encodeURIComponent(id), { headers: UA });
+    if (r.status === 404) throw Object.assign(new Error('Spotify couldn’t find that profile. Check the link.'), { status: 404 });
+    if (!r.ok) throw new Error('Spotify didn’t answer (error ' + r.status + '). Try again in a minute.');
+    const html = await r.text();
+    const m = html.match(/<script[^>]*id="initialState"[^>]*>([\s\S]*?)<\/script>/);
+    let user = null;
+    try {
+      const raw = m[1].trim(), state = JSON.parse(raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8'));
+      user = (state.entities && state.entities.items || {})['spotify:user:' + id] || Object.values(state.entities.items).find(x => x && x.publicPlaylistsV2);
+    } catch { user = null; }
+    if (!user) throw new Error('Spotify didn’t share that profile. Check the link and try again.');
+    const pp = user.publicPlaylistsV2 || {};
+    const playlists = (pp.items || []).map(w => w && w.data).filter(p => p && p.uri).map(p => ({
+      id: String(p.uri).split(':').pop(), name: p.name || 'Playlist',
+      cover: ((((p.images || {}).items || [])[0] || {}).sources || []).map(s => s.url).find(Boolean) || '', songs: 0 }));
+    return { name: user.name || id, playlists, total: Math.max(pp.totalCount || 0, playlists.length) };
+  }
+
   function cleanTrack(t) {
     return {
       key: str(t.key, 400), title: str(t.title), artist: str(t.artist), album: str(t.album),
@@ -125,6 +162,23 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
         res.json({ kind: ref.kind, spotifyId: ref.id, ...out, partial: out.total > out.tracks.length });
       } catch (e) {
         res.status(e.status === 404 ? 404 : 502).json({ error: e.message || 'Couldn’t read that from Spotify.' });
+      }
+    });
+
+    // Someone's public playlists from their Spotify profile link (anyone signed in), so they can bring
+    // them all over at once. With the app's key and secret Spotify lists every one; without it, the
+    // profile page shows the first 10 and the total.
+    app.post('/api/spotify/profile', async (req, res) => {
+      const ref = parseProfile(req.body && req.body.link);
+      if (!ref) return res.status(400).json({ error: 'That isn’t a Spotify profile link. In Spotify, open your profile, tap ⋯ → Share → Copy link to profile.' });
+      try {
+        let out = null;
+        if (cfg.clientId && cfg.clientSecret) { try { out = await profileViaApi(ref); } catch (e) { out = null; } }
+        if (!out) out = await profileViaPage(ref);
+        if (!out.playlists.length) return res.status(404).json({ error: `${out.name || 'That person'} has no public playlists. In Spotify, open each playlist, tap ⋯ → Add to profile, then try again.` });
+        res.json(out);
+      } catch (e) {
+        res.status(e.status === 404 ? 404 : 502).json({ error: e.message || 'Couldn’t read that profile from Spotify.' });
       }
     });
 

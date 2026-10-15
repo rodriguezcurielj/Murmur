@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015000348">
+<meta name="murmur-build" content="20261015001039">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -512,8 +512,9 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .m-body p{margin:0}
 .m-body b{color:var(--fg)}
 .field label{display:block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
-.field input{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:inherit;font-size:15px;padding:10px 12px}
-.field input:focus{border-color:var(--accent);outline:none}
+.field textarea{resize:vertical;min-height:4.5em;line-height:1.4}
+.field input,.field textarea{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:inherit;font-size:15px;padding:10px 12px}
+.field input:focus,.field textarea:focus{border-color:var(--accent);outline:none}
 .m-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 .m-ok{padding:9px 20px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:700}
 .m-ok.danger{background:#ff8e8e;color:#2a0707}
@@ -3620,38 +3621,71 @@ async function importPlaylists(ids, lists) {
   if (done) { toast(`Imported ${plural(done, 'playlist')} from Spotify`); navigate({ name: 'collection', type: 'import', id: firstId }); }
   else render();
 }
-/* Import by link: paste a public playlist or album link. No Spotify sign-in or setup needed. */
-function openLinkImport(msg) {
-  openModal({ title: 'Import from Spotify', confirm: 'Import', html: `<p>Paste the link to a Spotify playlist or album. No Spotify sign-in needed.</p>
-    <ol class="steps small"><li>In Spotify, open the playlist and tap <b>⋯</b> → <b>Share</b> → <b>Copy link</b>.</li>
-      <li>Paste it here. The playlist has to be <b>public</b> (⋯ → <b>Make public</b>, or <b>Add to profile</b>).</li></ol>
-    <div class="field"><label for="spLink">Playlist or album link</label><input id="spLink" name="link" required autocomplete="off" spellcheck="false" inputmode="url" placeholder="https://open.spotify.com/playlist/…"></div>
+/* Import by link: paste public playlist or album links (several at once is fine), or a Spotify profile
+   link to bring over all of that person's public playlists. No Spotify sign-in or setup needed. */
+function openLinkImport(msg, value = '') {
+  openModal({ title: 'Import from Spotify', confirm: 'Import', html: `<p>Paste a Spotify link. No Spotify sign-in needed.</p>
+    <ul class="steps small">
+      <li><b>All your playlists:</b> paste your <b>profile</b> link. In Spotify, tap your picture → <b>View profile</b> → <b>⋯</b> → <b>Copy link to profile</b>. Only playlists on your profile show up (on a playlist: ⋯ → <b>Add to profile</b>).</li>
+      <li><b>Just some:</b> paste playlist or album links (⋯ → <b>Share</b> → <b>Copy link</b>), one per line. They have to be public.</li></ul>
+    <div class="field"><label for="spLink">Spotify links</label><textarea id="spLink" name="link" rows="3" required autocomplete="off" spellcheck="false" placeholder="https://open.spotify.com/user/…&#10;https://open.spotify.com/playlist/…">${esc(value)}</textarea></div>
     ${msg ? `<p class="gate-err" role="alert">${esc(msg)}</p>` : ''}
     <p class="small">Your Spotify <b>Liked Songs</b> are private, so they can’t be imported by link. On a computer, select them all (Ctrl+A), right-click → <b>Add to playlist</b> → <b>New playlist</b>, then import that playlist.${sp.fullLinks ? '' : ' Big playlists come in with their first 100 songs.'}</p>
     ${sp.clientId ? `<p class="small">Or <button type="button" class="link-btn" data-act="sp-login-import">sign in to Spotify</button> and pick from your playlists.</p>` : ''}`,
-    onSubmit: fd => { importFromLink(String(fd.get('link') || '')); } });
+    onSubmit: fd => { importLinks(String(fd.get('link') || '')); } });
   setTimeout(() => { const i = $('#spLink'); if (i) i.focus(); }, 0);
 }
-async function importFromLink(link) {
-  link = link.trim(); if (!link) return;
-  server.current = { name: 'Reading the playlist from Spotify…', pct: 10 }; renderUploadStatus();
-  try {
-    const r = await api('POST', 'api/spotify/link', { link });
-    server.current = { name: `${r.name}: ${plural(r.tracks.length, 'song')}`, pct: 60 }; renderUploadStatus();
-    const tracks = r.tracks.map(x => ({ ...x, key: matchKey({ isrc: x.isrc, artist: String(x.artist || '').split(',')[0], title: x.title }) }));
-    const id = 'spl-' + r.kind + '-' + r.spotifyId;
-    const res = await api('PUT', 'api/imports/' + encodeURIComponent(id), { spotifyId: r.kind + ':' + r.spotifyId, name: r.name, cover: r.cover || '', owner: r.owner || '', tracks });
-    sp.imports = [res.import, ...sp.imports.filter(i => i.id !== id)];
-    server.current = null; renderUploadStatus();
-    hydrateImports();
-    toast(r.partial ? `Imported the first ${r.tracks.length} of ${r.total} songs from “${r.name}”` : `Imported “${r.name}” (${plural(r.tracks.length, 'song')})`);
-    navigate({ name: 'collection', type: 'import', id });
-  } catch (e) {
-    server.current = null; renderUploadStatus();
-    openLinkImport(e.message);
-    const i = $('#spLink'); if (i) i.value = link;
+const SP_PROFILE = /^(https:\/\/open\.spotify\.com\/(intl-[a-z-]+\/)?user\/|spotify:user:)/;
+async function importLinks(text) {
+  const links = [...new Set(String(text).split(/[\s,]+/).filter(l => /^(https?:\/\/|spotify:)/.test(l)))];
+  if (!links.length) { openLinkImport('Paste a link that starts with https://open.spotify.com/', text); return; }
+  const profiles = links.filter(l => SP_PROFILE.test(l)), lists = links.filter(l => !SP_PROFILE.test(l));
+  if (!profiles.length) return importMany(lists);
+  // A profile: show its public playlists, all ticked, then bring over the ticked ones (plus any other links).
+  const found = [];
+  for (const [i, link] of profiles.entries()) {
+    server.current = { name: `Reading the Spotify profile${profiles.length > 1 ? ` (${i + 1} of ${profiles.length})` : ''}…`, pct: 20 }; renderUploadStatus();
+    try { found.push(await api('POST', 'api/spotify/profile', { link })); }
+    catch (e) { server.current = null; renderUploadStatus(); openLinkImport(e.message, text); return; }
   }
+  server.current = null; renderUploadStatus();
+  const have = new Set(sp.imports.map(i => i.spotifyId));
+  const missing = found.reduce((n, f) => n + Math.max(0, f.total - f.playlists.length), 0);
+  const row = p => `<label class="ver"><input type="checkbox" name="pl" value="${esc(p.id)}" checked>
+    ${p.cover ? `<img src="${esc(p.cover)}" alt="">` : `<span class="ver-ph">${icon('list')}</span>`}<span><b>${esc(p.name)}</b><span class="small">${p.songs ? plural(p.songs, 'song') : 'Playlist'}${have.has('playlist:' + p.id) ? ' · already imported (importing again updates it)' : ''}</span></span></label>`;
+  openModal({ title: found.length === 1 ? `${esc(found[0].name)}’s playlists` : 'Their playlists', confirm: 'Import', html: `<p>Untick any you don’t want.</p>
+    ${lists.length ? `<p class="small">Your other ${plural(lists.length, 'link')} will come in too.</p>` : ''}
+    <div class="ver-list">${found.map(f => (found.length > 1 ? `<p class="small" style="margin:6px 4px 0"><b>${esc(f.name)}</b></p>` : '') + f.playlists.map(row).join('')).join('')}</div>
+    ${missing ? `<p class="small">Spotify only shows the first ${found.reduce((n, f) => n + f.playlists.length, 0)} of ${found.reduce((n, f) => n + f.total, 0)} playlists without an app key. Paste the links of any others, ${me && me.role === 'owner' ? 'or add your Spotify app’s Client Secret in People &amp; settings to get them all' : 'or ask the person who runs this Murmur to add a Spotify Client Secret'}.</p>` : ''}`,
+    onSubmit: fd => importMany([...fd.getAll('pl').map(id => `https://open.spotify.com/playlist/${id}`), ...lists]) });
 }
+/* Imports each link in turn, then says how it went. */
+async function importMany(links) {
+  if (!links.length) return;
+  let firstId = null, ok = 0;
+  const fails = [];
+  for (const [i, link] of links.entries()) {
+    server.current = { name: links.length > 1 ? `Importing ${i + 1} of ${links.length} from Spotify…` : 'Reading the playlist from Spotify…', pct: Math.round(i / links.length * 100) || 5 };
+    renderUploadStatus();
+    try { const r = await importOneLink(link); firstId = firstId || r.id; ok++; if (r.partial) fails.push(`“${r.name}”: only the first ${r.count} of ${r.total} songs`); }
+    catch (e) { fails.push(e.message); }
+  }
+  server.current = null; renderUploadStatus();
+  hydrateImports();
+  if (!ok) { openLinkImport(fails[0] || 'Couldn’t import that.', links.join('\n')); return; }
+  toast(ok === 1 && links.length === 1 ? `Imported “${sp.imports.find(x => x.id === firstId).name}”` : `Imported ${plural(ok, 'playlist')} from Spotify${fails.length ? ` (${plural(fails.length, 'problem')})` : ''}`);
+  if (fails.length && links.length > 1) openModal({ title: `Imported ${ok} of ${links.length}`, confirm: false, cancel: 'Close', html: `<ul class="small">${fails.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` });
+  navigate(ok === 1 ? { name: 'collection', type: 'import', id: firstId } : { name: 'library' });
+}
+async function importOneLink(link) {
+  const r = await api('POST', 'api/spotify/link', { link });
+  const tracks = r.tracks.map(x => ({ ...x, key: matchKey({ isrc: x.isrc, artist: String(x.artist || '').split(',')[0], title: x.title }) }));
+  const id = 'spl-' + r.kind + '-' + r.spotifyId;
+  const res = await api('PUT', 'api/imports/' + encodeURIComponent(id), { spotifyId: r.kind + ':' + r.spotifyId, name: r.name, cover: r.cover || '', owner: r.owner || '', tracks });
+  sp.imports = [res.import, ...sp.imports.filter(i => i.id !== id)];
+  return { id, name: r.name, partial: r.partial, count: r.tracks.length, total: r.total };
+}
+async function importFromLink(link) { return importMany([String(link).trim()].filter(Boolean)); }
 async function syncImport(id) {
   const imp = sp.imports.find(i => i.id === id); if (!imp) return;
   if (id.startsWith('spl-')) { const [kind, sid] = String(imp.spotifyId).split(':'); return importFromLink(`https://open.spotify.com/${kind}/${sid}`); }
