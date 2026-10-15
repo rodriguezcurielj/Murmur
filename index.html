@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015002928">
+<meta name="murmur-build" content="20261015003729">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -395,6 +395,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate{position:fixed;inset:0;z-index:100;overflow:auto;display:grid;place-items:center;padding:24px 16px;background:radial-gradient(120% 80% at 50% 0%,color-mix(in srgb,var(--accent) 14%,var(--bg)) 0%,var(--bg) 60%)}
 .gate-card{width:min(400px,100%);display:flex;flex-direction:column;gap:6px}
 .gate-brand{padding:0 0 22px}
+.gate-back{align-self:flex-start;margin:0 0 18px}
 .dls-list{display:grid;gap:8px;margin-top:6px}
 .dls-opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);background:color-mix(in srgb,var(--fg) 4%,transparent);color:inherit;font:inherit;cursor:pointer}
 .dls-opt:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 8%,transparent)}
@@ -3320,9 +3321,10 @@ function act(el, e) {
     case 'acct-people': closeModal(); people = null; navigate({ name: 'people' }); break;
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-out': closeModal(); signOut(); break;
-    case 'acct-server': closeModal(); showGate('connect'); break;
+    case 'acct-server': closeModal(); gateBack = 'app'; showGate('connect'); break;
     case 'pick-server': pickServer(d.name); break;
-    case 'gate-servers': showGate('connect'); break;
+    case 'gate-servers': gateBack = gateStep; showGate('connect'); break;
+    case 'gate-back': { const to = gateBack; gateBack = null; if (to === 'app') $('#gate').hidden = true; else if (to) showGate(to); break; }
     case 'gate-notyou': forgetUser(); store.set('auth', null); showGate('login'); setTimeout(() => { const n = $('#gName'); if (n) { n.value = ''; n.focus(); } }, 0); break;
     case 'gate-dev': { gateDev = d.k; const a = $('.gate-apps'); if (a) a.outerHTML = gateAppsHTML(); break; }
     case 'p-lib': navigate({ name: 'member', id: d.id }); break;
@@ -3529,7 +3531,8 @@ document.addEventListener('pointerup', () => { if (seeking) setTimeout(() => { s
 document.addEventListener('keydown', e => {
   const tag = e.target.tagName;
   if (e.key === 'Escape') {
-    if (!$('#tqDrop').hidden) closeDrop();
+    if (!$('#gate').hidden && gateBack) { const b = $('[data-act="gate-back"]'); if (b) b.click(); }
+    else if (!$('#tqDrop').hidden) closeDrop();
     else if (!$('#dropOverlay').hidden) hideDrop();
     else if (!$('#modal').hidden) closeModal();
     else if (!menuEl.hidden) closeMenu();
@@ -4477,10 +4480,15 @@ async function checkAuth() {
   store.set('auth', st.user);
   return 'ok';
 }
+/* Where "Back" on the server list goes: 'app' when opened from the account menu, or the sign-in step it came from. */
+let gateBack = null, gateStep = null;
 function showGate(step, msg = '') {
   const g = $('#gate'), lastName = store.get('lastName', '');
   closeMenu(); if (!$('#modal').hidden) closeModal();
-  const card = (title, sub, form) => `<div class="gate-card"><div class="brand gate-brand">${LOGO}<span>Murmur</span></div>
+  if (step !== 'connect') gateBack = null;
+  gateStep = step;
+  const back = step === 'connect' && gateBack ? `<button type="button" class="text-btn gate-back" data-act="gate-back">${icon('back')}<span>${gateBack === 'app' ? 'Back to Murmur' : 'Back'}</span></button>` : '';
+  const card = (title, sub, form) => `<div class="gate-card">${back}<div class="brand gate-brand">${LOGO}<span>Murmur</span></div>
     <h1>${title}</h1><p class="gate-sub">${sub}</p>${form}</div>`;
   const err = msg ? `<p class="gate-err" role="alert">${esc(msg)}</p>` : '';
   let html;
