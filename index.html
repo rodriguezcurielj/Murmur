@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261014233646">
+<meta name="murmur-build" content="20261014235301">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -2839,6 +2839,7 @@ function renderSelBar() {
       <button class="sb" data-act="sel-queue"${dis}>${icon('queue')}<span>Add to queue</span></button>
       ${col && col.editable ? `<button class="sb" data-act="sel-remove"${dis}>${icon('list')}<span>Remove from playlist</span></button>` : ''}
       ${anyFile && (server.on || allDl) ? `<button class="sb" data-act="sel-dl"${dis}>${icon(allDl ? 'dlFill' : 'download')}<span>${allDl ? 'Remove download' : 'Download'}</span></button>` : ''}
+      ${yt.enabled && canEditMusic() && ids.some(id => !TRACKS[id].src) ? `<button class="sb" data-act="sel-yt"${dis}>${icon('download')}<span>Get from YouTube</span></button>` : ''}
       ${allFiles && ids.every(canChange) ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
       ${anyFile && !ids.filter(id => TRACKS[id].src).every(canChange) ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
       <button class="sb done" data-act="sel-done">Done</button>`;
@@ -3087,6 +3088,7 @@ function act(el, e) {
     case 'sel-playlist': openMenu(el, selIds(), { sub: true, multi: true }); break;
     case 'sel-queue': addToQueue(selIds()); clearSel(); break;
     case 'sel-edit': openEdit(selIds()); break;
+    case 'sel-yt': getManyFromYouTube(selIds()); break;
     case 'sel-dl': {
       const ids = dlTargets(selIds());
       if (ids.every(id => offline.has(id))) confirmRemoveDownloads(ids); else { downloadTracks(ids); clearSel(); }
@@ -3810,10 +3812,40 @@ function syncLinkResult(tid) {
             confirm: false
         });
 
-        const progressBox = document.getElementById('download-progress');
+        await streamConvert([youtubeUrl], document.getElementById('download-progress'));
+    }
 
+    /* Selected songs → one YouTube video each (the one already matched, or the top search result),
+       then the server downloads them all in one go. */
+    async function getManyFromYouTube(ids) {
+        const todo = ids.map(id => TRACKS[id]).filter(t => t && !t.src);
+        if (!todo.length) { toast('Those songs are already in your library.'); return; }
+        openModal({
+            title: `Getting ${plural(todo.length, 'song')} from YouTube`,
+            html: `<p class="small">Each song uses its matched YouTube video, or the top search result. Keep this open until it says Finished.</p>
+  <div id="download-progress" style="background: var(--bg2, #0e0d0c); padding: 10px; max-height: 240px; overflow: auto; font-size: 12px; font-family: monospace; white-space: pre-wrap; border-radius: 6px; border: 1px solid var(--border, #444); color: var(--text, #eee);">Finding the videos...</div>`,
+            confirm: false
+        });
+        const box = document.getElementById('download-progress');
+        const say = line => { box.textContent += '\n' + line; box.scrollTop = box.scrollHeight; };
+        const links = [];
+        for (const t of todo) {
+            let v = t.yt ? t.ytId : t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : null;
+            if (!v) {
+                try { const found = await ytSearch(`${cleanArtist(t.artist)}\n${t.title}`, ''); v = found.length ? TRACKS[found[0]].ytId : null; }
+                catch (e) { say(`Couldn't search for "${t.title}": ${e.message}`); continue; }
+            }
+            if (v) { links.push(`https://www.youtube.com/watch?v=${v}`); say(`Found "${t.title}"`); }
+            else say(`No YouTube video for "${t.title}", skipping`);
+        }
+        if (!links.length) { say('Nothing to download.'); return; }
+        await streamConvert(links, box);
+    }
+
+    /* Sends YouTube links to the signed-in Murmur server and shows its progress as it streams in. */
+    async function streamConvert(links, progressBox) {
         try {
-            progressBox.textContent += `\nPreparing to send link...`;
+            progressBox.textContent += `\nPreparing to send ${links.length > 1 ? links.length + ' links' : 'link'}...`;
 
             // --- SMART AUTO-DETECT LOGIC ---
             let backendUrl;
@@ -3828,7 +3860,7 @@ function syncLinkResult(tid) {
             const res = await fetch(backendUrl, {
                 method: 'POST',
                 headers: authHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ links: [youtubeUrl], format: 'mp3' })
+                body: JSON.stringify({ links, format: 'mp3' })
             });
 
             if (!res.ok) throw new Error('Server responded with status ' + res.status);
