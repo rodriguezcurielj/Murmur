@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261014235301">
+<meta name="murmur-build" content="20261014235638">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -3755,6 +3755,8 @@ function syncLinkResult(tid) {
         if (t.yt) ids = [tid, ...ids.filter(x => x !== tid)];
         const cur = t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : t.ytId;
         ids = ids.filter(id => TRACKS[id]).slice(0, 10);
+        // Best guess first: the original artist's plain studio upload.
+        if (!t.yt) ids.sort((a, b) => ytScore(t, TRACKS[b]) - ytScore(t, TRACKS[a]));
         if (!ids.length) { toast('YouTube found nothing for this song.'); return; }
 
         openModal({
@@ -3830,16 +3832,59 @@ function syncLinkResult(tid) {
         const say = line => { box.textContent += '\n' + line; box.scrollTop = box.scrollHeight; };
         const links = [];
         for (const t of todo) {
-            let v = t.yt ? t.ytId : t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : null;
-            if (!v) {
-                try { const found = await ytSearch(`${cleanArtist(t.artist)}\n${t.title}`, ''); v = found.length ? TRACKS[found[0]].ytId : null; }
-                catch (e) { say(`Couldn't search for "${t.title}": ${e.message}`); continue; }
-            }
-            if (v) { links.push(`https://www.youtube.com/watch?v=${v}`); say(`Found "${t.title}"`); }
-            else say(`No YouTube video for "${t.title}", skipping`);
+            // A YouTube song someone picked by hand is already the one they want.
+            if (t.yt) { links.push(`https://www.youtube.com/watch?v=${t.ytId}`); say(`Using "${t.title}"`); continue; }
+            let best;
+            try { best = await bestYouTubeFor(t); }
+            catch (e) { say(`Couldn't search for "${t.title}": ${e.message}`); continue; }
+            if (best) { links.push(`https://www.youtube.com/watch?v=${best.ytId}`); say(`"${t.title}" → ${best.title} (${best.artist})`); }
+            else say(`No studio version of "${t.title}" by ${cleanArtist(t.artist)} found, skipping`);
         }
         if (!links.length) { say('Nothing to download.'); return; }
         await streamConvert(links, box);
+    }
+
+    /* Scores a YouTube result (y) as a copy of song t: the original artist's channel (best of all their
+       auto-made "Artist - Topic" one), the right title and length, and no live / music video / remix / cover
+       extras unless the song's own title has them. */
+    const ytNorm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+        .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+    const ytCompact = s => ytNorm(s).replace(/ /g, '');
+    const YT_EXTRAS = ['live', 'concert', 'tour', 'performance', 'session', 'sessions', 'music video', 'official video', 'video oficial',
+        'mv', 'm v', 'cover', 'remix', 'sped up', 'slowed', 'reverb', 'nightcore', '8d', 'karaoke', 'instrumental', 'acoustic',
+        'reaction', 'extended', 'loop', 'hour', 'hours', 'mashup', 'edit', 'version', 'teaser', 'trailer', 'behind the scenes',
+        'dance', 'choreography', 'tutorial', 'piano', 'guitar', 'bass boosted', 'clean', 'unplugged', 'demo', 'shorts'];
+    function ytScore(t, y) {
+        const song = ytNorm(t.title), bare = ytNorm(String(t.title).replace(/\s*[([].*?[)\]]/g, '').replace(/\s+-\s+.*$/, ''));
+        const vid = ytNorm(y.title), artist = ytCompact(cleanArtist(t.artist));
+        const chan = ytNorm(y.artist), topic = / topic$/.test(chan);
+        const chanC = ytCompact(chan.replace(/ topic$/, '')).replace(/(vevo|official|music|tv)$/g, '');
+        let s = 0;
+        if (artist && chanC === artist) s += topic ? 65 : 45;
+        else if (artist && chanC.length > 2 && (chanC.includes(artist) || artist.includes(chanC))) s += 30;
+        else if (artist && ytCompact(vid).includes(artist)) s -= 15;   // a re-upload that only names the artist
+        else s -= 40;   // someone else's upload, probably not the original artist
+        s += ytCompact(vid).includes(ytCompact(bare)) ? 25 : -30;
+        for (const w of YT_EXTRAS) {
+            const re = new RegExp(`(^| )${w}( |$)`);
+            if (re.test(vid) && !re.test(song)) s -= 30;
+        }
+        if (/(^| )(official )?audio( |$)/.test(vid)) s += 15;
+        if (/(^| )lyrics?( video)?( |$)/.test(vid)) s -= 5;
+        if (t.duration && y.duration) {
+            const off = Math.abs(t.duration - y.duration);
+            s += off <= 3 ? 25 : off <= 8 ? 12 : off <= 20 ? 0 : off <= 45 ? -20 : -45;
+        }
+        return s;
+    }
+    const YT_GOOD = 40;   // at or above this, it's very likely the studio song by the right artist
+    async function bestYouTubeFor(t) {
+        const artist = cleanArtist(t.artist);
+        const rank = ids => ids.map(id => TRACKS[id]).filter(Boolean).map(y => ({ y, s: ytScore(t, y) })).sort((a, b) => b.s - a.s);
+        let ranked = rank(await ytSearch(`${artist}\n${t.title}`, ''));
+        // Nothing clearly right: one more search aimed at the plain audio upload.
+        if (!ranked.length || ranked[0].s < YT_GOOD) ranked = rank([...new Set([...ranked.map(r => r.y.id), ...await ytSearch(`${artist} ${t.title} official audio`, '')])]);
+        return ranked.length && ranked[0].s > 0 ? ranked[0].y : null;
     }
 
     /* Sends YouTube links to the signed-in Murmur server and shows its progress as it streams in. */
