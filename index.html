@@ -1460,47 +1460,118 @@ function purge(ids) {
   }
 }
 /* ---------- your library on the server: liked songs, playlists, history. Separate for every account. ---------- */
-const userSync = { ready: false, dirty: new Set(), timer: null };
+const userSync = { ready: false, dirty: new Set(), timer: null, seen: 0, pulling: false, pushing: false, again: false, base: {}, inflight: new Set() };
+/* Changes not yet saved on the server are remembered on the device too, so closing the app (or the phone killing it)
+   before they're sent doesn't lose them; they go up the next time the app opens. */
+const pendingKey = () => 'murmur:pending:' + store.uid;
+function savePending() { try { if (userSync.dirty.size) localStorage.setItem(pendingKey(), JSON.stringify([...userSync.dirty])); else localStorage.removeItem(pendingKey()); } catch (e) {} }
+function loadPending() { try { return JSON.parse(localStorage.getItem(pendingKey()) || '[]').filter(k => SYNC_KEYS.includes(k)); } catch (e) { return []; } }
 store.onChange = k => {
   if (!userSync.ready) return;
-  userSync.dirty.add(k);
-  clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 1500);
+  userSync.dirty.add(k); savePending();
+  clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 800);
 };
 const SYNC_EMPTY = k => k === 'plays' || k === 'genres' ? {} : [];
+/* Another device may have saved since this one last looked. Instead of replacing its changes, combine them:
+   start from what both saw last time (base), keep what each side added or removed. */
+function merge3(k, base, local, srv) {
+  if (base == null || srv == null) return local == null ? srv : mergeKey(k, srv, local);
+  if (sameJSON(srv, base)) return local;          // nothing new on the server
+  if (sameJSON(local, base)) return srv;          // nothing new here
+  const setMerge = (b, l, s, id = x => x) => {
+    const bi = new Set(b.map(id)), li = new Set(l.map(id)), si = new Set(s.map(id));
+    // Keep this device's items unless the other side removed them; add what the other side added.
+    return [...s.filter(x => !li.has(id(x)) && !bi.has(id(x))), ...l.filter(x => si.has(id(x)) || !bi.has(id(x)))];
+  };
+  if (k === 'liked' || k === 'hidden' || k === 'hiddenCols') return setMerge(base, local, srv);
+  if (k === 'spTracks') return setMerge(base, local, srv, x => x && x.key);
+  if (k === 'ytTracks') return setMerge(base, local, srv, x => x && x.id);
+  if (k === 'playlists') {
+    const bm = byId(base, x => x.id), sm = byId(srv, x => x.id);
+    return setMerge(base, local, srv, x => x && x.id).map(p => {
+      const b = bm.get(p.id), s = sm.get(p.id);
+      if (!b || !s || sameJSON(s, b) || sameJSON(p, s)) return p;   // only changed on one side
+      if (sameJSON(p, b)) return s;
+      // Changed on both: this device's name/details, both sides' song changes.
+      return { ...s, ...p, tracks: setMerge(b.tracks || [], p.tracks || [], s.tracks || []) };
+    });
+  }
+  if (k === 'plays' || k === 'genres') {
+    const out = { ...srv };
+    Object.keys(local).forEach(x => { if (!sameJSON(local[x], base[x])) out[x] = local[x]; });
+    Object.keys(base).forEach(x => { if (!(x in local)) delete out[x]; });
+    return out;
+  }
+  return local;   // recent lists: this device's is the newest
+}
 async function pushUserData(leaving) {
   if (!userSync.dirty.size || !server.on) return;
-  const keys = [...userSync.dirty]; userSync.dirty.clear();
+  if (userSync.pushing) { userSync.again = true; return; }
+  userSync.pushing = true;
+  try { await pushNow(leaving); } finally { userSync.pushing = false; }
+  if (userSync.again) { userSync.again = false; if (userSync.dirty.size) setTimeout(() => pushUserData(), 300); }
+}
+async function pushNow(leaving) {
+  // Saved elsewhere since this device last looked: merge before saving (skipped while the app is closing).
+  if (!leaving) {
+    try {
+      const v = await api('GET', 'api/me/data/version');
+      if (v && v.updatedAt > userSync.seen) {
+        const data = (await api('GET', 'api/me/data')).data || {};
+        if (absorbServer(data)) { applyLibrary(); refreshAfterSync(); }
+      }
+    } catch (e) {}
+  }
+  const keys = [...userSync.dirty]; userSync.dirty.clear(); userSync.inflight = new Set(keys);
   const data = {}; keys.forEach(k => { data[k] = store.get(k, SYNC_EMPTY(k)); });
   const body = JSON.stringify({ data });
   try {
     const r = await fetch(apiUrl('api/me/data'), { method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body, keepalive: !!leaving && body.length < 60000 });
     if (!r.ok) throw new Error('save failed');
+    const j = await r.json().catch(() => null);
+    if (j && j.updatedAt) userSync.seen = Math.max(userSync.seen, j.updatedAt);
+    keys.forEach(k => { userSync.base[k] = data[k]; });
+    savePending();
   } catch (e) {
-    keys.forEach(k => userSync.dirty.add(k));
-    if (!leaving) { clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 20000); }
-  }
+    keys.forEach(k => userSync.dirty.add(k)); savePending();
+    if (!leaving) { clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 10000); }
+  } finally { userSync.inflight = new Set(); }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') pushUserData(true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') pushUserData(true); else pullUserData(); });
 // Back online: send library changes that couldn't be saved, and catch up on downloads.
-window.addEventListener('online', () => { pushUserData(); if (typeof pollYtJobs === 'function') pollYtJobs(); });
+window.addEventListener('online', () => { pushUserData(); pullUserData(); if (typeof pollYtJobs === 'function') pollYtJobs(); });
+window.addEventListener('focus', () => pullUserData());
 window.addEventListener('pagehide', () => pushUserData(true));
+// Changes made on another device show up here within a few seconds while the app is open.
+setInterval(() => { if (document.visibilityState === 'visible') pullUserData(); }, 4000);
 function legacyGet(k) { try { const v = localStorage.getItem('murmur:' + k); return v == null ? null : JSON.parse(v); } catch (e) { return null; } }
-async function loadUserData() {
-  userSync.ready = false;
-  store.uid = (remote.base || location.origin) + '|' + me.id;
-  let data = null, fromServer = false;
-  if (server.on) { try { data = (await api('GET', 'api/me/data')).data; fromServer = true; } catch (e) {} }
-  if (fromServer) {
-    if (!data) {
-      // First time on this account. The owner keeps the library this device had before accounts were separate.
-      data = {};
-      if (me.role === 'owner') SYNC_KEYS.forEach(k => { const v = legacyGet(k); if (v != null) data[k] = v; });
-      if (data.playlists) data.playlists = data.playlists.filter(p => p && p.id !== 'u-sunday');
-      try { await api('PUT', 'api/me/data', { data }); } catch (e) {}
-    }
-    SYNC_KEYS.forEach(k => store.set(k, data[k] != null ? data[k] : SYNC_EMPTY(k)));   // cache for offline use
+/* Combine this device's copy with the server's: nothing liked or added here is dropped. */
+const byId = (arr, id) => { const m = new Map(); (arr || []).forEach(x => { if (x && id(x) != null) m.set(id(x), x); }); return m; };
+function mergeKey(k, server, local) {
+  if (local == null) return server;
+  if (server == null) return local;
+  if (k === 'liked' || k === 'hidden' || k === 'hiddenCols') return [...new Set([...local, ...server])];
+  if (k === 'spTracks' || k === 'ytTracks') {
+    const id = k === 'spTracks' ? x => x.key : x => x.id, m = byId(server, id);
+    local.forEach(x => { if (x && id(x) != null && !m.has(id(x))) m.set(id(x), x); });
+    return [...m.values()];
   }
-  // Put this account's library in place of whatever the device showed before signing in.
+  if (k === 'playlists') {
+    const m = byId(server, x => x.id);
+    local.forEach(p => {
+      if (!p || !p.id) return;
+      const sp = m.get(p.id);
+      if (!sp) m.set(p.id, p);
+      else m.set(p.id, { ...sp, tracks: [...new Set([...(sp.tracks || []), ...(p.tracks || [])])] });
+    });
+    return [...m.values()];
+  }
+  if (k === 'plays' || k === 'genres') return { ...local, ...server };
+  return server;   // recent / ytRecent: the server's (most recent) copy
+}
+const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/* Put the saved library in place (after loading it, or when another device changed it). */
+function applyLibrary() {
   store.get('ytTracks', []).forEach(v => { if (v && v.id) addYtTrack(v, v.genre); });
   YTALBUM.trackIds = store.get('ytTracks', []).map(v => 'yt-' + v.id);
   store.get('spTracks', []).forEach(x => { if (x && x.key) addSpTrack(x, 'discover'); });
@@ -1508,7 +1579,84 @@ async function loadUserData() {
   state.playlists = store.get('playlists', []).filter(p => p && p.id && Array.isArray(p.tracks));
   state.hidden = new Set(store.get('hidden', [])); state.hiddenCols = new Set(store.get('hiddenCols', []));
   state.recent = store.get('recent', []);
+}
+async function loadUserData() {
+  userSync.ready = false;
+  store.uid = (remote.base || location.origin) + '|' + me.id;
+  let data = null, fromServer = false;
+  if (server.on) { try { data = (await api('GET', 'api/me/data')).data; fromServer = true; } catch (e) {} }
+  const pending = loadPending();
+  if (fromServer) {
+    if (!data) {
+      // First time on this account. The owner keeps the library this device had before accounts were separate.
+      data = {};
+      if (me.role === 'owner') SYNC_KEYS.forEach(k => { const v = legacyGet(k); if (v != null) data[k] = v; });
+      if (data.playlists) data.playlists = data.playlists.filter(p => p && p.id !== 'u-sunday');
+    }
+    userSync.seen = data.updatedAt || 0;
+    /* Keep what this device changed but couldn't send. Once per device and account, also merge in likes, songs and
+       playlists this device has that the server lacks (saving from the Android app and GitHub Pages used to fail). */
+    const MERGE = ['liked', 'spTracks', 'ytTracks', 'playlists', 'plays', 'genres'];
+    const mergedKey = 'murmur:merged1:' + store.uid;
+    let firstMerge = false; try { firstMerge = !localStorage.getItem(mergedKey); } catch (e) {}
+    const up = new Set();
+    SYNC_KEYS.forEach(k => {
+      let local = null; try { if (localStorage.getItem(store.key(k)) != null) local = store.get(k, null); } catch (e) {}
+      let v = data[k] != null ? data[k] : null;
+      userSync.base[k] = v;
+      if (local != null && (pending.includes(k) || (firstMerge && MERGE.includes(k)))) {
+        const merged = MERGE.includes(k) ? mergeKey(k, v, local) : local;
+        if (!sameJSON(merged, v)) { v = merged; up.add(k); }
+      }
+      store.set(k, v != null ? v : SYNC_EMPTY(k));   // cache for offline use
+    });
+    try { localStorage.setItem(mergedKey, '1'); } catch (e) {}
+    applyLibrary();
+    userSync.ready = true;
+    userSync.dirty = up; savePending();
+    if (up.size) pushUserData();
+    return;
+  }
+  // Server unreachable: use this device's copy, and send anything unsaved once it's back.
+  applyLibrary();
   userSync.ready = true;
+  pending.forEach(k => userSync.dirty.add(k));
+}
+/* Pick up changes another device saved. Keys with unsent changes here are left alone until they're sent. */
+async function pullUserData() {
+  if (!userSync.ready || !server.on || !me || userSync.pulling || state.sel) return;
+  userSync.pulling = true;
+  try {
+    // A tiny check first, so an unchanged library isn't downloaded every few seconds.
+    let v = null; try { v = await api('GET', 'api/me/data/version'); } catch (e) {}
+    if (v && typeof v.updatedAt === 'number' && v.updatedAt <= userSync.seen) return;
+    const data = (await api('GET', 'api/me/data')).data;
+    if (!data || !data.updatedAt || data.updatedAt <= userSync.seen) return;
+    if (!absorbServer(data)) return;
+    applyLibrary(); refreshAfterSync();
+  } catch (e) {} finally { userSync.pulling = false; }
+}
+/* Take in the server's copy: keys with unsent changes here are merged with it, the rest replaced. Returns true if anything changed. */
+function absorbServer(data) {
+  let changed = false;
+  userSync.ready = false;
+  try {
+    SYNC_KEYS.forEach(k => {
+      if (data[k] == null) return;
+      const local = store.get(k, null);
+      const next = userSync.dirty.has(k) || userSync.inflight.has(k) ? merge3(k, userSync.base[k], local, data[k]) : data[k];
+      userSync.base[k] = data[k];
+      if (!sameJSON(next, local)) { store.set(k, next); changed = true; if (userSync.inflight.has(k)) { userSync.dirty.add(k); userSync.again = true; } }
+    });
+  } finally { userSync.ready = true; }
+  userSync.seen = Math.max(userSync.seen, data.updatedAt || 0);
+  return changed;
+}
+// Don't redraw under someone typing, selecting or using a popup; the page catches up on the next redraw.
+function refreshAfterSync() {
+  if (state.sel || !$('#modal').hidden || (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName))) renderSidebar();
+  else { const y = $('#main').scrollTop; render(); $('#main').scrollTop = y; }
+  if (typeof updateLikes === 'function') updateLikes();
 }
 /* ---------- resume: this device remembers the last song and where you were in it ---------- */
 function saveResume() {

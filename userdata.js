@@ -29,6 +29,8 @@ module.exports = function createUserData(dir, auth, opts = {}) {
   function routes(app) {
     // Your own library. "data" is null until this account saves anything for the first time.
     app.get('/api/me/data', (req, res) => res.json({ data: all[req.user.id] || null }));
+    // When the library last changed, so devices can check often without downloading all of it.
+    app.get('/api/me/data/version', (req, res) => res.json({ updatedAt: (all[req.user.id] && all[req.user.id].updatedAt) || 0 }));
 
     // Save parts of your library: { data: { liked: [...], playlists: [...] } }. Keys left out are kept.
     app.put('/api/me/data', async (req, res) => {
@@ -58,7 +60,14 @@ module.exports = function createUserData(dir, auth, opts = {}) {
   // For server-to-server sync: one record per person per part of their library ("<id>/liked", "<id>/playlists", ...).
   const syncCollection = {
     get: () => { const o = {}; for (const [uid, doc] of Object.entries(all)) for (const [k, v] of Object.entries(doc)) o[uid + '/' + k] = v; return o; },
-    set: o => { const next = {}; for (const [id, v] of Object.entries(o)) { const i = id.indexOf('/'); (next[id.slice(0, i)] = next[id.slice(0, i)] || {})[id.slice(i + 1)] = v; } all = next; save(); }
+    set: o => {
+      const next = {}; for (const [id, v] of Object.entries(o)) { const i = id.indexOf('/'); (next[id.slice(0, i)] = next[id.slice(0, i)] || {})[id.slice(i + 1)] = v; }
+      // A library that changed through sync gets a new time, so devices on this server notice and fetch it.
+      // (A change to the time alone doesn't count, or two servers would keep bumping each other.)
+      const body = d => JSON.stringify(Object.entries(d || {}).filter(([k]) => k !== 'updatedAt').sort(([a], [b]) => a < b ? -1 : 1));
+      for (const [uid, doc] of Object.entries(next)) if (body(doc) !== body(all[uid])) doc.updatedAt = Math.max(Date.now(), (doc.updatedAt || 0) + 1);
+      all = next; save();
+    }
   };
 
   return { routes, removeUser, syncCollection };
