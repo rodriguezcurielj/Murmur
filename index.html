@@ -2407,26 +2407,35 @@ function prepAhead() {
   prepTimer = setTimeout(async () => {
     if (!server.on) return;
     const ids = [...state.manual.slice(0, 2), ...[1, 2].map(k => state.list[state.order[state.pos + k]])].filter(Boolean).slice(0, 2);
-    for (const id of ids) {
-      let t = TRACKS[id]; if (!t) continue;
-      try {
-        if (t.sp) {
-          const m = sp.matches[t.key] || {};
-          if (m.file || m.none) continue;
-          if (m.yt) t = TRACKS[addYtTrack(m.yt)];
-          else {
-            if (!yt.enabled) continue;
-            const best = pickBest(t, await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, ''));
-            await saveMatch(t.key, best ? { yt: ytMeta(best) } : { none: true });
-            if (!best) continue;
-            t = TRACKS[best];
-          }
-        }
-        if (t && t.yt && !t.src && ytAudioOn()) { const u = ytAudioSrc(t); if (u) fetch(u + 'prep=1', { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); }
-      } catch (e) {}
-    }
+    for (const id of ids) await prepTrack(id);
   }, 2000);
 }
+const prepped = new Map();   // track id -> when it was last prepared (don't repeat within 30 minutes)
+async function prepTrack(id) {
+  let t = TRACKS[id]; if (!t || !server.on) return;
+  if (Date.now() - (prepped.get(id) || 0) < 30 * 60e3) return;
+  prepped.set(id, Date.now());
+  try {
+    if (t.sp) {
+      const m = sp.matches[t.key] || {};
+      if (m.file || m.none) return;
+      if (m.yt) t = TRACKS[addYtTrack(m.yt)];
+      else {
+        if (!yt.enabled) return;
+        const best = pickBest(t, await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, '', true));
+        await saveMatch(t.key, best ? { yt: ytMeta(best) } : { none: true });
+        if (!best) return;
+        t = TRACKS[best];
+      }
+    }
+    if (t && t.yt && !t.src && ytAudioOn()) { const u = ytAudioSrc(t); if (u) fetch(u + 'prep=1', { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); }
+  } catch (e) { prepped.delete(id); }
+}
+// A finger (or mouse button) going down on a song: start getting it ready before the tap even finishes.
+document.addEventListener('pointerdown', e => {
+  const row = e.target.closest && e.target.closest('.row[data-tid]');
+  if (row && !e.target.closest('button, a, input, label')) prepTrack(row.dataset.tid);
+}, { passive: true });
 const Engine = {
   mode: 'synth',
   get e() { return this.mode === 'file' ? FileEng : this.mode === 'yt' ? YTEng : Synth; },
@@ -2753,12 +2762,13 @@ function tasteSeeds() {
   return { genres, artists, guessed };
 }
 const ytQueryFor = s => s.kind === 'genre' ? `${s.value} music` : `songs like ${s.value}`;
-async function ytSearch(q, genreTag) {
+async function ytSearch(q, genreTag, prep) {
   q = q.trim().toLowerCase();
   // Results are kept for 12 hours on this device to save YouTube's daily quota.
   const cached = store.get('yt:' + q, null);
   if (cached && Date.now() - cached.at < 12 * 3600e3) return cached.items.map(v => addYtTrack(v, genreTag));
-  const res = await api('GET', 'api/youtube/search?q=' + encodeURIComponent(q));
+  // prep: about to play one of these, so the server starts getting the top results' audio right away.
+  const res = await api('GET', 'api/youtube/search?q=' + encodeURIComponent(q) + (prep && ytAudioOn() ? '&prep=2' : ''));
   try { store.set('yt:' + q, { at: Date.now(), items: res.items }); } catch (e) {}
   return res.items.map(v => addYtTrack(v, genreTag));
 }
@@ -4326,10 +4336,10 @@ async function resolveSp(t) {
   if (m.yt) return TRACKS[addYtTrack(m.yt)];
   if (!server.on || !yt.enabled) { toast('This song isn’t in Murmur yet. Connect YouTube in People & settings to play it, or use ⋯ → Bring into Murmur.'); return null; }
   let ids;
-  try { ids = await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, ''); } catch (e) { toast(e.message); return null; }
+  try { ids = await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, '', true); } catch (e) { toast(e.message); return null; }
   const best = pickBest(t, ids);
-  await saveMatch(t.key, best ? { yt: ytMeta(best) } : { none: true });
-  syncSpChips();
+  // Saved in the background: the song starts without waiting for it.
+  saveMatch(t.key, best ? { yt: ytMeta(best) } : { none: true }).then(syncSpChips);
   return best ? TRACKS[best] : null;
 }
 function syncSpChips() {

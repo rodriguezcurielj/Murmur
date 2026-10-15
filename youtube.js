@@ -171,7 +171,13 @@ module.exports = function createYouTube(file, auth) {
       if (!settings.youtubeKey) return res.status(501).json({ error: 'YouTube isn’t connected yet. The owner can add an API key under People & settings.' });
       const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
       if (!q) return res.status(400).json({ error: 'Type something to search for.' });
-      try { res.json({ items: await search(q.toLowerCase(), settings.youtubeKey) }); }
+      try {
+        const items = await search(q.toLowerCase(), settings.youtubeKey);
+        res.json({ items });
+        // ?prep=2: the player is about to play one of the first results; start getting their audio now.
+        const n = Math.min(3, +req.query.prep || 0);
+        if (n && req.app.locals.ytAudio) req.app.locals.ytAudio.prep(items.slice(0, n).map(x => x.id));
+      }
       catch (e) { res.status(e.status || 502).json({ error: e.message }); }
     });
 
