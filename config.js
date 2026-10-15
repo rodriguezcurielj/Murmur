@@ -9,6 +9,8 @@ window.MURMUR_CONFIG = {
   servers: [
     // This laptop (Tailscale Funnel). This address doesn't change.
     { name: 'Laptop', url: 'https://murmur-laptop.tail05789d.ts.net' },
+    // This laptop, native Windows server (start-native.ps1, Tailscale Serve on 8443, tailnet only).
+    { name: 'Laptop (native)', url: 'https://murmur-laptop.tail05789d.ts.net:8443' },
     // The always-on Azure server (Tailscale Funnel). This address doesn't change.
     { name: 'Azure', url: 'https://murmur.tail05789d.ts.net' }
   ]

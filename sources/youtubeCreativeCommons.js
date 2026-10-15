@@ -1,5 +1,5 @@
 // sources/youtubeCreativeCommons.js
-const { convert } = require('../youtube_stuff/convert');
+const { convert } = require('./youtube_stuff/convert');
 const path = require('path');
 
 module.exports = {
