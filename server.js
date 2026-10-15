@@ -98,7 +98,7 @@ app.delete('/api/users/:id', auth.requireOwner, (req, res, next) => {
 auth.routes(app);
 const youtube = createYouTube(path.join(DATA, 'settings.json'), auth);
 youtube.routes(app);
-createDiscover().routes(app);
+createDiscover(DATA).routes(app);
 spotify.routes(app);
 userData.routes(app);
 

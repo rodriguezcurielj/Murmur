@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015001039">
+<meta name="murmur-build" content="20261015002633">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -68,6 +68,16 @@ svg.i{width:20px;height:20px;flex:none}
 .chip{padding:6px 12px;border-radius:999px;background:var(--raise);font-size:13px;font-weight:600}
 .chip:hover{background:var(--hover)}
 .chip.on{background:var(--fg);color:var(--bg)}
+.genre-chips{padding:2px 0 14px}
+.chip-n{margin-left:6px;opacity:.6;font-weight:500}
+.genre-btn{margin-top:8px}
+.genre-pick{display:flex;flex-wrap:wrap;gap:6px}
+.gp{position:relative;cursor:pointer}
+.gp input{position:absolute;opacity:0;pointer-events:none}
+.gp span{display:inline-block;padding:7px 13px;border-radius:999px;background:var(--raise);border:1px solid var(--line);color:var(--fg);font-size:13px;font-weight:600}
+.gp:hover span{background:var(--hover)}
+.gp input:checked+span{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.gp input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .lib-list{overflow:auto;min-height:0;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin}
 .lib-item{display:flex;align-items:center;gap:12px;padding:6px 8px;border-radius:8px;cursor:pointer;min-width:0}
 .lib-item:hover{background:var(--raise)}
@@ -687,7 +697,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 /* Things that belong to a person (not a device): saved per account on the server, cached here per account. */
-const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks'];
+const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres'];
 const store = {
   uid: '',          // the signed-in account (and its server) once known
   onChange: null,   // called when a synced value changes, so it can be sent to the server
@@ -1305,7 +1315,7 @@ store.onChange = k => {
   userSync.dirty.add(k);
   clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 1500);
 };
-const SYNC_EMPTY = k => k === 'plays' ? {} : [];
+const SYNC_EMPTY = k => k === 'plays' || k === 'genres' ? {} : [];
 async function pushUserData(leaving) {
   if (!userSync.dirty.size || !server.on) return;
   const keys = [...userSync.dirty]; userSync.dirty.clear();
@@ -1438,11 +1448,12 @@ const state = {
   volume: store.get('volume', .8), muted: false,
   shuffle: store.get('shuffle', false), repeat: store.get('repeat', 'off'),
   npOpen: store.get('npOpen', true), libFilter: 'all', search: '',
+  gf: {},         // genre filter per song list: 'type:id' -> genre
   ctx: null, list: [], order: [], pos: 0, manual: [], current: null,
   sel: null,      // { type, id, idx: Set<number>, last } while selecting songs in a list
   libSel: null    // Set of 'type:id' while selecting items in Your Library
 };
-const saveLiked = () => { store.set('liked', [...state.liked]); saveYtCache(); saveSpCache(); };
+const saveLiked = () => { store.set('liked', [...state.liked]); saveYtCache(); saveSpCache(); queueGenreGuess(); };
 const savePlaylists = () => { store.set('playlists', state.playlists); saveYtCache(); saveSpCache(); };
 const volGain = () => state.muted ? 0 : Math.pow(state.volume, 2);
 const visible = id => !!TRACKS[id] && !state.hidden.has(id);
@@ -1917,6 +1928,14 @@ function chordName(t) {
   }).join(' – ');
 }
 function getCollection(type, id) {
+  const col = collectionOf(type, id);
+  if (!col) return col;
+  col.allTracks = col.tracks;
+  const g = type !== 'discover' && state.gf[type + ':' + id];
+  if (g) col.tracks = col.tracks.filter(t => (genreFor(t) || NO_GENRE) === g);
+  return col;
+}
+function collectionOf(type, id) {
   if (type === 'album') {
     const a = ALBUM_MAP[id]; if (!a) return null;
     const tracks = a.trackIds.filter(visible);
@@ -1957,7 +1976,8 @@ function getCollection(type, id) {
   if (type === 'discover') {
     const tracks = disc.ids.filter(visible);
     return { type, id: 'mix', kind: 'Made for you', title: 'Discover',
-      desc: disc.seeds.length ? `New songs from artists similar to ${disc.seeds.join(', ')}. They play from YouTube; use ⋯ → Bring into Murmur to keep your own copy.` : 'Popular songs right now. Like and play more music and this fills up with picks for you.',
+      desc: disc.genre ? `New ${disc.genre} songs${disc.seeds.length ? `, picked around ${disc.seeds.slice(0, 3).join(', ')}` : ''}. They play from YouTube; use ⋯ → Bring into Murmur to keep your own copy.`
+        : disc.seeds.length ? `New songs from artists similar to ${disc.seeds.join(', ')}. They play from YouTube; use ⋯ → Bring into Murmur to keep your own copy.` : 'Popular songs right now. Like and play more music and this fills up with picks for you.',
       sub: '<b>Murmur</b> · refreshed daily', tracks, mosaic: mosaicFor(tracks), cover: DISCALBUM.cover, color: '#5d8bf4', discover: true };
   }
   if (type === 'import') {
@@ -2041,7 +2061,123 @@ function notePlay(id) {
   store.set('plays', plays);
   noteYtPlay(id);
 }
-const genreOf = t => (t.genreTag || (GENRES[t.genre] && GENRES[t.genre].label) || '').trim();
+/* ---------- genres: guessed from each song's album on Deezer (by the server, shared by everyone);
+   anyone can relabel a song or a whole album, and that label is theirs alone ---------- */
+const GENRE_LIST = ['Pop', 'Hip-Hop', 'R&B', 'Latin', 'Regional Mexican', 'Reggaeton', 'Rock', 'Alternative', 'Dance', 'Electronic', 'Country',
+  'Soul & Funk', 'Jazz', 'Classical', 'Metal', 'Reggae', 'Folk', 'Blues', 'Christian', 'Soundtrack', 'Kids'];
+const NO_GENRE = '\u0000none';
+const gn = { guess: store.get('genreGuess', {}), asked: new Set(), timer: null, busy: false };
+const songGKey = t => normKey(cleanArtist(t.artist)) + '|' + normKey(t.title);
+// Songs from a real album (an uploaded album tag, or the album a Spotify song is on) can share an album label.
+const albumName = t => t.albumTag || (t.sp && !['Spotify', 'Discover'].includes(t.album) ? t.album : '');
+const albumGKey = t => albumName(t) ? normKey(cleanArtist(t.artist)) + '|' + normKey(albumName(t)) : '';
+const userGenres = () => store.get('genres', {});
+// Your label for the song, then for its album, then the file's own genre tag, then the guess.
+function genreFor(id) {
+  const t = TRACKS[id]; if (!t) return '';
+  const u = userGenres(), ak = albumGKey(t);
+  return String(u['s:' + songGKey(t)] || (ak && u['a:' + ak]) || t.genreTag || gn.guess[songGKey(t)] || (GENRES[t.genre] && GENRES[t.genre].label) || '').trim();
+}
+const genreOf = t => genreFor(t.id);
+function setSongGenres(ids, g) {
+  const u = { ...userGenres() };
+  ids.forEach(id => { const t = TRACKS[id]; if (!t) return; const k = 's:' + songGKey(t); if (g) u[k] = g; else delete u[k]; });
+  store.set('genres', u); render();
+}
+function setAlbumGenre(ak, g, ids) {
+  const u = { ...userGenres() };
+  if (g) u['a:' + ak] = g; else delete u['a:' + ak];
+  ids.forEach(id => { const t = TRACKS[id]; if (t) delete u['s:' + songGKey(t)]; });   // the album label now decides these
+  store.set('genres', u); render();
+}
+// The genres in a list of songs, most common first: [[genre, count], ...]
+function genreCounts(ids) {
+  const c = new Map();
+  ids.forEach(id => { const g = genreFor(id) || NO_GENRE; c.set(g, (c.get(g) || 0) + 1); });
+  return [...c.entries()].sort((a, b) => (a[0] === NO_GENRE) - (b[0] === NO_GENRE) || b[1] - a[1]);
+}
+/* Ask the server for genres of songs in your library that don't have one yet, a batch at a time. */
+function queueGenreGuess() { clearTimeout(gn.timer); gn.timer = setTimeout(guessGenres, 1500); }
+async function guessGenres() {
+  if (!server.on || gn.busy) return;
+  const u = userGenres(), seen = new Set(), todo = [];
+  const pool = [...state.liked, ...state.playlists.flatMap(p => p.tracks), ...sp.imports.flatMap(i => i.trackIds || []), ...UPLOADS.trackIds, ...SHARED.trackIds, ...YTALBUM.trackIds, ...disc.ids];
+  for (const id of pool) {
+    const t = TRACKS[id];
+    if (!t || GENRES[t.genre] || t.genreTag || !t.title || /^(unknown artist|youtube)$/i.test(cleanArtist(t.artist))) continue;
+    const k = songGKey(t);
+    if (seen.has(k) || k in gn.guess || gn.asked.has(k) || u['s:' + k]) continue;
+    seen.add(k); todo.push(t);
+    if (todo.length >= 150) break;
+  }
+  if (!todo.length) return;
+  gn.busy = true; refreshGenreBar();
+  for (let i = 0; i < todo.length; i += 30) {
+    const part = todo.slice(i, i + 30);
+    part.forEach(t => gn.asked.add(songGKey(t)));
+    try {
+      const res = await api('POST', 'api/genres', { items: part.map(t => ({ artist: cleanArtist(t.artist), title: t.title })) });
+      part.forEach(t => { const g = (res.genres || {})[cleanArtist(t.artist) + '|' + t.title]; if (typeof g === 'string') gn.guess[songGKey(t)] = g; });
+      try { store.set('genreGuess', gn.guess); } catch (e) {}
+    } catch (e) { break; }
+    refreshGenreBar();
+  }
+  gn.busy = false; refreshGenreBar();
+  if (todo.length >= 150) queueGenreGuess();
+}
+/* Genre chips above a song list: tap one to show only that genre. */
+function genreBarHTML(col) {
+  const counts = genreCounts(col.allTracks), cur = state.gf[col.type + ':' + col.id] || '';
+  const known = counts.filter(([g]) => g !== NO_GENRE), none = counts.find(([g]) => g === NO_GENRE);
+  if (!known.length && !gn.busy && !cur) return '<div id="genreBar"></div>';
+  const chip = (g, label, n) => `<button class="chip${cur === g ? ' on' : ''}" data-act="gf" data-type="${col.type}" data-id="${esc(col.id)}" data-g="${esc(g)}" aria-pressed="${cur === g}">${esc(label)}${n ? `<span class="chip-n">${n}</span>` : ''}</button>`;
+  return `<div class="chips genre-chips" id="genreBar" data-type="${col.type}" data-id="${esc(col.id)}" role="group" aria-label="Filter by genre">${chip('', 'All genres')}${known.map(([g, n]) => chip(g, g, n)).join('')}${none ? chip(NO_GENRE, gn.busy ? 'Finding genres…' : 'No genre', none[1]) : ''}</div>`;
+}
+// Guesses arrive while you look at a list: update just the chips, so the list and scroll position stay put.
+function refreshGenreBar() {
+  const el = $('#genreBar'); if (!el || !el.dataset.type) { if (el && state.view.name === 'collection' && !gn.busy) render(); return; }
+  const col = getCollection(el.dataset.type, el.dataset.id); if (col) el.outerHTML = genreBarHTML(col);
+}
+const genreSummary = ids => genreCounts(ids).filter(([g]) => g !== NO_GENRE).slice(0, 3).map(([g]) => esc(g)).join(', ');
+function openGenrePicker(ids, o = {}) {
+  ids = ids.filter(id => TRACKS[id]); if (!ids.length) return;
+  const t = TRACKS[ids[0]], u = userGenres();
+  const ak = albumGKey(t), album = albumName(t), albumMode = !!o.album && !!ak;
+  const cur = albumMode ? (u['a:' + ak] || genreCounts(ids)[0][0]) : ids.length === 1 ? genreFor(t.id) : '';
+  const list = [...new Set([...(cur && cur !== NO_GENRE ? [cur] : []), ...GENRE_LIST, ...Object.values(u)])];
+  const custom = !albumMode && ids.length === 1 && u['s:' + songGKey(t)];
+  openModal({ title: albumMode ? `Genre for “${esc(album)}”` : ids.length > 1 ? `Genre for ${plural(ids.length, 'song')}` : `Genre for “${esc(t.title)}”`, confirm: 'Save', html: `
+    <div class="genre-pick" role="radiogroup" aria-label="Genre">${list.map(g => `<label class="gp"><input type="radio" name="g" value="${esc(g)}"${g === cur ? ' checked' : ''}><span>${esc(g)}</span></label>`).join('')}</div>
+    <div class="field"><label for="gOther">Or type your own</label><input id="gOther" name="other" maxlength="30" autocomplete="off" placeholder="For example Corridos or Lo-fi"></div>
+    ${!albumMode && ak && ids.every(id => albumGKey(TRACKS[id]) === ak) ? `<label class="switch"><input type="checkbox" name="album"><span>Use it for the whole album “${esc(album)}”</span></label>` : ''}
+    <p class="small">${custom ? `<button type="button" class="link-btn" data-act="genre-auto" data-tids="${esc(ids.join(','))}">Use the automatic genre</button>${gn.guess[songGKey(t)] ? ` (${esc(gn.guess[songGKey(t)])})` : ''}. ` : ''}Genres you set are just for you.</p>`,
+    onSubmit: fd => {
+      const g = String(fd.get('other') || '').trim().replace(/\s+/g, ' ') || String(fd.get('g') || '');
+      if (!g) return;
+      if (albumMode || fd.get('album')) setAlbumGenre(ak, g, ids); else setSongGenres(ids, g);
+      toast(`Genre set to ${g}`);
+    } });
+}
+/* Discover by genre: your top genres first, any other genre under "More genres". */
+function discoverGenreBarHTML() {
+  const top = genreCounts([...state.liked, ...Object.keys(store.get('plays', {}))].filter(id => TRACKS[id] && !GENRES[TRACKS[id].genre]))
+    .filter(([g]) => g !== NO_GENRE).slice(0, 6).map(([g]) => g);
+  if (disc.genre && !top.includes(disc.genre)) top.push(disc.genre);
+  const cur = disc.genre || '';
+  const chip = (g, label) => `<button class="chip${cur === g ? ' on' : ''}" data-act="disc-genre" data-g="${esc(g)}" aria-pressed="${cur === g}">${esc(label)}</button>`;
+  return `<div class="chips genre-chips" role="group" aria-label="Discover by genre">${chip('', 'For you')}${top.map(g => chip(g, g)).join('')}<button class="chip" data-act="disc-genre-more">More genres…</button></div>`;
+}
+function pickDiscoverGenre() {
+  const list = [...new Set([...GENRE_LIST, ...Object.values(userGenres())])];
+  openModal({ title: 'Discover a genre', confirm: 'Show songs', html: `<p class="small">New songs in a genre, picked around artists you like in it.</p>
+    <div class="genre-pick" role="radiogroup" aria-label="Genre">${list.map(g => `<label class="gp"><input type="radio" name="g" value="${esc(g)}"${g === disc.genre ? ' checked' : ''}><span>${esc(g)}</span></label>`).join('')}</div>`,
+    onSubmit: fd => { const g = String(fd.get('g') || ''); if (g) setDiscoverGenre(g); } });
+}
+function setDiscoverGenre(g) {
+  disc.genre = g || ''; store.set('discGenre', disc.genre);
+  loadDiscover(false);
+  render();
+}
 /* Weigh what you like: liked songs count most, then songs you play. Returns the top genres and artists. */
 function tasteSeeds() {
   const w = new Map(), add = (k, n) => { if (k) w.set(k, (w.get(k) || 0) + n); };
@@ -2332,7 +2468,7 @@ function viewCollection(type, id) {
     : `<h1>${esc(col.title)}</h1>`;
   let body;
   if (type === 'discover' && !n) {
-    body = `<div class="empty"><h2>${disc.loading ? 'Finding new songs…' : 'No suggestions right now'}</h2>${disc.error ? esc(disc.error) : disc.loading ? '' : 'Tap Get new suggestions to find more. Liking and playing songs makes them fit your taste.'}</div>`;
+    body = `<div class="empty"><h2>${disc.loading ? `Finding new ${disc.genre ? esc(disc.genre) + ' ' : ''}songs…` : 'No suggestions right now'}</h2>${disc.error ? esc(disc.error) : disc.loading ? '' : 'Tap Get new suggestions to find more. Liking and playing songs makes them fit your taste.'}</div>`;
   } else if (type === 'downloads' && !n) {
     body = `<div class="empty"><h2>Nothing downloaded yet</h2>Open an album, playlist or Uploads and tap the download button, or pick songs with Select and choose Download. Downloaded songs play here with no connection.</div>`;
   } else if (col.uploadsAll && !server.on && !server.offlineMode) {
@@ -2343,6 +2479,8 @@ function viewCollection(type, id) {
       : col.uploadsAll ? ''
       : `<div class="empty"><h2>Your playlist is empty</h2>Add songs from the list below, or use the ⋯ menu on any song.</div>`;
   } else body = trackList(col.tracks, type, id);
+  if (type === 'discover') body = discoverGenreBarHTML() + body;
+  else if (col.allTracks.length > 1) body = genreBarHTML(col) + body;
   if ((col.uploadsAll || (col.uploaded && col.mine)) && canEditMusic()) {
     body = `<label class="drop" for="fileGlobal" tabindex="0" role="button">${icon('upload')}<span><b>Drop audio or video files here, or click to choose</b>
       <span class="small">MP3, M4A, FLAC, WAV, OGG, MP4, MOV, MKV, WEBM and more. Songs with the same album tag are grouped into albums.</span></span></label>` + body;
@@ -2363,7 +2501,8 @@ function viewCollection(type, id) {
     ${coverHTML(col, 'hero-cover')}
     <div class="hero-meta"><span class="eyebrow">${col.kind}</span>${title}
       ${col.desc ? `<p class="hero-desc">${esc(col.desc)}</p>` : ''}
-      <p class="hero-sub">${col.sub}${n ? ` · ${plural(n, 'song')}, ${fmtLong(total)}` : ''}</p>
+      <p class="hero-sub">${col.sub}${n ? ` · ${plural(n, 'song')}, ${fmtLong(total)}` : ''}${(col.kind === 'Playlist' || col.imported) && type !== 'discover' && genreSummary(col.allTracks) ? ` · ${genreSummary(col.allTracks)}` : ''}</p>
+      ${col.uploaded && !col.uploadsAll && n && albumGKey(TRACKS[col.allTracks[0]]) ? `<button class="text-btn genre-btn" data-act="album-genre" data-id="${esc(id)}">${icon('edit')}<span>Genre: ${esc(genreCounts(col.allTracks)[0][0] === NO_GENRE ? 'add one' : genreCounts(col.allTracks)[0][0])}</span></button>` : ''}
     </div>
   </header>
   <div class="actions">
@@ -2749,6 +2888,7 @@ function renderMenu() {
       + b('like', icon('heart') + (state.liked.has(t.id) ? 'Remove from Liked Songs' : 'Save to Liked Songs'))
       + b('sub', icon('plus') + 'Add to playlist')
       + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
+      + b('genre', icon('list') + `<span class="ell">Genre: ${esc(genreFor(t.id) || 'add one')}</span>`)
       + (t.yt ? b('ytopen', icon('expand') + 'Open on YouTube') : '')
       + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download…') : '')
       + (!t.src && (t.sp || t.yt) && canEditMusic() && srcs.ready && !(t.sp && spStatus(t.id) === 'file') ? b('getcopy', icon('download') + 'Find a downloadable copy') : '')
@@ -2857,6 +2997,7 @@ function renderSelBar() {
       <button class="sb" data-act="sel-queue"${dis}>${icon('queue')}<span>Add to queue</span></button>
       ${col && col.editable ? `<button class="sb" data-act="sel-remove"${dis}>${icon('list')}<span>Remove from playlist</span></button>` : ''}
       ${anyFile && (server.on || allDl) ? `<button class="sb" data-act="sel-dl"${dis}>${icon(allDl ? 'dlFill' : 'download')}<span>${allDl ? 'Remove download' : 'Download'}</span></button>` : ''}
+      <button class="sb" data-act="sel-genre"${dis}>${icon('list')}<span>Set genre</span></button>
       ${yt.enabled && canEditMusic() && ids.some(id => !TRACKS[id].src) ? `<button class="sb" data-act="sel-yt"${dis}>${icon('download')}<span>Get from YouTube</span></button>` : ''}
       ${allFiles && ids.every(canChange) ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
       ${anyFile && !ids.filter(id => TRACKS[id].src).every(canChange) ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
@@ -3065,6 +3206,7 @@ function act(el, e) {
       if (op === 'bring') bringIntoMurmur(tids[0]);
       else if (op === 'getcopy') findCopy(tids[0]);
       else if (op === 'dlpick') pickDownloadSource(tids[0]);
+      else if (op === 'genre') openGenrePicker(tids);
       else if (op === 'spver') chooseVersion(tids[0]);
       else if (op === 'spopen') { const a = document.createElement('a'); a.href = TRACKS[tids[0]].url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
       else if (op === 'ytopen') { const a = document.createElement('a'); a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(TRACKS[tids[0]].ytId); a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
@@ -3107,6 +3249,12 @@ function act(el, e) {
     case 'sel-queue': addToQueue(selIds()); clearSel(); break;
     case 'sel-edit': openEdit(selIds()); break;
     case 'sel-yt': getManyFromYouTube(selIds()); break;
+    case 'sel-genre': openGenrePicker(selIds()); break;
+    case 'gf': { const k = d.type + ':' + d.id; if (d.g && state.gf[k] !== d.g) state.gf[k] = d.g; else delete state.gf[k]; state.sel = null; render(); break; }
+    case 'genre-auto': closeModal(); setSongGenres(String(d.tids || '').split(','), ''); break;
+    case 'album-genre': { const a = ALBUM_MAP[d.id]; if (a) openGenrePicker(a.trackIds.filter(visible), { album: true }); break; }
+    case 'disc-genre': setDiscoverGenre(d.g); break;
+    case 'disc-genre-more': pickDiscoverGenre(); break;
     case 'sel-dl': {
       const ids = dlTargets(selIds());
       if (ids.every(id => offline.has(id))) confirmRemoveDownloads(ids); else { downloadTracks(ids); clearSel(); }
@@ -4157,13 +4305,13 @@ const DISCALBUM = { id: 'discover', title: 'Discover', artist: 'Murmur', year: '
   colors: ['#5d8bf4', '#141a33', '#ffb070'], desc: '', trackIds: [] };
 DISCALBUM.cover = makeCover(DISCALBUM);
 ALBUM_MAP.discover = DISCALBUM;
-const disc = { ids: [], seeds: [], loading: false, error: '' };
+const disc = { ids: [], seeds: [], loading: false, error: '', genre: store.get('discGenre', '') };
 const cleanArtist = a => String(a || '').split(',')[0].replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').replace(/\s+official$/i, '').trim();
 /* The artists you actually listen to: liked songs count most, then plays, Spotify imports and uploads. Demo artists are skipped. */
-function discoverSeeds() {
+function discoverSeeds(genre) {
   const demo = new Set(ARTISTS.map(a => a.toLowerCase())), w = new Map();
   const add = (a, n) => { a = cleanArtist(a); if (!a || demo.has(a.toLowerCase()) || /^(unknown artist|youtube|various artists|spotify)$/i.test(a)) return; w.set(a, (w.get(a) || 0) + n); };
-  const weigh = (id, n) => { const t = TRACKS[id]; if (t && visible(id) && (t.src || t.yt || t.sp)) add(t.artist, n); };
+  const weigh = (id, n) => { const t = TRACKS[id]; if (t && visible(id) && (t.src || t.yt || t.sp) && (!genre || genreFor(id) === genre)) add(t.artist, n); };
   const plays = store.get('plays', {});
   state.liked.forEach(id => weigh(id, 3));
   Object.entries(plays).forEach(([id, n]) => weigh(id, Math.min(n, 5)));
@@ -4187,16 +4335,16 @@ function discoverExclude(includeShown) {
 }
 async function loadDiscover(force, retried) {
   if (!server.on || disc.loading) return;
-  const seeds = discoverSeeds();
-  const cached = store.get('discover', null);
+  const genre = disc.genre || '', seeds = discoverSeeds(genre), cacheKey = genre ? 'discover:' + genre.toLowerCase() : 'discover';
+  const cached = store.get(cacheKey, null);
   let items;
   if (!force && cached && Date.now() - cached.at < 24 * 3600e3 && cached.seeds.join('|') === seeds.join('|')) items = cached.items;
   else {
     disc.loading = true; if (state.view.name === 'home' || state.view.type === 'discover') render();
     try {
-      const res = await api('POST', 'api/discover', { artists: seeds, exclude: discoverExclude(!!force) });
+      const res = await api('POST', 'api/discover', { artists: seeds, genre, exclude: discoverExclude(!!force) });
       items = res.items || [];
-      try { store.set('discover', { at: Date.now(), seeds, items }); } catch (e) {}
+      try { store.set(cacheKey, { at: Date.now(), seeds, items }); } catch (e) {}
       disc.error = '';
     } catch (e) { disc.error = e.message; items = (cached && cached.items) || []; }
     disc.loading = false;
@@ -4204,8 +4352,9 @@ async function loadDiscover(force, retried) {
   const owned = ownedKeys();
   disc.seeds = seeds;
   disc.ids = items.filter(x => !owned.has(normKey(cleanArtist(x.artist)) + '|' + normKey(x.title)))
-    .map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
+    .map(x => { const id = addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'); if (x.genre) gn.guess[songGKey(TRACKS[id])] = x.genre; return id; });
   DISCALBUM.trackIds = disc.ids;
+  queueGenreGuess();
   if (state.view.name === 'home' || (state.view.name === 'collection' && state.view.type === 'discover')) render(); else renderSidebar();
   // Everything in the list was removed already: get a fresh batch.
   if (!retried && !disc.error && !disc.ids.some(visible)) loadDiscover(true, true);
@@ -4238,7 +4387,7 @@ function discoverShelfHTML() {
   if (!server.on) return '';
   const ids = disc.ids.filter(visible);
   if (!ids.length) return disc.loading ? `<div class="shelf-head"><h2>New songs for you</h2><p>Finding songs…</p></div>` : '';
-  const why = disc.seeds.length ? `Similar to ${disc.seeds.slice(0, 3).map(esc).join(', ')}` : 'Popular right now';
+  const why = disc.genre ? `${esc(disc.genre)} picks` : disc.seeds.length ? `Similar to ${disc.seeds.slice(0, 3).map(esc).join(', ')}` : 'Popular right now';
   return `<div class="shelf-head"><h2>New songs for you</h2><div class="head-actions"><p>${why}</p><button class="text-btn" data-act="open" data-type="discover" data-id="mix">See all</button></div></div>
     <div class="shelf">${ids.slice(0, 14).map(discCard).join('')}</div>`;
 }
@@ -4668,6 +4817,7 @@ async function addPerson(form) {
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
     await loadSpotify();
     loadSources();
+    queueGenreGuess();
   }
   const saved = mode === 'demo' ? [] : await loadOffline();
   if (server.on) {
