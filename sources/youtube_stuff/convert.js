@@ -35,7 +35,7 @@ function convert(links, format, onLine, done, opts = {}) {
     ];
 
     // Automatically check for cookies.txt in the application directory or relative path
-    const cookiesPath = path.join(__dirname, 'cookies.txt');
+    const cookiesPath = path.resolve(__dirname, '../../cookies.txt');
     if (fs.existsSync(cookiesPath)) {
         onLine('Using cookies.txt for YouTube authentication.');
         args.push('--cookies', cookiesPath);
