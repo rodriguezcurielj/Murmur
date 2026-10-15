@@ -68,7 +68,7 @@ public class MainActivity extends Activity {
     static void control(String action) {
         MainActivity a = current;
         if (a == null || a.web == null || action == null) return;
-        String safe = action.replaceAll("[^a-z]", "");
+        String safe = action.replaceAll("[^a-z0-9]", "");
         a.runOnUiThread(() -> a.web.evaluateJavascript("window.murmurControl && window.murmurControl('" + safe + "')", null));
     }
 
@@ -371,7 +371,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "2.2"; }
+        public String version() { return "2.3"; }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }
@@ -398,6 +398,12 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setPlaying(boolean playing, String title, String artist) {
             PlaybackService.update(app, playing, title, artist);
+        }
+
+        /** Newer pages send everything at once (title, artist, album, cover, length, position) as JSON. */
+        @JavascriptInterface
+        public void setNowPlaying(String json) {
+            PlaybackService.updateFull(app, json);
         }
     }
 }

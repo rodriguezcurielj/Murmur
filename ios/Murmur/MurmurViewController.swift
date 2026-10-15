@@ -1,5 +1,6 @@
 import UIKit
 import WebKit
+import MediaPlayer
 
 /// Murmur for iPhone: a full-screen web view that opens the Murmur player.
 /// Sign-in, music, YouTube and Spotify all come from the web app; this adds the phone pieces:
@@ -30,11 +31,13 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
             window.webkit.messageHandlers.saveFile.postMessage({ name: name, mime: mime, data: data });
             return true;
           },
-          version: function () { return 'ios-1.4'; }
+          setNowPlaying: function (json) { window.webkit.messageHandlers.nowPlaying.postMessage(json); },
+          version: function () { return 'ios-1.5'; }
         };
         """
         config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.add(self, name: "saveFile")
+        config.userContentController.add(self, name: "nowPlaying")
 
         web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
@@ -53,6 +56,8 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
             web.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             web.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor)
         ])
+
+        setUpRemoteCommands()
 
         // Turn on the built-in ad blocker before the first page loads.
         AdBlock.install(into: config.userContentController) { [weak self] in
@@ -98,8 +103,72 @@ final class MurmurViewController: UIViewController, WKNavigationDelegate, WKUIDe
         webView.reload()
     }
 
-    /// "Save file to device": write the song to a temporary file and offer the share sheet (Save to Files, AirDrop...).
+    // MARK: Lock screen and Control Center
+
+    /// The lock-screen, Control Center and headphone buttons call back into the page.
+    private func setUpRemoteCommands() {
+        let c = MPRemoteCommandCenter.shared()
+        let send: (String) -> Void = { [weak self] action in
+            self?.web?.evaluateJavaScript("window.murmurControl && window.murmurControl('\(action)')", completionHandler: nil)
+        }
+        c.playCommand.addTarget { _ in send("play"); return .success }
+        c.pauseCommand.addTarget { _ in send("pause"); return .success }
+        c.togglePlayPauseCommand.addTarget { _ in send("toggle"); return .success }
+        c.nextTrackCommand.addTarget { _ in send("next"); return .success }
+        c.previousTrackCommand.addTarget { _ in send("prev"); return .success }
+        c.changePlaybackPositionCommand.addTarget { e in
+            guard let e = e as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            send("seek\(Int(max(0, e.positionTime) * 1000))")
+            return .success
+        }
+    }
+
+    private var artURL = ""
+    private var artwork: MPMediaItemArtwork?
+
+    /// The page reports the song, cover and progress (JSON, lengths in milliseconds).
+    private func showNowPlaying(_ json: String) {
+        guard let data = json.data(using: .utf8),
+              let d = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        let playing = d["playing"] as? Bool ?? false
+        let speed = (d["speed"] as? NSNumber)?.doubleValue ?? 1
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: d["title"] as? String ?? "",
+            MPMediaItemPropertyArtist: d["artist"] as? String ?? "",
+            MPMediaItemPropertyAlbumTitle: d["album"] as? String ?? "",
+            MPNowPlayingInfoPropertyPlaybackRate: playing ? speed : 0.0
+        ]
+        if let ms = (d["duration"] as? NSNumber)?.doubleValue, ms > 0 { info[MPMediaItemPropertyPlaybackDuration] = ms / 1000 }
+        if let ms = (d["position"] as? NSNumber)?.doubleValue { info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = ms / 1000 }
+        let art = d["art"] as? String ?? ""
+        if art != artURL { artURL = art; artwork = nil; loadArtwork(art) }
+        if let a = artwork { info[MPMediaItemPropertyArtwork] = a }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        if #available(iOS 13.0, *) { MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused }
+    }
+
+    private func loadArtwork(_ url: String) {
+        let done: (UIImage?) -> Void = { [weak self] img in
+            DispatchQueue.main.async {
+                guard let self = self, let img = img, url == self.artURL else { return }
+                let a = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+                self.artwork = a
+                var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                info[MPMediaItemPropertyArtwork] = a
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            }
+        }
+        if url.hasPrefix("data:"), let comma = url.firstIndex(of: ","), let data = Data(base64Encoded: String(url[url.index(after: comma)...])) {
+            done(UIImage(data: data))
+        } else if url.hasPrefix("https://"), let u = URL(string: url) {
+            URLSession.shared.dataTask(with: u) { data, _, _ in done(data.flatMap { UIImage(data: $0) }) }.resume()
+        }
+    }
+
+    /// Messages from the page: "Save file to device", and what's playing.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "nowPlaying", let json = message.body as? String { showNowPlaying(json); return }
+        // "Save file to device": write the song to a temporary file and offer the share sheet (Save to Files, AirDrop...).
         guard message.name == "saveFile",
               let body = message.body as? [String: Any],
               let name = body["name"] as? String,

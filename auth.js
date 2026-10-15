@@ -29,7 +29,7 @@ module.exports = function createAuth(file, opts = {}) {
     db.sessions = db.sessions.filter(s => s.expiresAt > now && db.users.some(u => u.id === s.userId));
     if (db.sessions.length !== before) save();
   }
-  prune(); setInterval(prune, HOUR).unref();
+  prune(); setInterval(() => { prune(); pruneFails(); }, HOUR).unref();
 
   const id = (n = 8) => crypto.randomBytes(n).toString('hex');
   const sha = s => crypto.createHash('sha256').update(s).digest('hex');
@@ -50,6 +50,8 @@ module.exports = function createAuth(file, opts = {}) {
 
   /* --- brute-force protection: 5 wrong PINs locks that name and that address, doubling up to 15 min --- */
   const fails = new Map();
+  // Forget wrong-PIN records once their lock is long over, so random names can't fill memory.
+  function pruneFails() { const now = Date.now(); for (const [k, f] of fails) if (f.until < now - DAY && (f.n < 5 || f.until)) fails.delete(k); if (fails.size > 50000) fails.clear(); }
   const waitFor = key => { const f = fails.get(key); return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 1000) : 0; };
   function fail(key) {
     const f = fails.get(key) || { n: 0, until: 0 };

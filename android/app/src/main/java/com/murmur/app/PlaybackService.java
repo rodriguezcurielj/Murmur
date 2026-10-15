@@ -15,6 +15,14 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.util.Base64;
+import org.json.JSONObject;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 /**
  * Keeps Murmur playing when you leave the app or lock the phone.
@@ -34,13 +42,29 @@ public class PlaybackService extends Service {
     private MediaSession session;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
-    private String title = "", artist = "";
+    private String title = "", artist = "", album = "", artUrl = "";
+    private long duration = 0, position = 0, positionAt = 0;
+    private float speed = 1f;
     private boolean playing = false;
+    private Bitmap art;
 
     /** Called from the page (any thread) whenever the song or play/pause state changes. */
     static void update(Context ctx, boolean playing, String title, String artist) {
         Intent i = new Intent(ctx, PlaybackService.class).setAction(ACTION_UPDATE)
                 .putExtra("playing", playing).putExtra("title", title).putExtra("artist", artist);
+        try {
+            if (!running && playing && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i);
+            else if (running) ctx.startService(i);
+        } catch (Exception e) {
+            // Android can refuse to start a service while the app is in the background; the next update tries again.
+        }
+    }
+
+    /** Like update(), plus the album, cover picture and progress (lengths in milliseconds). */
+    static void updateFull(Context ctx, String json) {
+        boolean playing = false;
+        try { playing = new JSONObject(json).optBoolean("playing", false); } catch (Exception ignored) {}
+        Intent i = new Intent(ctx, PlaybackService.class).setAction(ACTION_UPDATE).putExtra("json", json).putExtra("playing", playing);
         try {
             if (!running && playing && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i);
             else if (running) ctx.startService(i);
@@ -67,6 +91,7 @@ public class PlaybackService extends Service {
             @Override public void onSkipToNext() { MainActivity.control("next"); }
             @Override public void onSkipToPrevious() { MainActivity.control("prev"); }
             @Override public void onStop() { MainActivity.control("pause"); }
+            @Override public void onSeekTo(long pos) { MainActivity.control("seek" + Math.max(0, pos)); }
         });
         session.setSessionActivity(openAppIntent());
         session.setActive(true);
@@ -89,10 +114,22 @@ public class PlaybackService extends Service {
             MainActivity.control(intent.getStringExtra("do"));
             return START_NOT_STICKY;
         }
-        if (intent != null) {
+        if (intent != null && intent.hasExtra("json")) {
+            try {
+                JSONObject j = new JSONObject(nz(intent.getStringExtra("json")));
+                playing = j.optBoolean("playing", false);
+                title = j.optString("title", ""); artist = j.optString("artist", ""); album = j.optString("album", "");
+                duration = Math.max(0, j.optLong("duration", 0)); position = Math.max(0, j.optLong("position", 0));
+                positionAt = SystemClock.elapsedRealtime();
+                speed = (float) j.optDouble("speed", 1);
+                String a = j.optString("art", "");
+                if (!a.equals(artUrl)) { artUrl = a; art = null; loadArt(a); }
+            } catch (Exception ignored) {}
+        } else if (intent != null) {
             playing = intent.getBooleanExtra("playing", false);
             title = nz(intent.getStringExtra("title"));
             artist = nz(intent.getStringExtra("artist"));
+            album = ""; duration = 0; position = 0;
         }
         Notification n = buildNotification();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
@@ -119,6 +156,8 @@ public class PlaybackService extends Service {
                 .setDeleteIntent(serviceIntent(ACTION_STOP, null, 9))
                 .setOngoing(playing)
                 .setShowWhen(false)
+                .setSubText(album.isEmpty() ? null : album)
+                .setLargeIcon(art)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_previous, "Previous", serviceIntent(ACTION_CONTROL, "prev", 1)).build())
                 .addAction(new Notification.Action.Builder(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
@@ -129,15 +168,50 @@ public class PlaybackService extends Service {
     }
 
     private void updateSession() {
-        session.setMetadata(new MediaMetadata.Builder()
+        MediaMetadata.Builder m = new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-                .build());
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, album);
+        if (duration > 0) m.putLong(MediaMetadata.METADATA_KEY_DURATION, duration);   // shows the progress bar
+        if (art != null) m.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art);
+        session.setMetadata(m.build());
+        long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
+                | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_STOP;
+        if (duration > 0) actions |= PlaybackState.ACTION_SEEK_TO;   // drag the bar to jump in the song
         session.setPlaybackState(new PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
-                        | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_STOP)
-                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, PlaybackState.PLAYBACK_POSITION_UNKNOWN, playing ? 1f : 0f)
+                .setActions(actions)
+                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                        duration > 0 ? position : PlaybackState.PLAYBACK_POSITION_UNKNOWN, playing ? speed : 0f,
+                        positionAt > 0 ? positionAt : SystemClock.elapsedRealtime())
                 .build());
+    }
+
+    /** Fetches the cover (a web address or a data: picture) in the background, then refreshes the notification. */
+    private void loadArt(final String url) {
+        if (url == null || url.isEmpty()) return;
+        new Thread(() -> {
+            Bitmap b = null;
+            try {
+                if (url.startsWith("data:")) {
+                    byte[] bytes = Base64.decode(url.substring(url.indexOf(',') + 1), Base64.DEFAULT);
+                    b = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                } else if (url.startsWith("https://")) {
+                    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                    c.setConnectTimeout(8000); c.setReadTimeout(8000);
+                    try (InputStream in = c.getInputStream()) { b = BitmapFactory.decodeStream(in); }
+                    finally { c.disconnect(); }
+                }
+                if (b != null && b.getWidth() > 512) b = Bitmap.createScaledBitmap(b, 512, Math.max(1, 512 * b.getHeight() / b.getWidth()), true);
+            } catch (Exception ignored) {}
+            final Bitmap got = b;
+            if (got == null) return;
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                if (!url.equals(artUrl) || !running) return;   // the song changed meanwhile
+                art = got;
+                updateSession();
+                getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, buildNotification());
+            });
+        }).start();
     }
 
     private PendingIntent openAppIntent() {

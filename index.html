@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015010916">
+<meta name="murmur-build" content="20261015012859">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -100,6 +100,9 @@ svg.i{width:20px;height:20px;flex:none}
 .chip{padding:6px 12px;border-radius:999px;background:var(--raise);font-size:13px;font-weight:600}
 .chip:hover{background:var(--hover)}
 .chip.on{background:var(--fg);color:var(--bg)}
+body.drag-selecting{user-select:none;-webkit-user-select:none;cursor:grabbing}
+body.drag-selecting .tracks{touch-action:none}
+.tracks .row{-webkit-touch-callout:none}
 .genre-chips{padding:2px 0 14px}
 .chip-n{margin-left:6px;opacity:.6;font-weight:500}
 .genre-btn{margin-top:8px}
@@ -3064,18 +3067,66 @@ function updatePlayIcons() {
   saveResume();
   if (updateWaiting && !Engine.playing) setTimeout(applyUpdateIfIdle, 1500);   // a paused moment is a good time to update
 }
-/* Android app: tell it what's playing so it can keep music going in the background
-   and show the notification with play/pause/next buttons. */
-let lastAppState = '';
+/* What's playing, for the phone's lock screen, notification and Control Center, and the computer's media keys:
+   - every browser (iPhone Safari and Home Screen app, Chrome, Edge) through the Media Session API;
+   - the Android and iPhone apps through their bridge (setNowPlaying), with the cover, album and progress bar. */
+let lastAppState = '', lastMetaKey = '';
+const absUrl = u => { try { return new URL(u, location.href).href; } catch (e) { return ''; } };
+function nowPlayingInfo() {
+  const t = TRACKS[state.current]; if (!t) return null;
+  const cover = tCover(t.id) || '', shareable = /^blob:/.test(cover) ? (t.cover || '') : cover;   // blob: links only work inside this page
+  const dur = Engine.duration, pos = Engine.position();
+  return { playing: !!Engine.playing, title: t.title || '', artist: cleanArtist(t.artist) || '', album: t.yt ? 'YouTube' : (t.albumTag || t.album || ''),
+    cover: absUrl(cover), art: /^data:/.test(shareable) ? shareable : absUrl(shareable),
+    duration: isFinite(dur) && dur > 0 ? Math.round(dur * 1000) : 0, position: isFinite(pos) ? Math.round(pos * 1000) : 0, speed: (pbState().speed || 1) };
+}
 function notifyApp() {
+  const np = nowPlayingInfo();
+  updateMediaSession(np);
   const app = window.MurmurAndroid;
-  if (!app || typeof app.setPlaying !== 'function') return;
-  const t = TRACKS[state.current];
-  const now = [!!Engine.playing, t ? t.title : '', t ? t.artist : ''].join('|');
+  if (!app) return;
+  if (typeof app.setNowPlaying === 'function') {
+    const key = np ? [np.playing, np.title, np.artist, np.album, np.art, np.duration, Math.round(np.position / 2000), np.speed].join('|') : '';
+    if (key === lastAppState) return;
+    lastAppState = key;
+    try { app.setNowPlaying(JSON.stringify(np || { playing: false, title: '', artist: '' })); } catch (e) {}
+    return;
+  }
+  if (typeof app.setPlaying !== 'function') return;   // older Android app
+  const now = [np && np.playing, np ? np.title : '', np ? np.artist : ''].join('|');
   if (now === lastAppState) return;
   lastAppState = now;
-  try { app.setPlaying(!!Engine.playing, t ? t.title : '', t ? t.artist : ''); } catch (e) {}
+  try { app.setPlaying(!!(np && np.playing), np ? np.title : '', np ? np.artist : ''); } catch (e) {}
 }
+function updateMediaSession(np) {
+  const ms = navigator.mediaSession; if (!ms) return;
+  try {
+    if (!np) { ms.metadata = null; ms.playbackState = 'none'; return; }
+    const key = [np.title, np.artist, np.album, np.cover].join('|');
+    if (key !== lastMetaKey && window.MediaMetadata) {
+      lastMetaKey = key;
+      ms.metadata = new MediaMetadata({ title: np.title, artist: np.artist, album: np.album,
+        artwork: np.cover ? ['96x96', '256x256', '512x512'].map(sizes => ({ src: np.cover, sizes })) : [] });
+    }
+    ms.playbackState = np.playing ? 'playing' : 'paused';
+    if (ms.setPositionState && np.duration) ms.setPositionState({ duration: np.duration / 1000, position: Math.min(np.position, np.duration) / 1000, playbackRate: np.speed });
+  } catch (e) {}
+}
+// Lock-screen and media-key buttons.
+(() => {
+  const ms = navigator.mediaSession; if (!ms) return;
+  const on = (a, f) => { try { ms.setActionHandler(a, f); } catch (e) {} };
+  on('play', () => window.murmurControl('play'));
+  on('pause', () => window.murmurControl('pause'));
+  on('stop', () => window.murmurControl('pause'));
+  on('previoustrack', () => window.murmurControl('prev'));
+  on('nexttrack', () => window.murmurControl('next'));
+  on('seekto', d => { if (d && isFinite(d.seekTime)) { Engine.seek(d.seekTime); notifyApp(); } });
+  on('seekbackward', d => { Engine.seek(Math.max(0, Engine.position() - ((d && d.seekOffset) || 10))); notifyApp(); });
+  on('seekforward', d => { Engine.seek(Math.min(Engine.duration, Engine.position() + ((d && d.seekOffset) || 10))); notifyApp(); });
+})();
+// Keep the progress bar on the lock screen in step (after seeking, and now and then while playing).
+setInterval(() => { if (Engine.playing) notifyApp(); }, 5000);
 /* Notification, lock-screen and headphone buttons call this. */
 window.murmurControl = action => {
   if (action === 'toggle') togglePlay();
@@ -3083,6 +3134,7 @@ window.murmurControl = action => {
   else if (action === 'pause') { if (Engine.playing) togglePlay(); }
   else if (action === 'next') next(false);
   else if (action === 'prev') prev();
+  else if (/^seek\d+$/.test(action)) { Engine.seek(Number(action.slice(4)) / 1000); notifyApp(); }   // the app's progress bar, in milliseconds
 };
 function updateToggles() {
   $$('[data-act="shuffle"]').forEach(b => { b.classList.toggle('on', state.shuffle); b.setAttribute('aria-pressed', state.shuffle); });
@@ -3273,6 +3325,77 @@ function toggleSel(i, range) {
   else if (s.idx.has(i)) s.idx.delete(i); else s.idx.add(i);
   s.last = i; syncSel();
 }
+/* Drag to select: press and hold a song (about half a second; with a mouse, just press and drag while selecting),
+   then slide over other songs to pick them all, and let go. Starting on a picked song un-picks instead.
+   Works with a mouse, a finger or a pen; the list scrolls by itself near the top or bottom edge. */
+const drag = { timer: null, on: false, start: null, list: null, base: null, adding: true, x: 0, y: 0, moved: false, pointer: null, scroll: null, swallowClick: false };
+function dragRowAt(x, y) {
+  const el = document.elementFromPoint(x, y), row = el && el.closest('.row[data-i]');
+  return row && drag.list && drag.list.contains(row) ? +row.dataset.i : null;
+}
+function dragTo(i) {
+  if (i == null || !state.sel) return;
+  const [a, b] = [Math.min(drag.start, i), Math.max(drag.start, i)], idx = new Set(drag.base);
+  for (let k = a; k <= b; k++) { if (drag.adding) idx.add(k); else idx.delete(k); }
+  state.sel.idx = idx; state.sel.last = i; syncSel();
+}
+function dragBegin() {
+  const list = drag.list, type = list.dataset.ctxType, id = list.dataset.ctxId;
+  if (!selMatches(type, id)) startSel(type, id, null);
+  drag.on = true; drag.swallowClick = true;
+  drag.base = new Set(state.sel.idx); drag.adding = !drag.base.has(drag.start);
+  document.body.classList.add('drag-selecting');
+  if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) {}
+  dragTo(drag.start);
+  // Near the top or bottom of the page: keep scrolling, and keep selecting under the finger.
+  drag.scroll = setInterval(() => {
+    const main = $('#main'); if (!main || !drag.on) return;
+    const r = main.getBoundingClientRect(), edge = 70;
+    const dy = drag.y < r.top + edge ? -Math.ceil((r.top + edge - drag.y) / 4) : drag.y > r.bottom - edge ? Math.ceil((drag.y - (r.bottom - edge)) / 4) : 0;
+    if (dy) { main.scrollTop += dy; dragTo(dragRowAt(drag.x, drag.y)); }
+  }, 30);
+}
+function dragEnd() {
+  clearTimeout(drag.timer); clearInterval(drag.scroll);
+  if (drag.on) { document.body.classList.remove('drag-selecting'); setTimeout(() => { drag.swallowClick = false; }, 50); }
+  drag.on = false; drag.pointer = null; drag.list = null;
+}
+document.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  const row = e.target.closest('.tracks[data-ctx-type] .row[data-i]');
+  if (!row || e.target.closest('button, a, input, label')) return;
+  drag.list = row.closest('.tracks'); drag.start = +row.dataset.i; drag.pointer = e.pointerId;
+  drag.x = e.clientX; drag.y = e.clientY; drag.moved = false;
+  const selecting = selMatches(drag.list.dataset.ctxType, drag.list.dataset.ctxId);
+  clearTimeout(drag.timer);
+  // A mouse already in select mode starts right away (once it moves); otherwise wait for a press and hold.
+  if (!(selecting && e.pointerType === 'mouse')) drag.timer = setTimeout(() => { if (drag.pointer === e.pointerId && !drag.moved) dragBegin(); }, 450);
+});
+document.addEventListener('pointermove', e => {
+  if (drag.pointer !== e.pointerId) return;
+  const far = Math.abs(e.clientX - drag.x) > 8 || Math.abs(e.clientY - drag.y) > 8;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (!drag.on) {
+    if (!far) return;
+    // Moved before the hold finished: it's a scroll (or a mouse drag that should start selecting).
+    if (e.pointerType === 'mouse' && drag.list && selMatches(drag.list.dataset.ctxType, drag.list.dataset.ctxId)) { clearTimeout(drag.timer); dragBegin(); }
+    else { drag.moved = true; clearTimeout(drag.timer); drag.pointer = null; return; }
+  }
+  dragTo(dragRowAt(e.clientX, e.clientY));
+});
+document.addEventListener('pointerup', dragEnd);
+document.addEventListener('pointercancel', e => { if (drag.on && e.pointerType === 'touch') return; dragEnd(); });
+// While dragging with a finger, the page mustn't scroll, and the hold mustn't open the phone's copy menu.
+document.addEventListener('touchmove', e => {
+  if (!drag.on) return;
+  e.preventDefault();
+  const t = e.touches[0]; if (!t) return;
+  drag.x = t.clientX; drag.y = t.clientY; dragTo(dragRowAt(t.clientX, t.clientY));
+}, { passive: false });
+document.addEventListener('touchend', () => { if (drag.on) dragEnd(); });
+document.addEventListener('contextmenu', e => { if (drag.on || (drag.pointer != null && e.target.closest('.row[data-i]'))) e.preventDefault(); });
+// The click that ends a drag shouldn't also play or toggle a song.
+document.addEventListener('click', e => { if (drag.swallowClick && e.target.closest('.row[data-i]')) { e.stopPropagation(); e.preventDefault(); drag.swallowClick = false; } }, true);
 function clearSel() {
   const wasLib = !!state.libSel;
   state.sel = null; state.libSel = null;
@@ -3816,7 +3939,7 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'fileGlobal') { uploadFiles(t.files); t.value = ''; return; }
   if (t.id === 'fileBring') { bringUpload(t.files[0]); t.value = ''; return; }
-  if (t.matches('[data-seek]')) { Engine.seek(t.value / 1000 * Engine.duration); seeking = false; }
+  if (t.matches('[data-seek]')) { Engine.seek(t.value / 1000 * Engine.duration); seeking = false; notifyApp(); }
   else if (t.id === 'plName') {
     const p = state.playlists.find(x => x.id === t.dataset.pid); if (!p) return;
     const v = t.value.trim();

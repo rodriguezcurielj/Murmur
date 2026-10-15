@@ -75,6 +75,17 @@ app.disable('x-powered-by');
 app.set('trust proxy', 'loopback, uniquelocal');
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://rodriguezcurielj.github.io').split(',').map(s => s.trim()).filter(Boolean);
 const auth = createAuth(path.join(DATA, 'auth.json'), { allowedOrigins: ALLOWED_ORIGINS });
+// Browser protections: no framing (clickjacking), no MIME sniffing, no full addresses leaked to other sites,
+// HTTPS remembered, and no camera/microphone/location for this site.
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+    if (req.secure || req.headers['x-forwarded-proto'] === 'https') res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+    next();
+});
 app.use(auth.cors);
 app.use(auth.sameOrigin);
 
