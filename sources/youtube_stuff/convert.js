@@ -38,9 +38,11 @@ function convert(links, format, onLine, done, opts = {}) {
         '-o', path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
     ];
 
-    // Automatically check for cookies.txt in the application directory or relative path
-    const cookiesPath = path.resolve(__dirname, '../../cookies.txt');
-    if (fs.existsSync(cookiesPath)) {
+    // YouTube sign-in cookies (cookies.txt) are private: they live in the server's data folder (DATA_DIR), never in
+    // git or the Docker image. The project folder is still checked for older setups.
+    const cookiesPath = [process.env.DATA_DIR && path.join(process.env.DATA_DIR, 'cookies.txt'), path.resolve(__dirname, '../../cookies.txt')]
+        .find(p => p && fs.existsSync(p));
+    if (cookiesPath) {
         onLine('Using cookies.txt for YouTube authentication.');
         args.push('--cookies', cookiesPath);
     }

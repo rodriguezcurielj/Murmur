@@ -16,8 +16,7 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY server.js auth.js youtube.js spotify.js discover.js userdata.js sync.js sources.js ./
 COPY sources ./sources
 
-# Copy cookies file from the parent project directory
-COPY cookies.txt ./cookies.txt
+# YouTube cookies are NOT built into the image (it's public). Put cookies.txt in the data folder (/data) instead.
 
 # Copy youtube stuff
 COPY sources/youtube_stuff ./youtube_stuff
