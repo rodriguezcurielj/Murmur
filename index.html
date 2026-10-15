@@ -2396,9 +2396,34 @@ function ytAudioPlaying(t) {
   const src = FileEng.audio.getAttribute('src') || '';
   Object.keys(ytAudio.fails).forEach(b => { if (src.startsWith(b)) ytAudio.fails[b] = 0; });
   t.ytTried = null;
-  // Look up the next song now, so it starts without a wait.
-  const nx = TRACKS[state.list[state.order[state.pos + 1]]];
-  if (nx && nx.yt && !nx.src) { const u = ytAudioSrc(nx); if (u) fetch(u + 'prep=1', { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); }
+}
+/* While a song plays, get the next two ready: find the YouTube video for imported Spotify songs (saved, so it's
+   only looked up once) and have the server look up the ad-free audio. Then they start without the wait. */
+let prepTimer = null;
+function prepAhead() {
+  clearTimeout(prepTimer);
+  prepTimer = setTimeout(async () => {
+    if (!server.on) return;
+    const ids = [...state.manual.slice(0, 2), ...[1, 2].map(k => state.list[state.order[state.pos + k]])].filter(Boolean).slice(0, 2);
+    for (const id of ids) {
+      let t = TRACKS[id]; if (!t) continue;
+      try {
+        if (t.sp) {
+          const m = sp.matches[t.key] || {};
+          if (m.file || m.none) continue;
+          if (m.yt) t = TRACKS[addYtTrack(m.yt)];
+          else {
+            if (!yt.enabled) continue;
+            const best = pickBest(t, await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, ''));
+            await saveMatch(t.key, best ? { yt: ytMeta(best) } : { none: true });
+            if (!best) continue;
+            t = TRACKS[best];
+          }
+        }
+        if (t && t.yt && !t.src && ytAudioOn()) { const u = ytAudioSrc(t); if (u) fetch(u + 'prep=1', { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); }
+      } catch (e) {}
+    }
+  }, 2000);
 }
 const Engine = {
   mode: 'synth',
@@ -2571,6 +2596,7 @@ function loadAndPlay(tid, autoplay = true) {
       if (state.resumeAt) { Engine.seek(state.resumeAt); state.resumeAt = 0; }   // resuming where you left off
       if (autoplay) { Engine.play(); notePlay(tid); }
       updatePlayIcons(); highlight(); renderNP();
+      prepAhead();
     });
     return;
   }
@@ -2578,6 +2604,7 @@ function loadAndPlay(tid, autoplay = true) {
   if (autoplay) { Engine.play(); notePlay(tid); }
   updatePlayerUI();
   saveResume();
+  prepAhead();
 }
 
 /* ================= taste & YouTube suggestions ================= */

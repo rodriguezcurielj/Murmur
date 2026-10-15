@@ -100,17 +100,42 @@ module.exports = function createYouTube(file, auth) {
     } finally { running--; const n = waiting.shift(); if (n) n(); }
   }
 
+  /* YouTube's own web search (what youtube.com uses): no daily limit and about half a second, much faster than
+     starting yt-dlp. Its answer format can change, so yt-dlp stays as the next fallback. */
+  async function webSearch(q) {
+    const r = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept-Language': 'en-US' },
+      body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20250925.01.00', hl: 'en', gl: 'US' } }, query: q, params: 'EgIQAQ%3D%3D' }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) throw new Error('YouTube web search answered ' + r.status);
+    const found = [];
+    const walk = o => { if (!o || typeof o !== 'object') return; if (o.videoRenderer) { found.push(o.videoRenderer); return; } for (const k in o) walk(o[k]); };
+    walk((await r.json()).contents);
+    const secs = t => String(t || '').split(':').reduce((a, b) => a * 60 + (+b || 0), 0);
+    const items = found.filter(v => v.videoId).map(v => ({
+      id: v.videoId,
+      title: ((v.title && v.title.runs) || []).map(x => x.text).join(''),
+      channel: String((((v.ownerText || v.longBylineText || {}).runs) || [{}])[0].text || '').replace(/\s+-\s+Topic$/, ''),
+      thumb: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+      duration: secs(v.lengthText && v.lengthText.simpleText)
+    })).filter(x => x.duration > 30 && x.duration < 20 * 60);
+    if (!items.length) throw new Error('YouTube web search found nothing');
+    return items;
+  }
+
   async function search(q, key) {
     const hit = cache.get(q);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.items;
-    // Daily API searches used up: go straight to yt-dlp; if the API says it's used up mid-way, fall back too.
+    // Daily API searches used up: YouTube's web search, then yt-dlp. Also when the API says it's used up mid-way.
     const fallback = async e => {
-      if (!(await hasYtdlp())) throw e;
-      const items = await ytdlpSearch(q);
+      let items;
+      try { items = await webSearch(q); }
+      catch (we) { if (!(await hasYtdlp())) throw e || we; items = await ytdlpSearch(q); }
       cache.set(q, { at: Date.now(), items }); saveCache();
       return items;
     };
-    if (searchesLeft() === 0 && await hasYtdlp()) return fallback(null);
+    if (searchesLeft() === 0) return fallback(null);
     try { return await apiSearch(q, key); }
     catch (e) { if (e.daily) return fallback(e); throw e; }
   }
@@ -140,7 +165,7 @@ module.exports = function createYouTube(file, auth) {
   };
 
   function routes(app) {
-    app.get('/api/youtube/status', async (req, res) => res.json({ enabled: !!settings.youtubeKey, searchesLeft: searchesLeft(), unlimited: !!(await hasYtdlp()) }));
+    app.get('/api/youtube/status', (req, res) => res.json({ enabled: !!settings.youtubeKey, searchesLeft: searchesLeft(), unlimited: true }));   // web search / yt-dlp after the API runs out
 
     app.get('/api/youtube/search', async (req, res) => {
       if (!settings.youtubeKey) return res.status(501).json({ error: 'YouTube isn’t connected yet. The owner can add an API key under People & settings.' });
