@@ -8,6 +8,7 @@
 // OUTPUT: audio files saved to OUT_DIR/<channel name>/<video title>.<format>
 
 const path = require('path');               // builds file paths that work on Windows and Linux
+const fs = require('fs');                   // checks for cookies file existence
 const os = require('os');                   // finds your home folder
 const { spawn } = require('child_process'); // runs yt-dlp as a separate program
 
@@ -17,48 +18,57 @@ const OUT_DIR = path.join(os.homedir(), 'Music', 'yt2audio');
 // opts (optional): { outDir, archive } — save somewhere other than OUT_DIR, and keep the
 //                  list of finished videos in a different file.
 function convert(links, format, onLine, done, opts = {}) {
-  const outDir = opts.outDir || OUT_DIR;
-  const archive = opts.archive || path.join(OUT_DIR, '.done.txt');
+    const outDir = opts.outDir || OUT_DIR;
+    const archive = opts.archive || path.join(OUT_DIR, '.done.txt');
 
-  // Options passed to yt-dlp
-  const args = [
-    '-x', '--audio-format', format,                              // keep audio only, in the chosen format
-    '--audio-quality', '0',                                      // best quality
-    '--embed-metadata',                                          // store title/artist inside the file
-    '--embed-thumbnail',                                         // store the video thumbnail as cover art
-    '--download-archive', archive,                                // remembers finished videos so re-runs skip them
-    '--ignore-errors',                                           // one bad video doesn't stop the rest
-    '--no-overwrites',                                           // never replace a file that already exists
-    '--newline',                                                 // print progress one line at a time
-    '-o', path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
-    '--', ...links                                               // INPUT: the links go last
-  ];
+    // Options passed to yt-dlp
+    const args = [
+        '-x', '--audio-format', format,                              // keep audio only, in the chosen format
+        '--audio-quality', '0',                                      // best quality
+        '--embed-metadata',                                          // store title/artist inside the file
+        '--embed-thumbnail',                                         // store the video thumbnail as cover art
+        '--download-archive', archive,                               // remembers finished videos so re-runs skip them
+        '--ignore-errors',                                           // one bad video doesn't stop the rest
+        '--no-overwrites',                                           // never replace a file that already exists
+        '--newline',                                                 // print progress one line at a time
+        '-o', path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
+    ];
 
-  // Start yt-dlp
-  const p = spawn('yt-dlp', args);
+    // Automatically check for cookies.txt in the application directory or relative path
+    const cookiesPath = path.join(__dirname, 'cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+        onLine('Using cookies.txt for YouTube authentication.');
+        args.push('--cookies', cookiesPath);
+    }
 
-  // yt-dlp prints text in chunks; split it into whole lines and send each one to onLine
-  let buf = '';
-  const read = chunk => {
-    buf += chunk;
-    const lines = buf.split(/\r?\n/);
-    buf = lines.pop();                       // keep any unfinished line for the next chunk
-    lines.forEach(l => l && onLine(l));
-  };
-  p.stdout.on('data', read);                 // normal output
-  p.stderr.on('data', read);                 // warnings and errors
+    // Push input links to the end of the argument list
+    args.push('--', ...links);
 
-  // yt-dlp couldn't be started (usually not installed)
-  p.on('error', () => {
-    onLine('yt-dlp not found. Run: winget install yt-dlp.yt-dlp Gyan.FFmpeg, then reopen PowerShell.');
-    done(1);
-  });
+    // Start yt-dlp
+    const p = spawn('yt-dlp', args);
 
-  // yt-dlp finished
-  p.on('close', code => {
-    if (buf) onLine(buf);                    // send any leftover text
-    done(code);
-  });
+    // yt-dlp prints text in chunks; split it into whole lines and send each one to onLine
+    let buf = '';
+    const read = chunk => {
+        buf += chunk;
+        const lines = buf.split(/\r?\n/);
+        buf = lines.pop();                       // keep any unfinished line for the next chunk
+        lines.forEach(l => l && onLine(l));
+    };
+    p.stdout.on('data', read);                 // normal output
+    p.stderr.on('data', read);                 // warnings and errors
+
+    // yt-dlp couldn't be started (usually not installed)
+    p.on('error', () => {
+        onLine('yt-dlp not found. Run: winget install yt-dlp.yt-dlp Gyan.FFmpeg, then reopen PowerShell.');
+        done(1);
+    });
+
+    // yt-dlp finished
+    p.on('close', code => {
+        if (buf) onLine(buf);                    // send any leftover text
+        done(code);
+    });
 }
 
 // Share convert() and OUT_DIR with server.js (or any other file that wants them)
