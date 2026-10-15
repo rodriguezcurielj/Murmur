@@ -147,6 +147,41 @@ module.exports = function createDiscover(dataDir) {
       catch (e) { res.status(502).json({ error: 'Couldn’t reach the music catalog for suggestions. Try again later.' }); }
     });
 
+    // An artist page like Spotify's: picture, popular songs, albums and singles, and similar artists.
+    app.get('/api/catalog/artist', async (req, res) => {
+      const name = String(req.query.name || '').trim().slice(0, 100);
+      if (!name) return res.status(400).json({ error: 'Which artist?' });
+      try {
+        const found = (await dz('search/artist?limit=5&q=' + encodeURIComponent(name.toLowerCase()))).data || [];
+        const a = found.find(x => norm(x.name) === norm(name)) || found[0];
+        if (!a) return res.json({ artist: null });
+        const [top, albums, related] = await Promise.all([
+          dz(`artist/${a.id}/top?limit=10`).catch(() => ({ data: [] })),
+          dz(`artist/${a.id}/albums?limit=50`).catch(() => ({ data: [] })),
+          dz(`artist/${a.id}/related?limit=12`).catch(() => ({ data: [] }))
+        ]);
+        res.json({
+          artist: { id: a.id, name: a.name, picture: a.picture_xl || a.picture_big || '', fans: a.nb_fan || 0 },
+          top: (top.data || []).map(t => toTrack(t, '')),
+          albums: (albums.data || []).map(x => ({ id: x.id, title: x.title, cover: x.cover_big || x.cover_medium || '', year: String(x.release_date || '').slice(0, 4), type: x.record_type || 'album' }))
+            .sort((x, y) => y.year.localeCompare(x.year)),
+          related: (related.data || []).map(r => ({ name: r.name, picture: r.picture_big || r.picture_medium || '' }))
+        });
+      } catch (e) { res.status(502).json({ error: 'Couldn’t reach the music catalog.' }); }
+    });
+
+    // An album's songs (for albums opened from an artist page).
+    app.get('/api/catalog/album', async (req, res) => {
+      const id = String(req.query.id || '').replace(/\D/g, '').slice(0, 20);
+      if (!id) return res.status(400).json({ error: 'Which album?' });
+      try {
+        const a = await dz('album/' + id);
+        const cover = a.cover_big || a.cover_medium || '';
+        res.json({ album: { id: a.id, title: a.title, artist: (a.artist && a.artist.name) || '', cover, year: String(a.release_date || '').slice(0, 4), type: a.record_type || 'album',
+          tracks: ((a.tracks && a.tracks.data) || []).map(t => ({ ...toTrack({ ...t, album: { title: a.title, cover_medium: cover } }, ''), album: a.title, cover })) } });
+      } catch (e) { res.status(502).json({ error: 'Couldn’t reach the music catalog.' }); }
+    });
+
     // Genre guesses for songs. POST { items: [{ artist, title }] } -> { genres: { "artist|title": "Hip-Hop" or "" } }.
     // A few at a time so Deezer's rate limit is never hit; songs looked up before answer straight away.
     app.post('/api/genres', async (req, res) => {

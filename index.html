@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015014025">
+<meta name="murmur-build" content="20261015024548">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -175,6 +175,8 @@ body.drag-selecting .tracks{touch-action:none}
 .card:hover{background:var(--raise)}
 .card-art{position:relative}
 .card-art .cover{width:100%;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.card-art .cover.round{border-radius:50%;aspect-ratio:1;object-fit:cover}
+.hero-artist{color:var(--fg);font-weight:700}
 .card .nm{font-weight:700}
 .card .sb{font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .fab{position:absolute;right:8px;bottom:8px;width:46px;height:46px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;opacity:0;transform:translateY(6px);transition:opacity .18s,transform .18s;box-shadow:0 6px 16px rgba(0,0,0,.45)}
@@ -1048,12 +1050,12 @@ const remote = { base: '', token: null, mediaKey: null };
 /* Used when config.js can't load (e.g. a page cached from a server that's gone), so people can still reach a server. Keep in step with config.js. */
 const DEFAULT_SERVERS = [
   { name: 'Port Server', url: 'https://murmur-laptop.tail05789d.ts.net' },
-  { name: 'Port Down Server', url: 'https://murmur-laptop.tail05789d.ts.net:8443', note: 'Allows YouTube downloads' },
+  { name: 'Port Down Server', url: 'https://murmur-laptop.tail05789d.ts.net:8443', note: 'Allows YouTube downloads', downloads: true },
   { name: 'Hike Server', url: 'https://murmur.tail05789d.ts.net' }
 ];
 const SERVERS = ((cfg && Array.isArray(cfg.servers) && cfg.servers.length) ? cfg.servers
   : (cfg && cfg.server ? [{ name: 'My server', url: cfg.server }]
-  : location.protocol === 'https:' && !/claude/i.test(location.hostname) ? DEFAULT_SERVERS : [])).filter(x => x && x.url).map(x => ({ name: String(x.name || x.url), url: x.url, note: String(x.note || '') }));
+  : location.protocol === 'https:' && !/claude/i.test(location.hostname) ? DEFAULT_SERVERS : [])).filter(x => x && x.url).map(x => ({ name: String(x.name || x.url), url: x.url, note: String(x.note || ''), downloads: !!x.downloads }));
 // Servers were renamed; a choice saved under an old name still finds its server.
 const OLD_SERVER_NAMES = { 'Laptop': 'Port Server', 'Laptop (native)': 'Port Down Server', 'Azure': 'Hike Server' };
 const namedServer = () => { const n = store.get('serverName', null); return n ? SERVERS.find(x => x.name === n || x.name === OLD_SERVER_NAMES[n]) || null : null; };
@@ -2272,10 +2274,27 @@ function collectionOf(type, id) {
   }
   if (type === 'artist') {
     const albums = ALBUMS.filter(a => a.artist === id);
-    const tracks = albums.length ? albums.flatMap(a => a.trackIds.filter(visible)) : Object.values(TRACKS).filter(t => t.artist === id && visible(t.id)).map(t => t.id);
-    if (!tracks.length) return null;
-    const sub = albums.length ? plural(albums.filter(a => a.trackIds.some(visible)).length, 'album') : 'From your uploads';
-    return { type, id, kind: 'Artist', title: id, desc: '', sub, tracks, cover: tCover(tracks[0]), color: ALBUM_MAP[TRACKS[tracks[0]].albumId].colors[0], round: true };
+    const name = cleanArtist(id), nk = normKey(name);
+    // Your own songs by them (uploads, YouTube, imported Spotify songs), then their popular songs from the catalog.
+    const own = albums.length ? albums.flatMap(a => a.trackIds.filter(visible))
+      : Object.values(TRACKS).filter(t => !t.disc && visible(t.id) && String(t.artist || '').split(',').some(a => normKey(cleanArtist(a)) === nk)).map(t => t.id);
+    const cp = catPages.artists.get(nk) || null, info = cp && cp.artist;   // loaded by viewCollection
+    const ownKeys = new Set(own.map(t => songGKey(TRACKS[t])));
+    const pop = ((cp && cp.topIds) || []).filter(t => visible(t) && !ownKeys.has(songGKey(TRACKS[t])));
+    const tracks = [...pop, ...own];
+    if (!tracks.length && !(cp && (cp.loading || info))) return null;
+    const sub = info ? `${info.fans ? Number(info.fans).toLocaleString() + ' fans' : 'Artist'}${own.length ? ' · ' + plural(own.length, 'song') + ' in your library' : ''}`
+      : albums.length ? plural(albums.filter(a => a.trackIds.some(visible)).length, 'album') : 'From your library';
+    return { type, id, kind: 'Artist', title: info ? info.name : name, desc: '', sub, tracks, popCount: pop.length, cover: (info && info.picture) || (tracks[0] ? tCover(tracks[0]) : null),
+      color: tracks[0] && ALBUM_MAP[TRACKS[tracks[0]].albumId] ? ALBUM_MAP[TRACKS[tracks[0]].albumId].colors[0] : '#6b5a7d', round: true, artistName: name, loadingCat: !!(cp && cp.loading) };
+  }
+  if (type === 'calbum') {
+    const a = catPages.albums.get(id);
+    if (!a || !a.album) return a && a.loading ? { type, id, kind: 'Album', title: 'Loading…', desc: '', sub: '', tracks: [], cover: null, color: '#6b5a7d', loadingCat: true } : null;
+    const al = a.album;
+    return { type, id, kind: al.type === 'single' ? 'Single' : al.type === 'ep' ? 'EP' : 'Album', title: al.title, desc: '',
+      sub: `<button class="link-btn hero-artist" data-act="open" data-type="artist" data-id="${esc(al.artist)}">${esc(al.artist)}</button>${al.year ? ' · ' + al.year : ''}`,
+      tracks: a.ids.filter(visible), cover: al.cover, color: '#6b5a7d', artist: al.artist, catalogAlbum: true };
   }
   if (type === 'discover') {
     const tracks = disc.ids.filter(visible);
@@ -2767,6 +2786,8 @@ function submitSearch(value) {
 }
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
 function viewCollection(type, id) {
+  // Artist and catalog album pages fill in from the music catalog (only fetched when the page is opened).
+  if (type === 'artist') catArtist(cleanArtist(id)); else if (type === 'calbum') catAlbum(id);
   const col = getCollection(type, id);
   if (!col) return `<div class="empty"><h2>This is gone</h2>It was deleted or removed. Pick something from your library instead.</div>`;
   const total = col.tracks.reduce((s, t) => s + TRACKS[t].duration, 0);
@@ -2781,12 +2802,14 @@ function viewCollection(type, id) {
     body = `<div class="empty"><h2>Nothing downloaded yet</h2>Open an album, playlist or Uploads and tap the download button, or pick songs with Select and choose Download. Downloaded songs play here with no connection.</div>`;
   } else if (col.uploadsAll && !server.on && !server.offlineMode) {
     body = `<div class="empty"><h2>Uploads need the Murmur server</h2>Run Murmur with Docker (<code>docker compose up -d</code>) and open <b>localhost:8080</b>. Your files are stored in the <code>music-data</code> folder.</div>`;
+  } else if (!n && col.loadingCat) {
+    body = `<div class="empty"><h2>Loading…</h2>Getting songs from the music catalog.</div>`;
   } else if (!n) {
     body = col.liked
       ? `<div class="empty"><h2>Songs you like will appear here</h2>Tap the heart on any song to save it.</div>`
       : col.uploadsAll ? ''
       : `<div class="empty"><h2>Your playlist is empty</h2>Add songs from the list below, or use the ⋯ menu on any song.</div>`;
-  } else body = trackList(col.tracks, type, id);
+  } else body = (type === 'artist' && col.popCount ? `<div class="shelf-head"><h2>Popular</h2>${col.tracks.length > col.popCount ? `<p>Then ${plural(col.tracks.length - col.popCount, 'song')} from your library</p>` : ''}</div>` : '') + trackList(col.tracks, type, id);
   if (type === 'discover') body = discoverGenreBarHTML() + body;
   else if (col.allTracks.length > 1) body = genreBarHTML(col) + body;
   if ((col.uploadsAll || (col.uploaded && col.mine)) && canEditMusic()) {
@@ -2822,7 +2845,7 @@ function viewCollection(type, id) {
     ${dlBtn}${n ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${yt.enabled && canEditMusic() && type !== 'discover' && col.allTracks.some(t => !TRACKS[t].src && !(TRACKS[t].sp && spStatus(t) === 'file')) ? `<button class="text-btn" data-act="col-yt" data-type="${type}" data-id="${esc(id)}">${icon('download')}<span>Get missing songs from YouTube</span></button>` : ''}${editAlbum}${del}${clearDl}
   </div>
   ${server.on ? jobPanelsHTML(type, id) : ''}
-  ${body}${rec}`;
+  ${body}${rec}${['artist', 'album', 'calbum'].includes(type) ? catExtrasHTML(type, id, col) : ''}`;
 }
 function libEntries() {
   const out = [{ type: 'liked', id: 'liked', name: 'Liked Songs', sub: `Playlist · ${plural(getCollection('liked').tracks.length, 'song')}`, k: 'playlist' }];
@@ -2918,6 +2941,7 @@ function buildShell() {
       <div class="top-right">
         <button class="text-btn up-btn" data-act="install" id="installBtn" hidden title="Install Murmur as an app on this device">${icon('download')}<span>Install app</span></button>
         <button class="text-btn up-btn" data-act="upload" id="upBtn" hidden>${icon('upload')}<span>Upload</span></button>
+        <button class="text-btn up-btn" data-act="acct-people" id="adminBtn" hidden title="Manage people and server settings">${icon('shield')}<span>Admin</span></button>
         <button class="avatar acct-btn" data-act="acct" id="acctBtn" aria-label="Your account" title="Your account" hidden></button>
       </div>
       <input type="file" id="fileBring" class="vh" accept="audio/*,video/*,.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.wma,.aiff,.aif,.mp4,.m4v,.mov,.mkv,.webm,.avi" tabindex="-1" aria-hidden="true">
@@ -3255,7 +3279,6 @@ function renderMenu() {
       + b('genre', icon('list') + `<span class="ell">Genre: ${esc(genreFor(t.id) || 'add one')}</span>`)
       + (t.yt ? b('ytopen', icon('expand') + 'Open on YouTube') : '')
       + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download…') : '')
-      + (!t.src && (t.sp || t.yt) && canEditMusic() && srcs.ready && !(t.sp && spStatus(t.id) === 'file') ? b('getcopy', icon('download') + 'Find a downloadable copy') : '')
       + (t.sp ? '<hr>' + (canEditMusic() ? b('bring', icon('upload') + (spStatus(t.id) === 'file' ? 'Replace the file in Murmur' : 'Bring into Murmur (upload your copy)')) : '')
         + (yt.enabled ? b('spver', icon('search') + 'Choose a YouTube version') : '')
         + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
@@ -3658,7 +3681,6 @@ function act(el, e) {
       if (op === 'delete' && !m.confirm) { m.confirm = true; renderMenu(); return; }
       closeMenu();
       if (op === 'bring') bringIntoMurmur(tids[0]);
-      else if (op === 'getcopy') findCopy(tids[0]);
       else if (op === 'dlpick') pickDownloadSource(tids[0]);
       else if (op === 'genre') openGenrePicker(tids);
       else if (op === 'spver') chooseVersion(tids[0]);
@@ -4404,8 +4426,6 @@ function syncLinkResult(tid) {
         openModal({ title: `Download “${esc(t.title)}”`, confirm: false, cancel: 'Close', html: `<p class="small">Where do you want it from?</p>
     <div class="dls-list">
       ${file ? opt('dls-file', 'download', 'Murmur', offline.has(file) ? 'Already saved on this device' : 'Save it on this device to play offline') + opt('dls-save', 'save', 'Murmur: save the file', 'Get the audio file itself') : ''}
-      ${sourcesOn.length && canEditMusic() ? opt('dls-sources', 'list', 'Download sources', 'Find a copy you can keep on ' + esc(sourcesOn.join(', '))) : ''}
-      ${linkSources().length && canEditMusic() ? opt('dls-link', 'expand', 'From a link', 'Paste a song’s link from ' + esc(linkSources().map(x => x.name).join(' or '))) : ''}
       ${opt('dls-yt', 'play', 'YouTube', yt.enabled ? 'Pick the right video, listen to it, and get its link' : 'Connect YouTube in People & settings first', !yt.enabled)}
     </div>`, onSubmit: () => {} });
     }
@@ -4413,6 +4433,7 @@ function syncLinkResult(tid) {
     /* YouTube: pick the right video (with a preview), then trigger download via youtube-cc. */
     async function pickYouTubeVersion(tid) {
         const t = TRACKS[tid]; if (!t) return;
+        if (needDownloadServer()) return;
         if (!yt.enabled) { toast('Connect YouTube in People & settings first.'); return; }
         let ids = [];
         try {
@@ -4465,7 +4486,21 @@ function syncLinkResult(tid) {
      */
     /* Takes the chosen video ID (v) and track info (y), posts it to your yt2audio server, and streams real-time progress. */
 
+    /* Only some servers can download from YouTube (marked downloads: true in config.js). On the others, explain
+       and offer to switch, instead of starting a download that would fail. Returns true when blocked. */
+    function needDownloadServer() {
+        const here = SERVERS.find(x => normalizeServer(x.url) === normalizeServer(remote.base || location.origin));
+        const targets = SERVERS.filter(x => x.downloads);
+        if (!here || !targets.length || here.downloads) return false;
+        openModal({ title: 'YouTube downloads are on another server', confirm: false, cancel: 'Not now', html: `
+            <p><b>${esc(here.name)}</b> can play YouTube songs but can’t download them. Switch to ${targets.map(x => `<b>${esc(x.name)}</b>`).join(' or ')} to download.</p>
+            <div class="acct-list">${targets.map(x => `<button type="button" class="acct-row" data-act="pick-server" data-name="${esc(x.name)}"><span class="ar-ic">${icon('server')}</span><span class="ar-label">Switch to ${esc(x.name)}</span><span class="ar-chev">${icon('chev')}</span></button>`).join('')}</div>
+            <p class="small">Each server keeps its own music and sign-ins, so you may be asked to sign in there.</p>` });
+        return true;
+    }
+
     async function showYouTubeLink(v, y) {
+        if (needDownloadServer()) return;
         const dl = ytProgress({ title: 'Downloading from YouTube', cover: y.cover, name: y.title || 'YouTube song', by: y.artist || '' });
         try {
             const job = await startYtJob([{ link: `https://www.youtube.com/watch?v=${v}`, title: y.title || 'YouTube song' }], y.title || 'YouTube song', '');
@@ -4477,6 +4512,7 @@ function syncLinkResult(tid) {
     /* Selected songs → one YouTube video each (the original artist's studio upload when there is one), then the
        server downloads them in the background. Progress shows on the list they came from and in the corner. */
     async function getManyFromYouTube(ids, ctx = '', label = '') {
+        if (needDownloadServer()) return;
         const todo = ids.map(id => TRACKS[id]).filter(t => t && !t.src && !(t.sp && spStatus(t.id) === 'file'));
         if (!todo.length) { toast('Those songs are already in Murmur.'); return; }
         if (todo.length > YT_JOB_MAX) { toast(`Murmur gets up to ${YT_JOB_MAX} songs from YouTube at a time. Select fewer, then do the rest after.`); return; }
@@ -4638,23 +4674,40 @@ function syncLinkResult(tid) {
     const YT_EXTRAS = ['live', 'concert', 'tour', 'performance', 'session', 'sessions', 'music video', 'official video', 'video oficial',
         'mv', 'm v', 'cover', 'remix', 'sped up', 'slowed', 'reverb', 'nightcore', '8d', 'karaoke', 'instrumental', 'acoustic',
         'reaction', 'extended', 'loop', 'hour', 'hours', 'mashup', 'edit', 'version', 'teaser', 'trailer', 'behind the scenes',
-        'dance', 'choreography', 'tutorial', 'piano', 'guitar', 'bass boosted', 'clean', 'unplugged', 'demo', 'shorts'];
+        'dance', 'choreography', 'tutorial', 'piano', 'guitar', 'bass boosted', 'clean', 'unplugged', 'demo', 'shorts',
+        // Spanish and other common extras
+        'en vivo', 'vivo', 'en directo', 'directo', 'en concierto', 'concierto', 'ensayo', 'detras de camaras', 'reaccion',
+        'acustico', 'acustica', 'version', 'sesion', 'karaoke', 'en estudio', 'live session', 'duet', 'dueto', '360',
+        'dolby atmos', 'spatial audio', 'mix', 'megamix', 'medley', 'popurri', 'en vivo desde', 'tour', 'teaser', 'preview'];
     function ytScore(t, y) {
         const song = ytNorm(t.title), bare = ytNorm(String(t.title).replace(/\s*[([].*?[)\]]/g, '').replace(/\s+-\s+.*$/, ''));
-        const vid = ytNorm(y.title), artist = ytCompact(cleanArtist(t.artist));
+        const vid = ytNorm(y.title), artists = String(t.artist || '').split(/,|&| x | y | feat\.? | ft\.? /i).map(a => ytCompact(cleanArtist(a))).filter(Boolean);
+        const chanAll = ytCompact(y.artist).replace(/topic$/, '');
+        const artist = artists.find(a => chanAll.includes(a) || (chanAll.length > 2 && a.includes(chanAll))) || artists[0] || '';
         const chan = ytNorm(y.artist), topic = / topic$/.test(chan);
         const chanC = ytCompact(chan.replace(/ topic$/, '')).replace(/(vevo|official|music|tv)$/g, '');
         let s = 0;
         if (artist && chanC === artist) s += topic ? 65 : 45;
-        else if (artist && chanC.length > 2 && (chanC.includes(artist) || artist.includes(chanC))) s += 30;
+        else if (artist && /^(vevo|official|music|tv|records|oficial)?$/.test(chanC.replace(artist, ''))) s += 40;   // ArtistVEVO, ArtistOfficial
+        else if (artist && chanC.length > 2 && (chanC.includes(artist) || artist.includes(chanC))) s += 12;   // fan pages such as 'SZA Global'
         else if (artist && ytCompact(vid).includes(artist)) s -= 15;   // a re-upload that only names the artist
         else s -= 40;   // someone else's upload, probably not the original artist
-        s += ytCompact(vid).includes(ytCompact(bare)) ? 25 : -30;
+        // The video has to name the song; otherwise it's another song (a hard no, not just a penalty).
+        if (!ytCompact(vid).includes(ytCompact(bare))) return -100;
+        s += 25;
         for (const w of YT_EXTRAS) {
             const re = new RegExp(`(^| )${w}( |$)`);
-            if (re.test(vid) && !re.test(song)) s -= 30;
+            if (re.test(vid) && !re.test(song)) s -= 40;
         }
+        // Words that aren't the artist, the song or the usual labels mean it's something else (a fan clip, an award, a recap).
+        const known = new Set([...ytNorm(t.artist).split(' '), ...song.split(' '), ...ytNorm(y.artist).split(' '),
+            'official', 'oficial', 'audio', 'video', 'videoclip', 'lyric', 'lyrics', 'letra', 'hd', 'hq', '4k', 'visualizer', 'visualiser',
+            'music', 'musical', 'ft', 'feat', 'featuring', 'x', 'and', 'y', 'with', 'con', 'topic', 'explicit', 'clean', 'remastered', 'remaster', 'the', 'el', 'la', 'de']);
+        const inName = ytCompact(t.title + ' ' + t.artist);
+        const extra = vid.split(' ').filter(w => w && !known.has(w) && !inName.includes(w) && !/^\d{4}$/.test(w)).length;
+        s -= Math.min(40, extra * 6);
         if (/(^| )(official )?audio( |$)/.test(vid)) s += 15;
+        if (/#\w/.test(String(y.title))) s -= 30;   // hashtag clips
         if (/(^| )lyrics?( video)?( |$)/.test(vid)) s -= 5;
         if (t.duration && y.duration) {
             const off = Math.abs(t.duration - y.duration);
@@ -4662,7 +4715,7 @@ function syncLinkResult(tid) {
         }
         return s;
     }
-    const YT_GOOD = 40;   // at or above this, it's very likely the studio song by the right artist
+    const YT_GOOD = 55;   // at or above this, it's very likely the studio song by the right artist
     async function bestYouTubeFor(t) {
         const artist = cleanArtist(t.artist);
         const rank = ids => ids.map(id => TRACKS[id]).filter(Boolean).map(y => ({ y, s: ytScore(t, y) })).sort((a, b) => b.s - a.s);
@@ -4876,6 +4929,57 @@ async function loadDiscover(force, retried) {
   // Everything in the list was removed already: get a fresh batch.
   if (!retried && !disc.error && !disc.ids.some(visible)) loadDiscover(true, true);
 }
+/* ---------- artist and album pages filled in from the catalog, like Spotify: popular songs, albums,
+   singles, similar artists, and more by the same artist under an album ---------- */
+const catPages = { artists: new Map(), albums: new Map() };
+const catRefresh = () => { if (state.view.name === 'collection' && ['artist', 'album', 'calbum'].includes(state.view.type)) render(); };
+function catArtist(name) {
+  const k = normKey(name); if (!k) return null;
+  if (!catPages.artists.has(k) && server.on) {
+    catPages.artists.set(k, { loading: true });
+    api('GET', 'api/catalog/artist?name=' + encodeURIComponent(name))
+      .then(r => catPages.artists.set(k, { ...r, topIds: r.artist ? catIds(r.top || []) : [] }))
+      .catch(e => catPages.artists.set(k, { error: e.message })).finally(catRefresh);
+  }
+  return catPages.artists.get(k) || null;
+}
+function catAlbum(id) {
+  if (!catPages.albums.has(id) && server.on) {
+    catPages.albums.set(id, { loading: true });
+    api('GET', 'api/catalog/album?id=' + encodeURIComponent(id))
+      .then(r => catPages.albums.set(id, { album: r.album, ids: catIds((r.album && r.album.tracks) || []) }))
+      .catch(e => catPages.albums.set(id, { error: e.message })).finally(catRefresh);
+  }
+  return catPages.albums.get(id) || null;
+}
+function albumCard(a) {
+  const kind = a.type === 'single' ? 'Single' : a.type === 'ep' ? 'EP' : 'Album';
+  return `<div class="card" data-act="open" data-type="calbum" data-id="${esc(String(a.id))}" role="button" tabindex="0" aria-label="${esc(a.title)}">
+    <div class="card-art"><img class="cover" src="${esc(a.cover)}" alt="" loading="lazy"></div>
+    <div><div class="nm ell">${esc(a.title)}</div><div class="sb ell">${a.year ? esc(a.year) + ' · ' : ''}${kind}</div></div></div>`;
+}
+function artistCard(r) {
+  return `<div class="card" data-act="open" data-type="artist" data-id="${esc(r.name)}" role="button" tabindex="0" aria-label="${esc(r.name)}">
+    <div class="card-art"><img class="cover round" src="${esc(r.picture)}" alt="" loading="lazy"></div>
+    <div><div class="nm ell">${esc(r.name)}</div><div class="sb ell">Artist</div></div></div>`;
+}
+const shelfHTML = (title, cards, sub = '') => cards.length ? `<div class="shelf-head"><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div><div class="shelf">${cards.join('')}</div>` : '';
+function catExtrasHTML(type, id, col) {
+  if (!server.on) return '';
+  if (type === 'artist') {
+    const cp = catArtist(col.artistName || id); if (!cp || !cp.artist) return '';
+    const albums = (cp.albums || []).filter(a => a.type === 'album' || a.type === 'compile'), singles = (cp.albums || []).filter(a => a.type === 'single' || a.type === 'ep');
+    return shelfHTML('Albums', albums.map(albumCard)) + shelfHTML('Singles &amp; EPs', singles.slice(0, 30).map(albumCard)) + shelfHTML('Fans also like', (cp.related || []).map(artistCard));
+  }
+  // Under an album: more from the same artist.
+  const artist = type === 'calbum' ? col.artist : col.artist && !/^(various artists|you|everyone|youtube|spotify|murmur)$/i.test(col.artist) ? col.artist : '';
+  if (!artist) return '';
+  const cp = catArtist(cleanArtist(artist)); if (!cp || !cp.artist) return '';
+  const others = (cp.albums || []).filter(a => String(a.id) !== String(id) && normKey(a.title) !== normKey(col.title));
+  return shelfHTML(`More by ${esc(cp.artist.name)}`, others.slice(0, 20).map(albumCard), `<button class="link-btn" data-act="open" data-type="artist" data-id="${esc(cp.artist.name)}">See artist</button>`)
+    + shelfHTML('Fans also like', (cp.related || []).slice(0, 10).map(artistCard));
+}
+
 /* ---------- song catalog (Deezer): free search; YouTube is only used when a song is first played ---------- */
 const cat = { results: new Map(), loading: new Set() };
 const catIds = items => items.map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
@@ -5211,8 +5315,6 @@ function openAccount() {
       ])
     + group('Server', [
         remote.base || cfg ? row('acct-server', 'server', 'Server', esc(serverLabel(remote.base || location.origin))) : '',
-        server.on && srcs.list.length ? row('acct-sources', 'download', 'My download sources') : '',
-        me.role === 'owner' && server.on ? row('acct-people', 'user', 'People & settings') : ''
       ])
     + group('Account', [
         server.on ? row('acct-pin', 'lock', 'Change my PIN') : '',
@@ -5394,13 +5496,13 @@ async function addPerson(form) {
   if ((server.auth || cfg) && 'serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {} }
   if (['setup', 'login', 'expired', 'offline-expired', 'connect', 'unreachable'].includes(mode)) { showGate(mode); return; }
   $('#acctBtn').hidden = !me;
+  $('#adminBtn').hidden = !(me && me.role === 'owner' && mode === 'ok');   // the owner manages accounts from here
   renderAcctBtn();
   if (mode === 'ok') {
     await connectServer();
     try { yt.enabled = !!(await api('GET', 'api/youtube/status')).enabled; } catch (e) {}
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
     await loadSpotify();
-    loadSources();
     queueGenreGuess();
     pollYtJobs();
   }
