@@ -100,10 +100,10 @@ module.exports = function createAuth(file, opts = {}) {
     if (Date.now() - s.lastSeen > 60e3) { s.lastSeen = Date.now(); save(); }
     return { user: u, session: s, token: mediaKey ? null : readToken(req) };
   }
-  const publicUser = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), expiresAt: s ? s.expiresAt : null, remembered: s ? s.remember : false });
+  const publicUser = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', expiresAt: s ? s.expiresAt : null, remembered: s ? s.remember : false });
   // A player on another site can't use our cookie, so it gets the token, plus a read-only key for audio and cover URLs.
   const creds = (req, s, token) => crossSite(req) ? { token, mediaKey: s.mediaKey } : {};
-  const personView = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), createdAt: u.createdAt,
+  const personView = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', createdAt: u.createdAt,
     sessions: db.sessions.filter(x => x.userId === u.id).map(x => ({ id: x.id, device: x.device, createdAt: x.createdAt, expiresAt: x.expiresAt, remember: x.remember, lastSeen: x.lastSeen, current: !!s && x.id === s.id })) });
 
   /* --- middleware --- */
@@ -211,6 +211,15 @@ module.exports = function createAuth(file, opts = {}) {
       db.sessions = db.sessions.filter(s => s.userId !== req.user.id || s.id === req.session.id);   // sign out other devices
       save();
       res.json({ ok: true });
+    });
+
+    // Your profile picture: a small square image (the app shrinks it first) as a data URL, or '' to remove it.
+    app.put('/api/me/avatar', (req, res) => {
+      const img = String((req.body && req.body.image) || '');
+      if (img && (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(img) || img.length > 200000)) return res.status(400).json({ error: 'That picture couldn’t be used. Try a different photo.' });
+      if (img) req.user.avatar = img; else delete req.user.avatar;
+      save();
+      res.json({ avatar: req.user.avatar || '' });
     });
 
     app.get('/api/users', requireOwner, (req, res) => {

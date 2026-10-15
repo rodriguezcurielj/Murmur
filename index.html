@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="murmur-build" content="20261015003729">
+<meta name="murmur-build" content="20261015004403">
 <meta name="theme-color" content="#120e17">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
@@ -471,6 +471,12 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .pin{letter-spacing:.6em;font-size:22px!important;font-variant-numeric:tabular-nums;text-align:center;max-width:12rem}
 .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent);color:var(--accent-ink);font:800 15px var(--font-display)}
 .acct-btn:hover{filter:brightness(1.08)}
+.avatar.has-img,.acct-btn.has-img{overflow:hidden;background:var(--raise);padding:0}
+.avatar img,.acct-btn img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
+.avatar-lg{width:72px;height:72px;font-size:30px}
+.acct-photo{display:flex;align-items:center;gap:16px}
+.acct-photo-btns{display:flex;flex-wrap:wrap;gap:8px}
+.acct-photo-btns label{cursor:pointer}
 .acct-actions{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
 .apps-box{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .app-links{display:flex;flex-direction:column;gap:6px}
@@ -2539,7 +2545,10 @@ function viewCollection(type, id) {
   const dlBtn = type !== 'downloads' && col.tracks.length && (server.on || dlTargets(col.tracks).some(t => offline.has(t)))
     ? `<button class="text-btn dl-btn dl-col" data-act="col-dl" data-type="${type}" data-id="${esc(id)}">${icon('download')}<span>Download ${dlNoun(col)}</span></button><span class="small dl-note"></span>` : '';
   const clearDl = type === 'downloads' && n ? `<button class="text-btn" data-act="dl-clear">${icon('trash')}<span>Remove all downloads</span></button>` : '';
-  const editAlbum = albumOk ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '';
+  const editAlbum = (albumOk ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '')
+    + (col.uploaded && col.mine && !col.uploadsAll ? (state.hiddenCols.has('album:' + id)
+      ? `<button class="text-btn" data-act="album-unhide" data-id="${esc(id)}">${icon('plus')}<span>Show in library</span></button>`
+      : `<button class="text-btn" data-act="album-hide" data-id="${esc(id)}">${icon('cloudOff')}<span>Hide from library</span></button>`) : '');
   return `<header class="hero" style="--tint:${col.color}">
     ${coverHTML(col, 'hero-cover')}
     <div class="hero-meta"><span class="eyebrow">${col.kind}</span>${title}
@@ -2566,7 +2575,7 @@ function libEntries() {
   if (server.on || offline.size) out.push({ type: 'downloads', id: 'downloads', name: 'Downloaded', sub: `On this device · ${plural(getCollection('downloads').tracks.length, 'song')}`, k: 'playlist' });
   state.playlists.forEach(p => out.push({ type: 'playlist', id: p.id, name: p.name, sub: `Playlist · ${plural(p.tracks.length, 'song')}`, k: 'playlist', sel: true }));
   visCurated().forEach(p => out.push({ type: 'playlist', id: p.id, name: p.name, sub: 'Playlist · Murmur', k: 'playlist', sel: true }));
-  upAlbums().forEach(a => out.push({ type: 'album', id: a.id, name: a.title, sub: `Album · ${a.artist} · your upload`, k: 'album', sel: canEditMusic() }));
+  upAlbums().filter(a => !state.hiddenCols.has('album:' + a.id)).forEach(a => out.push({ type: 'album', id: a.id, name: a.title, sub: `Album · ${a.artist} · your upload`, k: 'album', sel: true }));
   visAlbums().forEach(a => out.push({ type: 'album', id: a.id, name: a.title, sub: 'Album · ' + a.artist, k: 'album', sel: true }));
   visArtists().forEach(a => out.push({ type: 'artist', id: a, name: a, sub: 'Artist', k: 'artist' }));
   return state.libFilter === 'all' ? out : out.filter(e => e.k === state.libFilter);
@@ -2586,8 +2595,9 @@ function chipsHTML() {
 }
 function viewLibrary() {
   const selecting = !!state.libSel;
-  const restore = state.hidden.size || state.hiddenCols.size
-    ? `<div class="restore"><p class="small">You removed ${[state.hidden.size ? plural(state.hidden.size, 'demo song') : '', state.hiddenCols.size ? plural(state.hiddenCols.size, 'Murmur playlist') : ''].filter(Boolean).join(' and ')}.</p><button class="text-btn" data-act="restore">Restore removed demo music</button></div>` : '';
+  const hidAlb = [...state.hiddenCols].filter(k => k.startsWith('album:') && ALBUM_MAP[k.slice(6)]).length, hidPl = [...state.hiddenCols].filter(k => !k.startsWith('album:')).length;
+  const restore = (state.hidden.size || hidPl ? `<div class="restore"><p class="small">You removed ${[state.hidden.size ? plural(state.hidden.size, 'demo song') : '', hidPl ? plural(hidPl, 'Murmur playlist') : ''].filter(Boolean).join(' and ')}.</p><button class="text-btn" data-act="restore">Restore removed demo music</button></div>` : '')
+    + (hidAlb ? `<div class="restore"><p class="small">${plural(hidAlb, 'album')} hidden from your library. The songs are still in Uploads.</p><button class="text-btn" data-act="albums-unhide">Show hidden albums</button></div>` : '');
   return `<div class="shelf-head" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
       ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
@@ -3057,7 +3067,8 @@ function renderSelBar() {
       <span class="sb-sep"></span>
       <button class="sb" data-act="lib-playlist"${dis}>${icon('plus')}<span>Add songs to playlist</span></button>
       <button class="sb" data-act="lib-queue"${dis}>${icon('queue')}<span>Add to queue</span></button>
-      <button class="sb danger" data-act="lib-delete"${dis}>${icon('trash')}<span>${anyUp || onlyUser ? 'Delete' : 'Remove'}</span></button>
+      ${anyUp ? `<button class="sb" data-act="lib-hide">${icon('cloudOff')}<span>Hide from library</span></button>` : ''}
+      ${anyUp && !canEditMusic() ? '' : `<button class="sb danger" data-act="lib-delete"${dis}>${icon('trash')}<span>${anyUp || onlyUser ? 'Delete' : 'Remove'}</span></button>`}
       <button class="sb done" data-act="sel-done">Done</button>`;
     bar.hidden = false; return;
   }
@@ -3129,6 +3140,14 @@ function confirmDeleteCollections(keys) {
   if (keys.length === 1) { const i = keys[0].indexOf(':'), c = getCollection(keys[0].slice(0, i), keys[0].slice(i + 1)); if (c) name = `“${esc(c.title)}”`; }
   const verb = d.upAlb || d.userPl ? 'Delete' : 'Remove';
   openModal({ title: `${verb} ${name}?`, html: lines.join(''), confirm: verb, danger: true, onSubmit: () => deleteCollections(keys) });
+}
+/* Takes uploaded albums out of Your Library. The songs stay on the server, in Uploads, Liked Songs and playlists. */
+function hideAlbums(ids) {
+  if (!ids.length) return;
+  ids.forEach(id => state.hiddenCols.add('album:' + id));
+  store.set('hiddenCols', [...state.hiddenCols]);
+  toast(ids.length === 1 ? `Hid “${(ALBUM_MAP[ids[0]] || {}).title || 'album'}” from your library. The songs are still in Uploads.` : `Hid ${plural(ids.length, 'album')} from your library`);
+  render();
 }
 async function deleteCollections(keys) {
   const trackIds = [];
@@ -3299,6 +3318,11 @@ function act(el, e) {
     case 'disc-genre': setDiscoverGenre(d.g); break;
     case 'disc-genre-more': pickDiscoverGenre(); break;
     case 'theme': setTheme(d.k); break;
+    case 'avatar-remove': setAvatar(null); break;
+    case 'album-hide': hideAlbums([d.id]); break;
+    case 'album-unhide': state.hiddenCols.delete('album:' + d.id); store.set('hiddenCols', [...state.hiddenCols]); toast('Back in your library'); render(); break;
+    case 'albums-unhide': state.hiddenCols = new Set([...state.hiddenCols].filter(k => !k.startsWith('album:'))); store.set('hiddenCols', [...state.hiddenCols]); render(); break;
+    case 'lib-hide': hideAlbums([...state.libSel].filter(k => k.startsWith('album:ua-')).map(k => k.slice(6))); state.libSel = null; render(); break;
     case 'sel-dl': {
       const ids = dlTargets(selIds());
       if (ids.every(id => offline.has(id))) confirmRemoveDownloads(ids); else { downloadTracks(ids); clearSel(); }
@@ -3422,7 +3446,7 @@ function act(el, e) {
     case 'album-edit': openEdit(ALBUM_MAP[d.id].trackIds, { album: d.id }); break;
     case 'edit-one': openEdit([d.tid]); break;
     case 'restore':
-      state.hidden.clear(); state.hiddenCols.clear(); store.set('hidden', []); store.set('hiddenCols', []);
+      state.hidden.clear(); state.hiddenCols = new Set([...state.hiddenCols].filter(k => k.startsWith('album:'))); store.set('hidden', []); store.set('hiddenCols', [...state.hiddenCols]);
       render(); toast('Demo music restored'); break;
     case 'modal-close': closeModal(); break;
     case 'drop-close': hideDrop(); break;
@@ -4683,6 +4707,37 @@ function ago(ms) {
   const m = Math.round((Date.now() - ms) / 60000);
   return m < 2 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
 }
+/* Profile pictures: a person's photo, or the first letter of their name. */
+const avatarHTML = (u, cls = 'avatar') => u && u.avatar ? `<span class="${cls} has-img"><img src="${esc(u.avatar)}" alt=""></span>` : `<span class="${cls}">${esc(((u && u.name) || '?').slice(0, 1).toUpperCase())}</span>`;
+function renderAcctBtn() {
+  const b = $('#acctBtn'); if (!b || !me) return;
+  b.classList.toggle('has-img', !!me.avatar);
+  b.innerHTML = me.avatar ? `<img src="${esc(me.avatar)}" alt="">` : esc(me.name.slice(0, 1).toUpperCase());
+}
+// Shrink the chosen photo to a 256px square (centre crop) in the browser, so any phone photo fits.
+function squareImage(file) {
+  return new Promise((ok, no) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement('canvas');
+      c.width = c.height = 256;
+      c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+      URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); no(new Error('That file isn’t a picture Murmur can open.')); };
+    img.src = url;
+  });
+}
+async function setAvatar(file) {
+  try {
+    const image = file ? await squareImage(file) : '';
+    const res = await api('PUT', 'api/me/avatar', { image });
+    me.avatar = res.avatar; store.set('auth', { ...(store.get('auth', null) || {}), ...me });
+    renderAcctBtn(); openAccount();
+    toast(file ? 'Profile picture updated' : 'Profile picture removed');
+  } catch (e) { toast(e.message); }
+}
+document.addEventListener('change', e => { if (e.target.id === 'avatarFile' && e.target.files && e.target.files[0]) setAvatar(e.target.files[0]); });
 function openAccount() {
   if (!me) return;
   const until = me.remembered ? `Remembered on this computer until <b>${when(me.expiresAt)}</b>.` : 'Signed in for this visit only. You’ll need your PIN again after 12 hours or when the browser closes.';
@@ -4692,7 +4747,10 @@ function openAccount() {
   const adOn = window.MurmurAndroid ? 'On (built into the app)' : document.documentElement.dataset.murmurAdblock ? 'On (Murmur Ad Blocker extension)' : '';
   const adLine = !yt.enabled ? '' : adOn ? `<p>YouTube ad blocker: <b>${adOn}</b></p>`
     : `<p>YouTube ad blocker: <b>Off</b>. In a desktop browser, <a href="https://rodriguezcurielj.github.io/Murmur/apps/#extension" target="_blank" rel="noopener">install the Murmur Ad Blocker</a> to remove YouTube ads.</p>`;
-  openModal({ title: esc(me.name), confirm: 'Done', html: `<p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}${adLine}
+  openModal({ title: esc(me.name), confirm: 'Done', html: `${server.on ? `<div class="acct-photo">${avatarHTML(me, 'avatar avatar-lg')}
+      <div class="acct-photo-btns"><label class="text-btn" tabindex="0">${icon('upload')}<span>${me.avatar ? 'Change photo' : 'Add a profile picture'}</span><input type="file" accept="image/*" id="avatarFile" hidden></label>
+      ${me.avatar ? `<button type="button" class="text-btn" data-act="avatar-remove">${icon('trash')}<span>Remove</span></button>` : ''}</div></div>` : ''}
+    <p>${esc(roleLabel(me))}</p><p>${server.offlineMode ? 'You’re offline right now.' : until}</p>${where}${adLine}
     <div class="acct-actions">
       ${me.role === 'owner' && server.on ? `<button type="button" class="text-btn" data-act="acct-people">${icon('user')}<span>People & settings</span></button>` : ''}
       ${server.on && srcs.list.length ? `<button type="button" class="text-btn" data-act="acct-sources">${icon('download')}<span>My download sources</span></button>` : ''}
@@ -4767,7 +4825,7 @@ function viewPeople() {
         <button class="text-btn" data-act="dev-out" data-id="${s.id}" data-cur="${s.current ? 1 : 0}">Sign out</button></li>`).join('')
       : '<li class="small">Not signed in anywhere.</li>';
     return `<article class="person">
-      <header class="person-head"><span class="avatar">${esc(u.name.slice(0, 1).toUpperCase())}</span>
+      <header class="person-head">${avatarHTML(u)}
         <div class="person-meta"><h3>${esc(u.name)}</h3><span class="small">${esc(roleLabel(u))} · added ${when(u.createdAt)}</span></div></header>
       <div class="person-actions">
         <button class="text-btn" data-act="p-lib" data-id="${u.id}">${icon('library')}<span>${u.id === me.id ? 'My library (admin view)' : 'View library'}</span></button>
@@ -4877,7 +4935,7 @@ async function addPerson(form) {
   if ((server.auth || cfg) && 'serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {} }
   if (['setup', 'login', 'expired', 'offline-expired', 'connect', 'unreachable'].includes(mode)) { showGate(mode); return; }
   $('#acctBtn').hidden = !me;
-  if (me) $('#acctBtn').textContent = me.name.slice(0, 1).toUpperCase();
+  renderAcctBtn();
   if (mode === 'ok') {
     await connectServer();
     try { yt.enabled = !!(await api('GET', 'api/youtube/status')).enabled; } catch (e) {}
