@@ -102,7 +102,8 @@ svg.i{width:20px;height:20px;flex:none}
 .chip.on{background:var(--fg);color:var(--bg)}
 body.drag-selecting{user-select:none;-webkit-user-select:none;cursor:grabbing}
 body.drag-selecting .tracks{touch-action:none}
-.tracks .row{-webkit-touch-callout:none}
+/* Song rows never select text: on Android a press-and-hold would start text selection (~400ms) and take the touch away from drag-to-select. */
+.tracks .row{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .genre-chips{padding:2px 0 14px}
 .chip-n{margin-left:6px;opacity:.6;font-weight:500}
 .genre-btn{margin-top:8px}
@@ -3549,15 +3550,18 @@ document.addEventListener('pointerdown', e => {
   const row = e.target.closest('.tracks[data-ctx-type] .row[data-i]');
   if (!row || e.target.closest('button, a, input, label')) return;
   drag.list = row.closest('.tracks'); drag.start = +row.dataset.i; drag.pointer = e.pointerId;
-  drag.x = e.clientX; drag.y = e.clientY; drag.moved = false;
+  drag.x = drag.x0 = e.clientX; drag.y = drag.y0 = e.clientY; drag.moved = false;
   const selecting = selMatches(drag.list.dataset.ctxType, drag.list.dataset.ctxId);
   clearTimeout(drag.timer);
   // A mouse already in select mode starts right away (once it moves); otherwise wait for a press and hold.
-  if (!(selecting && e.pointerType === 'mouse')) drag.timer = setTimeout(() => { if (drag.pointer === e.pointerId && !drag.moved) dragBegin(); }, 450);
+  // 350ms: shorter than Android's own press-and-hold (about 400ms), which would otherwise take over the touch.
+  if (!(selecting && e.pointerType === 'mouse')) drag.timer = setTimeout(() => { if (drag.pointer === e.pointerId && !drag.moved) dragBegin(); }, e.pointerType === 'touch' ? 350 : 450);
 });
 document.addEventListener('pointermove', e => {
   if (drag.pointer !== e.pointerId) return;
-  const far = Math.abs(e.clientX - drag.x) > 8 || Math.abs(e.clientY - drag.y) > 8;
+  // A finger wobbles a little while holding; only a real move (more than ~12px from where it went down) means scrolling.
+  const lim = e.pointerType === 'touch' ? 12 : 8;
+  const far = Math.abs(e.clientX - drag.x0) > lim || Math.abs(e.clientY - drag.y0) > lim;
   drag.x = e.clientX; drag.y = e.clientY;
   if (!drag.on) {
     if (!far) return;
