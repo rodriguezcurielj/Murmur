@@ -13,6 +13,9 @@ RUN npm install --omit=dev && npm cache clean --force
 COPY server.js auth.js youtube.js spotify.js discover.js userdata.js sync.js sources.js ./
 COPY sources ./sources
 
+# Copy cookies file from the parent project directory
+COPY cookies.txt ./cookies.txt
+
 # FIX: Copy from sources/youtube_stuff since that's where it lives in your repo structure
 COPY sources/youtube_stuff ./youtube_stuff
 
