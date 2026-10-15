@@ -395,6 +395,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate-alt{justify-content:center;padding:12px}
 .gate-err{margin:0;color:#ff9a9a;font-size:14px}
 .gate-notyou{align-self:flex-start;margin-top:-6px;font-size:14px}
+.gate-srv{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)}
 .gate-col{width:min(400px,100%);display:flex;flex-direction:column;gap:28px}
 .gate-apps{border-top:1px solid rgba(255,255,255,.1);padding-top:20px}
 .gate-apps h2{font:700 17px var(--font-display);margin:0 0 12px}
@@ -3103,6 +3104,7 @@ function act(el, e) {
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); showGate('connect'); break;
     case 'pick-server': pickServer(d.name); break;
+    case 'gate-servers': showGate('connect'); break;
     case 'gate-notyou': forgetUser(); store.set('auth', null); showGate('login'); setTimeout(() => { const n = $('#gName'); if (n) { n.value = ''; n.focus(); } }, 0); break;
     case 'gate-dev': { gateDev = d.k; const a = $('.gate-apps'); if (a) a.outerHTML = gateAppsHTML(); break; }
     case 'p-lib': navigate({ name: 'member', id: d.id }); break;
@@ -4092,6 +4094,7 @@ async function getStatus(base) {
 async function checkAuth() {
   let st = null;
   try { st = await getStatus(''); } catch (e) {}   // is this page served by the Murmur server itself?
+  remote.hosted = !!st;
   if (!st) {
     const base = savedServer();
     if (!base) {
@@ -4164,6 +4167,7 @@ function showGate(step, msg = '') {
         ${err}<button class="m-ok gate-ok" type="submit">Sign in</button>
         <p class="small">Don’t have a PIN? Ask the person who runs this Murmur to add you.</p></form>`);
   }
+  if (['setup', 'login', 'expired'].includes(step)) html = html.replace(/<\/div>$/, `${gateServerHTML()}</div>`);
   if (['setup', 'login', 'expired', 'connect', 'unreachable'].includes(step)) html = `<div class="gate-col">${html}${gateAppsHTML()}</div>`;
   g.innerHTML = html; g.hidden = false;
   if (step === 'connect' || step === 'unreachable') checkServerList();
@@ -4221,7 +4225,18 @@ function checkServerList() {
 function pickServer(name) {
   const x = SERVERS.find(v => v.name === name); if (!x) return;
   store.set('serverName', x.name); store.set('server', null); store.set('auth', null);
+  // A page served by a Murmur server always talks to that server, so go to the other server's own page.
+  if (remote.hosted && normalizeServer(x.url) !== normalizeServer(location.origin)) { location.href = x.url; return; }
   location.reload();
+}
+/* Shown on the sign-in screens so people who got signed out can still move to another server. */
+function gateServerHTML() {
+  if (!SERVERS.length && !remote.base) return '';
+  const cur = normalizeServer(remote.base || location.origin);
+  const others = SERVERS.filter(x => normalizeServer(x.url) !== cur);
+  return `<div class="gate-srv small"><span>Server: <b>${esc(serverLabel(cur))}</b></span>
+    ${others.map(x => `<button type="button" class="link-btn" data-act="pick-server" data-name="${esc(x.name)}">Switch to ${esc(x.name)}</button>`).join('')}
+    <button type="button" class="link-btn" data-act="gate-servers">All servers…</button></div>`;
 }
 async function gateSubmit(form) {
   const fd = new FormData(form), step = form.dataset.step;
@@ -4231,6 +4246,7 @@ async function gateSubmit(form) {
     const named = SERVERS.find(x => normalizeServer(x.url) === addr);
     if (named) { pickServer(named.name); return; }
     store.set('serverName', null); store.set('server', addr); store.set('auth', null);
+    if (remote.hosted && addr !== normalizeServer(location.origin)) { location.href = addr; return; }
     location.reload(); return;
   }
   const name = String(fd.get('name') || '').trim(), pin = String(fd.get('pin') || '');
