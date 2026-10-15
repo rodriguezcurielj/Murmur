@@ -21,7 +21,7 @@ function convert(links, format, onLine, done, opts = {}) {
     const outDir = opts.outDir || OUT_DIR;
     const archive = opts.archive || path.join(OUT_DIR, '.done.txt');
 
-    // Options passed to yt-dlp
+// Options passed to yt-dlp
     const args = [
         '-x', '--audio-format', format,                              // keep audio only, in the chosen format
         '--audio-quality', '0',                                      // best quality
@@ -32,6 +32,7 @@ function convert(links, format, onLine, done, opts = {}) {
         '--no-overwrites',                                           // never replace a file that already exists
         '--newline',                                                 // print progress one line at a time
         '--remote-components', 'ejs:github',                         // auto-fetch challenge components
+        '--js-runtimes', 'node',                                     // use Node.js runtime for EJS scripts
         '--extractor-args', 'youtube:player_client=web_safari,web_embedded,-tv_downgraded', // bypass web client blocks
         '-o', path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
     ];

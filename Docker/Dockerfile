@@ -1,8 +1,8 @@
 FROM node:20-alpine
 
-# Install ffmpeg, python, and yt-dlp
+# Install ffmpeg, python, and yt-dlp with the EJS package solver
 RUN apk add --no-cache ffmpeg python3 py3-pip && \
-    pip install --no-cache-dir --break-system-packages yt-dlp
+    pip install --no-cache-dir --break-system-packages yt-dlp yt-dlp-ejs
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY sources ./sources
 # Copy cookies file from the parent project directory
 COPY cookies.txt ./cookies.txt
 
-# FIX: Copy from sources/youtube_stuff since that's where it lives in your repo structure
+# Copy youtube stuff
 COPY sources/youtube_stuff ./youtube_stuff
 
 # The web app lives at the repo root; the server serves it from ./public
