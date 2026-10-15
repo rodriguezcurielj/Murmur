@@ -35,7 +35,9 @@ function convert(links, format, onLine, done, opts = {}) {
         '--js-runtimes', 'deno',                                     // use Deno runtime for EJS scripts...
         '--js-runtimes', 'node',                                     // ...or Node.js where Deno isn't installed (e.g. 32-bit ARM)
         '--extractor-args', 'youtube:player_client=web_safari,web_embedded,-tv_downgraded', // bypass web client blocks
-        '-o', path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'), // OUTPUT: where and how files are named
+        // OUTPUT: where and how files are named. Murmur's server names files by video id: titles with accents
+        // (Virlán García) break ffmpeg's cover step on Windows. The real title and artist are stored inside the file.
+        '-o', opts.outDir ? path.join(outDir, '%(id)s.%(ext)s') : path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'),
     ];
 
     if (archive) args.push('--download-archive', archive);           // remembers finished videos so re-runs skip them

@@ -27,7 +27,6 @@ const DB = path.join(DATA, 'library.json');
 const PLAYABLE = new Set(['mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'wav', 'flac']);
 
 for (const d of Object.values(DIRS)) fs.mkdirSync(d, { recursive: true });
-for (const f of fs.readdirSync(DIRS.tmp)) fs.rmSync(path.join(DIRS.tmp, f), { force: true, recursive: true });
 
 // Ensure output directory for youtube_stuff exists too
 fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -125,6 +124,7 @@ sources.routes(app);
 // --- SECURED & LIBRARY-INTEGRATED YOUTUBE CONVERTER ROUTE ---
 // yt-dlp saves into a temporary folder; each finished file is then added to the library like an upload.
 function listAudio(dir) {
+    if (!fs.existsSync(dir)) return [];   // yt-dlp removes its folder when a download fails
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
         const full = path.join(dir, e.name);
         if (e.isDirectory()) return listAudio(full);
@@ -421,4 +421,19 @@ Object.assign(deferred, {
 });
 sync.start();
 
-app.listen(PORT, () => console.log(`Murmur is running at http://localhost:${PORT} (data in ${DATA}). Players allowed from: ${ALLOWED_ORIGINS.join(', ')}`));
+// Leftover temporary files: cleared once this server is really up (a second copy that can't get the port
+// must not wipe downloads in progress), and only ones older than an hour.
+function clearOldTmp() {
+    for (const f of fs.readdirSync(DIRS.tmp)) {
+        const p = path.join(DIRS.tmp, f);
+        try { if (Date.now() - fs.statSync(p).mtimeMs > 3600e3) fs.rmSync(p, { force: true, recursive: true }); } catch { /* already gone */ }
+    }
+}
+const server = app.listen(PORT, () => {
+    console.log(`Murmur is running at http://localhost:${PORT} (data in ${DATA}). Players allowed from: ${ALLOWED_ORIGINS.join(', ')}`);
+    clearOldTmp(); setInterval(clearOldTmp, 6 * 3600e3).unref();
+});
+server.on('error', err => {
+    if (err.code === 'EADDRINUSE') { console.error(`Port ${PORT} is already in use: another Murmur server is running here. This one is stopping.`); process.exit(1); }
+    throw err;
+});
