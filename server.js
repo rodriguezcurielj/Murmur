@@ -72,26 +72,24 @@ function guessFromName(name) {
 
 const app = express();
 app.disable('x-powered-by');
-// Behind the tunnel every request arrives from the tunnel container; trust its
-// X-Forwarded-* headers so wrong-PIN limits apply per real visitor and cookies get Secure.
 app.set('trust proxy', 'loopback, uniquelocal');
-// Players hosted elsewhere (GitHub Pages) that may sign in to this server. Comma-separated.
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'https://rodriguezcurielj.github.io').split(',').map(s => s.trim()).filter(Boolean);
 const auth = createAuth(path.join(DATA, 'auth.json'), { allowedOrigins: ALLOWED_ORIGINS });
 app.use(auth.cors);
 app.use(auth.sameOrigin);
-// Server-to-server sync (see sync.js). Its endpoints use their own key instead of a sign-in.
-const deferred = {};   // what to keep in sync; filled in below, once every part of the server exists
+
+const deferred = {};
 const sync = createSync(DATA, deferred, {
     files: () => library.flatMap(t => ['music/' + t.file, ...(t.cover ? ['covers/' + t.cover] : [])])
 });
 sync.routes(app);
 app.use(sync.middleware);
-app.use('/api', express.json({ limit: '10mb' }));   // imported Spotify playlists can be large
+app.use('/api', express.json({ limit: '10mb' }));
 app.use('/api', auth.requireUser);
+
 const spotify = createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id) });
 const userData = createUserData(DATA, auth, { importsFor: spotify.importsFor });
-// Deleting a person also deletes their library (liked songs, playlists, history).
+
 app.delete('/api/users/:id', auth.requireOwner, (req, res, next) => {
     const id = req.params.id;
     res.on('finish', () => { if (res.statusCode < 300) { userData.removeUser(id); sources.removeUser(id); } });
@@ -103,6 +101,7 @@ youtube.routes(app);
 createDiscover().routes(app);
 spotify.routes(app);
 userData.routes(app);
+
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 
 const sources = createSources(DATA, auth, {
@@ -112,25 +111,32 @@ const sources = createSources(DATA, auth, {
 });
 sources.routes(app);
 
-// --- THE INTEGRATED /convert ROUTE FOR YOUTUBE ---
-app.post('/convert', express.json(), async (req, res) => {
+// --- SECURED & LIBRARY-INTEGRATED YOUTUBE CONVERTER ROUTE ---
+app.post('/convert', auth.requireUser, express.json(), async (req, res) => {
     const links = (req.body.links || []).filter(l => /^https?:\/\//.test(l));
     const format = req.body.format === 'm4a' ? 'm4a' : 'mp3';
 
+    if (!links.length) {
+        return res.status(400).json({ error: 'No valid links provided.' });
+    }
+
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Transfer-Encoding', 'chunked');
-    res.write(`Saving ${format} files to ${OUT_DIR}\n`);
+    res.write(`Starting conversion for ${links.length} link(s)...\n`);
 
     convert(links, format,
-        line => res.write(line + '\n'),
-        code => res.end(code === 0 ? 'Finished.\n' : `Finished with errors (code ${code}).\n`)
+        async (line) => {
+            res.write(line + '\n');
+        },
+        async (code) => {
+            res.end(code === 0 ? 'Finished and added to library.\n' : `Finished with errors (code ${code}).\n`);
+        }
     );
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.get('/api/tracks', (req, res) => res.json({ tracks: library }));
 
-// Adds a media file to the library: reads its tags and cover, converts it to MP3 if browsers can't play it.
 const mediaError = (status, message) => Object.assign(new Error(message), { status, expose: true });
 async function addMediaFile(srcPath, original, user, extra = {}) {
     const id = crypto.randomBytes(8).toString('hex');
