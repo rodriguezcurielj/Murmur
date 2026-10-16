@@ -1333,10 +1333,23 @@ const Offline = {
       tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
     });
   },
-  put(rec) { return this.run('readwrite', s => s.put(rec)); },
-  get(id) { return this.run('readonly', s => s.get(id)); },
+  // Some browsers can't keep files (Blobs) in IndexedDB; then the bytes are kept instead and made into files again on reading.
+  async put(rec) {
+    try { return await this.run('readwrite', s => s.put(rec)); }
+    catch (e) {
+      if (!/blob/i.test(String(e && e.message))) throw e;
+      const r = { ...rec };
+      for (const k of ['blob', 'cover']) if (r[k] instanceof Blob) { r[k + 'Buf'] = await r[k].arrayBuffer(); r[k + 'Type'] = r[k].type; delete r[k]; }
+      return this.run('readwrite', s => s.put(r));
+    }
+  },
+  revive(r) {
+    if (r) for (const k of ['blob', 'cover']) if (r[k + 'Buf'] && !r[k]) r[k] = new Blob([r[k + 'Buf']], { type: r[k + 'Type'] || '' });
+    return r;
+  },
+  async get(id) { return this.revive(await this.run('readonly', s => s.get(id))); },
   del(id) { return this.run('readwrite', s => s.delete(id)); },
-  all() { return this.run('readonly', s => s.getAll()); }
+  async all() { return ((await this.run('readonly', s => s.getAll())) || []).map(r => this.revive(r)); }
 };
 const dlq = { queue: [], busy: false, cur: null, done: 0, total: 0 };
 async function loadOffline() {
@@ -1361,23 +1374,31 @@ async function fetchWithProgress(url, onProg) {
   }
   return new Blob(parts, { type: res.headers.get('content-type') || 'audio/mpeg' });
 }
-const canDownload = id => !!TRACKS[id] && !!TRACKS[id].src;
+/* Files in Murmur download as they are. YouTube songs (and imported Spotify songs, through their YouTube match)
+   download as the audio a Murmur server gets for them (ytaudio.js), so they play with no signal too. */
+const canDownload = id => { const t = TRACKS[id]; return !!t && (!!t.src || !!t.yt || (!!t.sp && !(sp.matches[t.key] || {}).none)); };
+const dlSpKey = new Map();   // YouTube song id -> the Spotify song it stands in for (so it plays offline from that song too)
 function dlTargets(ids) {
   return [...new Set(ids.map(id => {
     const t = TRACKS[id]; if (!t) return null;
-    if (t.src) return id;
-    if (t.sp && spStatus(id) === 'file') return 'f-' + sp.matches[t.key].file;
+    if (t.src || t.yt) return id;
+    if (t.sp) {
+      const m = sp.matches[t.key] || {};
+      if (m.file && TRACKS['f-' + m.file]) return 'f-' + m.file;
+      if (m.yt) { const y = addYtTrack(m.yt); dlSpKey.set(y, t.key); return y; }
+      return id;   // not matched yet: matched to a YouTube video when its turn comes
+    }
     return null;
   }).filter(id => id && canDownload(id)))];
 }
 const dlNoun = col => col.kind === 'Album' ? 'album' : ['playlist', 'liked', 'import', 'mlist'].includes(col.type) || col.kind === 'Playlist' ? 'playlist' : 'songs';
 // Songs in a list that only play from YouTube (no file in Murmur), so they can't be saved.
 const dlSkipped = col => col.tracks.filter(id => !dlTargets([id]).length).length;
-const ytOnlyText = n => n === 1 ? '1 song only plays from YouTube and can’t be downloaded.' : n + ' songs only play from YouTube and can’t be downloaded.';
+const ytOnlyText = n => n === 1 ? '1 song has no match on YouTube, so it can’t be downloaded.' : n + ' songs have no match on YouTube, so they can’t be downloaded.';
 function downloadTracks(ids) {
   const want = ids.filter(id => canDownload(id) && !offline.has(id) && !dlq.queue.includes(id) && !(dlq.cur && dlq.cur.id === id));
   if (!want.length) {
-    toast(ids.some(canDownload) ? 'Already downloaded' : 'Only songs with a file in Murmur can be downloaded. YouTube songs can’t.');
+    toast(ids.some(canDownload) ? 'Already downloaded' : 'These songs can’t be downloaded.');
     return;
   }
   if (!server.on) { toast('Downloading needs a connection to your Murmur server.'); return; }
@@ -1390,13 +1411,27 @@ async function pumpDownloads() {
   dlq.busy = true;
   let saved = 0;
   while (dlq.queue.length) {
-    const id = dlq.queue.shift(), t = TRACKS[id];
+    let id = dlq.queue.shift(), t = TRACKS[id];
     if (!t) { dlq.total--; continue; }
     dlq.cur = { id, title: t.title, pct: 0 }; renderUploadStatus(); syncDownloads();
     try {
+      // An imported Spotify song: find (or reuse) its YouTube match, and save that.
+      let spKey = t.yt ? dlSpKey.get(id) || '' : '';
+      if (t.sp) {
+        let m = sp.matches[t.key] || {};
+        if (!m.yt) {
+          const best = pickBest(t, await ytSearch(`${t.artist.split(',')[0]} - ${t.title}`, ''));
+          if (!best) { await saveMatch(t.key, { none: true }); throw new Error('No match on YouTube.'); }
+          await saveMatch(t.key, { yt: ytMeta(best) }); m = sp.matches[t.key] || { yt: ytMeta(best) };
+        }
+        spKey = t.key; id = addYtTrack(m.yt); t = TRACKS[id];
+        if (offline.has(id)) { dlq.done++; continue; }
+      }
+      const src = t.src || ytAudioSrc(t);
+      if (!src) throw new Error('No Murmur server can get it right now.');
       let blob;
       for (let attempt = 1; ; attempt++) {
-        try { blob = await fetchWithProgress(t.src, p => { dlq.cur.pct = p; dlq.cur.retry = false; renderUploadStatus(); }); break; }
+        try { blob = await fetchWithProgress(src, p => { dlq.cur.pct = p; dlq.cur.retry = false; renderUploadStatus(); }); break; }
         catch (e) {
           // A dropped connection (phone switching networks, server busy): wait and try again, up to 4 times.
           if (attempt >= 4 || /quota|answered 4/i.test(`${e && e.name} ${e && e.message}`)) throw e;
@@ -1406,7 +1441,8 @@ async function pumpDownloads() {
       }
       let cover = null;
       if (t.cover) { try { const r = await fetch(t.cover); if (r.ok) cover = await r.blob(); } catch (e) {} }
-      await Offline.put({ id, blob, cover, meta: t.raw, server: remote.base, savedAt: Date.now() });
+      if (blob.size < 50e3) throw new Error('The server couldn’t get this song from YouTube.');
+      await Offline.put({ id, blob, cover, meta: t.raw, yt: t.yt ? ytMeta(id) : null, spKey: spKey || null, server: remote.base, savedAt: Date.now() });
       offline.set(id, { size: blob.size });
       if (cover) offlineCovers[id] = URL.createObjectURL(cover);
       saved++;
@@ -2182,7 +2218,7 @@ const FileEng = {
       a.addEventListener('playing', () => { this.netRetries = 0; if (this.track && this.track.yt) ytAudioPlaying(this.track); });
       a.addEventListener('error', () => {
         if (!this.track || !a.getAttribute('src')) return;
-        if (this.track.yt && !this.track.src) { ytAudioFailed(this.track, !!this.wantPlaying); return; }
+        if (this.track.yt && !this.track.src && !offline.has(this.track.id)) { ytAudioFailed(this.track, !!this.wantPlaying); return; }   // a stream (not a downloaded copy)
         if (this.netTrack !== this.track) { this.netTrack = this.track; this.netRetries = 0; }
         // A dropped connection (phone waking up, switching Wi-Fi/data): quietly pick up where it stopped, twice, before saying anything.
         if (a.error && a.error.code === 2 && !offline.has(this.track.id) && (this.netRetries || 0) < 2) {
@@ -2195,6 +2231,7 @@ const FileEng = {
           }, 1500 * this.netRetries);
           return;
         }
+        if (!offline.has(this.track.id)) { streamFailed().then(gone => { if (!gone) toast(`Couldn't play ${this.track.title}. Check your connection to the Murmur server, or download it for offline.`); }); return; }
         toast(offline.has(this.track.id) ? `Couldn't play ${this.track.title}. Try removing and re-downloading it.`
           : `Couldn't play ${this.track.title}. Check your connection to the Murmur server, or download it for offline.`);
       });
@@ -2476,8 +2513,9 @@ function ytAudioFailed(t, wasPlaying) {
   if (Engine.mode !== 'file' || FileEng.track !== t) return;
   const next = ytAudioSrc(t, tried);
   if (next) { FileEng.load(t, next); if (wasPlaying) FileEng.play(); return; }
-  // No server could get it: YouTube's own player.
+  // No server could get it: no signal -> the next downloaded song; otherwise YouTube's own player.
   t.ytTried = null;
+  if (offlineNow()) { FileEng.unload(); next(true); return; }
   FileEng.unload(); Engine.mode = 'yt'; YTEng.load(t); if (wasPlaying) YTEng.play();
 }
 function ytAudioPlaying(t) {
@@ -2526,6 +2564,8 @@ const Engine = {
   mode: 'synth',
   get e() { return this.mode === 'file' ? FileEng : this.mode === 'yt' ? YTEng : Synth; },
   load(t) {
+    // Downloaded on this device: always from the saved file (no signal needed).
+    if (t.yt && offline.has(t.id)) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t); return; }
     const ya = t.yt && (ytAudioOn() || (ytKept.has(t.ytId) && server.on)) ? ytAudioSrc(t) : null;
     if (ya) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t, ya); return; }
     if (t.yt) { Synth.unload(); FileEng.unload(); this.mode = 'yt'; YTEng.load(t); return; }
@@ -2679,7 +2719,54 @@ function playFrom(type, id, start) {
   loadAndPlay(curId(), true);
 }
 let spFails = 0;
+/* Like Spotify on the road: with no signal, songs that aren't downloaded are skipped and the next downloaded one
+   plays, until the connection comes back. */
+const net = { down: false, probe: null, told: 0 };
+function localPlayable(id) {
+  const t = TRACKS[id]; if (!t) return false;
+  if (offline.has(id)) return true;
+  if (t.sp) { const m = sp.matches[t.key] || {}; return !!((m.file && offline.has('f-' + m.file)) || (m.yt && offline.has('yt-' + m.yt.id))); }
+  return false;
+}
+const offlineNow = () => server.offlineMode || net.down || navigator.onLine === false;
+function goneOffline() {
+  if (net.down) return;
+  net.down = true;
+  if (Date.now() - net.told > 60e3) { net.told = Date.now(); toast('No signal. Playing your downloaded songs until it’s back.'); }
+  clearInterval(net.probe);
+  net.probe = setInterval(async () => {   // check now and then whether the server answers again
+    try { const r = await fetch(apiUrl('api/health'), { cache: 'no-store', signal: AbortSignal.timeout(5000) }); if (r.ok) backOnline(); } catch (e) {}
+  }, 15e3);
+}
+function backOnline() {
+  if (!net.down) return;
+  net.down = false; clearInterval(net.probe);
+  toast('Back online');
+  pushUserData(); pullUserData();
+}
+window.addEventListener('offline', goneOffline);
+window.addEventListener('online', () => { if (net.down) setTimeout(async () => { try { const r = await fetch(apiUrl('api/health'), { cache: 'no-store', signal: AbortSignal.timeout(5000) }); if (r.ok) backOnline(); } catch (e) {} }, 1500); });
+// A song stopped for lack of a connection: is it the phone's signal, or just this song? Then move on.
+async function streamFailed() {
+  let ok = false;
+  try { const r = await fetch(apiUrl('api/health'), { cache: 'no-store', signal: AbortSignal.timeout(4000) }); ok = r.ok; } catch (e) {}
+  if (!ok) { goneOffline(); next(true); return true; }
+  return false;
+}
+function playableFrom(pos) {
+  for (let k = 1; k <= state.order.length; k++) { const p = (pos + k) % state.order.length; if (localPlayable(state.list[state.order[p]])) return p; }
+  return -1;
+}
 function loadAndPlay(tid, autoplay = true) {
+  const needsNet = t => !!t && (!!t.src || !!t.yt || !!t.sp);   // demo songs are made on the device
+  if (offlineNow() && needsNet(TRACKS[tid]) && !localPlayable(tid)) {
+    const mi = state.manual.findIndex(localPlayable);
+    if (mi >= 0) { const id = state.manual.splice(mi, 1)[0]; refreshQueueView(); return loadAndPlay(id, autoplay); }
+    const p = playableFrom(state.pos);
+    if (p >= 0 && state.list[state.order[p]] !== tid) { state.pos = p; return loadAndPlay(curId(), autoplay); }
+    if (autoplay) toast('No signal. Download songs to play them without a connection.');
+    Engine.pause(); state.current = tid; updatePlayerUI(); return;
+  }
   state.current = tid;
   const st = TRACKS[tid];
   if (st && st.sp) {
@@ -3611,7 +3698,8 @@ function renderMenu() {
         + (yt.enabled ? b('spver', icon('search') + 'Choose a YouTube version') : '')
         + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
       + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '')
-        + (server.on ? b('save', icon('save') + 'Save file to device') : '') : '')
+        + (server.on ? b('save', icon('save') + 'Save file to device') : '')
+        : canDownload(t.id) ? '<hr>' + (localPlayable(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '') : '')
       + (t.src && canChange(t.id) ? b('edit', icon('edit') + 'Edit details') : '')
       + (editable ? '<hr>' + b('remove', icon('list') + 'Remove from this playlist') : '')
       + (t.src && !canChange(t.id) ? '' : '<hr>' + (t.src
@@ -4084,7 +4172,7 @@ function act(el, e) {
     case 'col-dl': {
       const col = getCollection(d.type, d.id); if (!col) return;
       const ids = dlTargets(col.tracks), skipped = dlSkipped(col);
-      if (!ids.length) { toast('These songs play from YouTube, which can’t be downloaded. Use ⋯ → Bring into Murmur on a song to add your own copy, then download it.'); break; }
+      if (!ids.length) { toast('None of these songs can be downloaded.'); break; }
       if (ids.every(id => offline.has(id))) { confirmRemoveDownloads(ids); break; }
       downloadTracks(ids);
       if (skipped) toast(`Downloading ${plural(ids.filter(id => !offline.has(id)).length, 'song')}. ${ytOnlyText(skipped)}`);
@@ -5450,7 +5538,7 @@ async function checkAuth() {
     if (!base) {
       if (cfg) return 'connect';                     // hosted copy with no server address yet
       const c = store.get('auth', null);             // the claude.ai demo, or opened offline
-      if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
+      if (c) { me = c; return 'offline'; }           // even an ended sign-in can play what's downloaded here
       return c ? 'offline-expired' : 'demo';
     }
     const tries = [normalizeServer(base), ...SERVERS.map(x => normalizeServer(x.url))].filter((v, i, a) => v && a.indexOf(v) === i);
@@ -5458,7 +5546,9 @@ async function checkAuth() {
     if (!found) {
       remote.base = tries[0]; loadToken();
       const c = store.get('auth', null);
-      if (c && c.expiresAt > Date.now()) { me = c; return 'offline'; }
+      // No server answers: play what's downloaded on this device (even if the sign-in has ended; the PIN is
+      // asked for again once a server is back).
+      if (c) { me = c; return 'offline'; }
       return 'unreachable';
     }
     st = found.st; remote.base = found.base; loadToken();
@@ -6120,9 +6210,11 @@ setInterval(() => {
     pollYtJobs();
   }
   const saved = mode === 'demo' ? [] : await loadOffline();
+  // Downloaded YouTube songs (and which Spotify songs they stand in for), online or not.
+  saved.filter(r => r.yt).forEach(r => { addYtTrack(r.yt); if (r.spKey) sp.matches[r.spKey] = { ...(sp.matches[r.spKey] || {}), yt: r.yt }; });
   if (server.on) {
     // Downloads of songs that were deleted from the server are no longer needed.
-    for (const r of saved) if (!TRACKS[r.id] && (r.server || remote.base) === remote.base) await dropDownload(r.id);
+    for (const r of saved) if (r.meta && !r.yt && !TRACKS[r.id] && (r.server || remote.base) === remote.base) await dropDownload(r.id);
   } else if (saved.length) {
     // Server unreachable: show what's saved on this device.
     server.offlineMode = true;
