@@ -5570,23 +5570,33 @@ function gateAppsHTML() {
     <div class="gd-panel">${panels[k]}</div>
     <p class="small">Sign in with the same name and PIN everywhere. Your music and playlists follow you.</p></section>`;
 }
+/* A quick try, then a patient one before calling a server off: the Android app's WebView can hang on a
+   stale connection after a long time in the background. While a server list is on screen it keeps
+   checking, so a server that comes back shows Online without restarting the app. */
+let srvListTimer = null;
 function checkServerList() {
+  const shown = () => document.querySelector('[data-srv-state]');
   SERVERS.forEach(x => {
     const b = normalizeServer(x.url);
     const show = ok => {
       document.querySelectorAll(`[data-srv="${CSS.escape(b)}"]`).forEach(d => d.classList.toggle('ok', ok));
       document.querySelectorAll(`[data-srv-state="${CSS.escape(b)}"]`).forEach(d => { d.textContent = ok ? 'Online' : 'Off or unreachable'; });
     };
-    Promise.race([getStatus(b), new Promise((_, no) => setTimeout(no, 6000))]).then(() => show(true), () => show(false));
+    const ask = ms => Promise.race([getStatus(b, ms), new Promise((_, no) => setTimeout(no, ms))]);
+    ask(6000).catch(() => ask(15000)).then(() => show(true), () => show(false));
   });
+  clearTimeout(srvListTimer);
+  srvListTimer = setTimeout(() => { if (shown() && document.visibilityState === 'visible') checkServerList(); }, 20e3);
 }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && document.querySelector('[data-srv-state]')) checkServerList(); });
 /* Check a server answers before switching, so a dead one leaves people where they were with a note
    instead of reloading onto whichever server still works. */
 let switching = false;
 async function reachable(url, label) {
   if (switching) return false;
   switching = true; toast(`Connecting to ${label}…`);
-  try { await Promise.race([getStatus(url), new Promise((_, no) => setTimeout(no, 6000))]); return true; }
+  const ask = ms => Promise.race([getStatus(url, ms), new Promise((_, no) => setTimeout(no, ms))]);
+  try { await ask(6000).catch(() => ask(15000)); return true; }
   catch (e) { toast(`Can’t get into ${label}. It’s off or unreachable right now.`); return false; }
   finally { switching = false; }
 }
