@@ -182,49 +182,33 @@ public class PlaybackService extends Service {
         return b.build();
     }
 
-    /** The now-playing card in the notification list, like Spotify's: the cover behind the song and artist, a
-     *  progress bar, and shuffle / previous / play-pause / next / like (folded: previous / play-pause / next). */
+    /** The now-playing notification in the notification list: pinned while Murmur plays, with the song's picture
+     *  and previous / play-pause / next / like. (Android's own player in quick settings is separate.) */
     private void showControls() {
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (title.isEmpty()) { nm.cancel(CONTROLS_ID); return; }
-        android.widget.RemoteViews big = card(R.layout.notif_big), small = card(R.layout.notif_small);
-        long pos = position + (playing && positionAt > 0 ? (long) ((SystemClock.elapsedRealtime() - positionAt) * speed) : 0);
-        big.setProgressBar(R.id.n_progress, 1000, duration > 0 ? (int) Math.min(1000, pos * 1000 / duration) : 0, false);
-        big.setImageViewResource(R.id.n_shuffle, shuffle ? R.drawable.n_shuffle_on : R.drawable.n_shuffle);
-        big.setImageViewResource(R.id.n_like, liked ? R.drawable.n_heart_on : R.drawable.n_heart);
-        big.setOnClickPendingIntent(R.id.n_shuffle, serviceIntent(ACTION_CONTROL, "shuffle", 7));
-        big.setOnClickPendingIntent(R.id.n_like, serviceIntent(ACTION_CONTROL, "like", 8));
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, CONTROLS_CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(R.drawable.ic_stat_murmur)
                 .setContentTitle(title)
                 .setContentText(artist)
+                .setLargeIcon(art)
                 .setContentIntent(openAppIntent())
-                .setOngoing(playing)
+                .setOngoing(true)                // pinned: it stays until Murmur is closed
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
                 .setGroup("murmur-controls")
                 .setCategory(Notification.CATEGORY_TRANSPORT)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setCustomContentView(small)
-                .setCustomBigContentView(big)
-                .setCustomHeadsUpContentView(small);
-        // (No DecoratedCustomViewStyle: Android 12+ still adds its header, but the card isn't framed a second time.)
+                .addAction(new Notification.Action.Builder(R.drawable.n_prev, "Previous", serviceIntent(ACTION_CONTROL, "prev", 4)).build())
+                .addAction(new Notification.Action.Builder(playing ? R.drawable.n_pause : R.drawable.n_play, playing ? "Pause" : "Play", serviceIntent(ACTION_CONTROL, "toggle", 5)).build())
+                .addAction(new Notification.Action.Builder(R.drawable.n_next, "Next", serviceIntent(ACTION_CONTROL, "next", 6)).build())
+                .addAction(new Notification.Action.Builder(liked ? R.drawable.n_heart_on : R.drawable.n_heart, liked ? "Liked" : "Like", serviceIntent(ACTION_CONTROL, "like", 8)).build())
+                // The media look (icon buttons, picture on the side) without a media session, so it stays in the
+                // notification list instead of moving into quick settings.
+                .setStyle(new Notification.MediaStyle().setShowActionsInCompactView(0, 1, 2));
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) b.setPriority(Notification.PRIORITY_LOW);
         try { nm.notify(CONTROLS_ID, b.build()); } catch (Exception ignored) {}
-    }
-
-    /** The parts both sizes of the card share. */
-    private android.widget.RemoteViews card(int layout) {
-        android.widget.RemoteViews v = new android.widget.RemoteViews(getPackageName(), layout);
-        v.setTextViewText(R.id.n_title, title);
-        v.setTextViewText(R.id.n_artist, artist);
-        if (art != null) v.setImageViewBitmap(R.id.n_bg, art);
-        v.setImageViewResource(R.id.n_play, playing ? R.drawable.n_pause : R.drawable.n_play);
-        v.setOnClickPendingIntent(R.id.n_prev, serviceIntent(ACTION_CONTROL, "prev", 4));
-        v.setOnClickPendingIntent(R.id.n_play, serviceIntent(ACTION_CONTROL, "toggle", 5));
-        v.setOnClickPendingIntent(R.id.n_next, serviceIntent(ACTION_CONTROL, "next", 6));
-        return v;
     }
 
     private void updateSession() {

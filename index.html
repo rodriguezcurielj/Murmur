@@ -6117,8 +6117,8 @@ function setTheme(id) {
 const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '2.9';
-const ANDROID_NEW = 'The music card in your notifications now fills its space (cover, progress, shuffle, skip and like), and the buttons work every time.';
+const ANDROID_LATEST = '3.0';
+const ANDROID_NEW = 'A cleaner music notification: pinned, with the song picture and previous, play, next and like.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;

@@ -387,7 +387,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "2.9"; }
+        public String version() { return "3.0"; }
 
         /** Whether Android shows Murmur's "now playing" notification (it can be turned off in the phone's settings). */
         @JavascriptInterface
