@@ -18,6 +18,7 @@ const createSources = require('./sources');
 
 // --- INTEGRATED YOUTUBE CONVERTER MODULE ---
 const { convert, OUT_DIR } = require('./sources/youtube_stuff/convert');
+const { songName } = require('./songmeta');   // real song names for YouTube videos
 
 const PORT = Number(process.env.PORT) || 8080;
 const DATA = path.resolve(process.env.DATA_DIR || './data');
@@ -196,8 +197,23 @@ function convertOne(link, onPct) {
             else if (/^\[(Metadata|EmbedThumbnail)\]/.test(line)) onPct(95);
             else if (/has already been recorded in the archive/.test(line)) skipped = true;
             else if (/^ERROR:/.test(line)) lastErr = line.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?([\w-]+:\s*)?/, '');
-        }, code => resolve({ code, work, skipped, error: lastErr }), { outDir: work, archive: false });
+        }, code => resolve({ code, work, skipped, error: lastErr }), { outDir: work, archive: false, infoJson: true });
     });
+}
+/* The song's real name, artists and genre (songmeta.js), from what yt-dlp knows about the video. Songs from a
+   Spotify import or the song catalog already have their real name, so it's kept. */
+async function nameForVideo(dir, item) {
+    let info = {};
+    try { const f = fs.readdirSync(dir).find(n => n.endsWith('.info.json')); if (f) info = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch {}
+    const ytTitle = String(info.title || item.title || ''), ytArtist = String(info.channel || info.uploader || '');
+    try {
+        if (item.song && item.song.title) {
+            const n = await songName({ title: `${item.song.artist} - ${item.song.title}`, channel: item.song.artist });
+            return { title: item.song.title, artist: item.song.artist || n.artist, genre: n.genre, named: 1, ytTitle, ytArtist };
+        }
+        const n = await songName({ title: ytTitle, channel: ytArtist, track: info.track, artist: info.artist });
+        return { title: n.title, artist: n.artist, genre: n.genre, named: 1, ytTitle, ytArtist };
+    } catch (e) { console.error('Could not name the song:', e.message); return {}; }
 }
 async function runJob(job) {
     job.startedAt = Date.now();
@@ -217,7 +233,8 @@ async function runJob(job) {
             try {
                 const files = listAudio(r.work);
                 if (files.length) {
-                    const track = await addMediaFile(files[0], path.basename(files[0]), job.user, { ytId: vid });
+                    const named = await nameForVideo(r.work, item);
+                    const track = await addMediaFile(files[0], path.basename(files[0]), job.user, { ytId: vid, ...named });
                     item.track = track.id; item.state = 'done'; job.added++;
                     // A song from an imported Spotify playlist now plays this file ("In Murmur").
                     if (item.key) await linkToSpotify(item.key, track.id, job.user);
@@ -232,14 +249,16 @@ async function runJob(job) {
     }
     job.finishedAt = Date.now();
 }
-app.post('/api/convert/jobs', auth.requireUser, auth.requireEdit, (req, res) => {
+// Anyone signed in can bring songs into the library this way (e.g. the songs of a Spotify playlist they imported).
+app.post('/api/convert/jobs', auth.requireUser, (req, res) => {
     const b = req.body || {};
     const items = (Array.isArray(b.items) ? b.items : []).filter(x => x && YT_LINK.test(String(x.link || '')));
     if (!items.length) return res.status(400).json({ error: 'No YouTube links were sent.' });
     if (items.length > MAX_JOB_SONGS) return res.status(400).json({ error: `That’s ${items.length} songs. Murmur gets up to ${MAX_JOB_SONGS} at a time; pick fewer and do the rest after.` });
     const job = { id: crypto.randomBytes(6).toString('hex'), userId: req.user.id, user: req.user, label: String(b.label || '').slice(0, 120),
         ctx: String(b.ctx || '').slice(0, 120), createdAt: Date.now(), added: 0,
-        items: items.map(x => ({ link: x.link, title: String(x.title || '').slice(0, 200) || 'YouTube song', key: String(x.key || '').slice(0, 400), state: 'waiting', pct: 0, msg: '' })) };
+        items: items.map(x => ({ link: x.link, title: String(x.title || '').slice(0, 200) || 'YouTube song', key: String(x.key || '').slice(0, 400), state: 'waiting', pct: 0, msg: '',
+            song: x.song && typeof x.song.title === 'string' ? { title: String(x.song.title).slice(0, 200), artist: String(x.song.artist || '').slice(0, 200) } : null })) };
     jobs.set(job.id, job);
     jobChain = jobChain.then(() => runJob(job)).catch(err => console.error('YouTube job failed:', err));
     // Forget finished jobs after a day.
@@ -305,7 +324,7 @@ async function addMediaFile(srcPath, original, user, extra = {}) {
             title: extra.title || tags.title || guess.title,
             artist: extra.artist || tags.artist || tags.album_artist || guess.artist || '',
             album: extra.album != null ? extra.album : (tags.album || ''),
-            genre: tags.genre || '',
+            genre: extra.genre || (/^(music|other|unknown)$/i.test(tags.genre || '') ? '' : tags.genre || ''),
             trackNo: parseInt(tags.track, 10) || 0,
             duration,
             file,
@@ -318,6 +337,7 @@ async function addMediaFile(srcPath, original, user, extra = {}) {
             uploaderName: user.name,
             ...(extra.source ? { source: extra.source } : {}),
             ...(extra.ytId ? { ytId: extra.ytId } : {}),
+            ...(extra.named ? { named: 1, ytTitle: extra.ytTitle || '', ytArtist: extra.ytArtist || '' } : {}),
             addedAt: new Date().toISOString()
         };
         library.push(track);
@@ -379,9 +399,48 @@ app.patch('/api/tracks', auth.requireEdit, async (req, res) => {
         if (typeof b.title === 'string' && clean(b.title)) t.title = clean(b.title);
         if (typeof b.artist === 'string') t.artist = clean(b.artist);
         if (typeof b.album === 'string') t.album = clean(b.album);
+        if (typeof b.title === 'string' || typeof b.artist === 'string') t.userEdited = 1;   // song-name fixing leaves it alone
     }
     await save();
     res.json({ tracks });
+});
+
+/* Songs that came from YouTube before songmeta.js existed are named like their videos ("X - Y (Letra)" by a lyrics
+   channel). They're renamed once in the background, a few a minute (Apple's catalog allows about 20 lookups a
+   minute). Every server does this in its own random order, and the results sync, so they rarely do the same song. */
+const nameFix = { running: false, done: 0, total: 0, changed: 0 };
+async function fixSongNames() {
+    if (nameFix.running) return;
+    nameFix.running = true;
+    try {
+        const todo = library.filter(t => t.ytId && !t.named && !t.userEdited).map(t => t.id).sort(() => Math.random() - .5);
+        Object.assign(nameFix, { done: 0, total: todo.length, changed: 0 });
+        for (const id of todo) {
+            const t = library.find(x => x.id === id);
+            if (!t || t.named || t.userEdited) { nameFix.done++; continue; }
+            const ytTitle = t.ytTitle || t.title, ytArtist = t.ytArtist || t.artist;
+            const n = await songName({ title: ytTitle, channel: ytArtist });
+            const cur = library.find(x => x.id === id);   // (the library may have been replaced by a sync meanwhile)
+            if (cur && !cur.named && !cur.userEdited) {
+                if (n.title !== cur.title || n.artist !== cur.artist) nameFix.changed++;
+                Object.assign(cur, { title: n.title || cur.title, artist: n.artist || cur.artist, named: 1, ytTitle, ytArtist });
+                if (n.genre && (!cur.genre || /^(music|other)$/i.test(cur.genre))) cur.genre = n.genre;
+                await save();
+            }
+            nameFix.done++;
+        }
+        if (todo.length) console.log(`Song names: checked ${todo.length}, renamed ${nameFix.changed}.`);
+    } catch (e) { console.error('Fixing song names stopped:', e.message); }
+    nameFix.running = false;
+}
+setTimeout(fixSongNames, 30e3 + Math.random() * 60e3);
+setInterval(fixSongNames, 6 * 3600e3);
+app.get('/api/tracks/names', auth.requireUser, (req, res) => res.json(nameFix));
+// The owner can ask for every YouTube song to be named again (songs someone renamed by hand are left alone).
+app.post('/api/tracks/names', auth.requireOwner, (req, res) => {
+    for (const t of library) if (t.ytId && !t.userEdited) delete t.named;
+    save(); fixSongNames();
+    res.json(nameFix);
 });
 
 app.locals.ytAudio = require('./ytaudio')(app, auth, DATA, { userRecords: () => userData.syncCollection.get(), matches: () => spotify.syncCollections.matches.get() });   // ad-free YouTube audio through this server

@@ -212,7 +212,16 @@ public class MainActivity extends Activity {
                 Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 i.addCategory(Intent.CATEGORY_OPENABLE);
                 i.setType("*/*");
-                i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"audio/*", "video/*"});
+                // Use what the page asks for (a profile picture wants images; songs want audio or video).
+                java.util.List<String> types = new java.util.ArrayList<>();
+                for (String t : params.getAcceptTypes()) {
+                    for (String x : t.split(",")) {
+                        x = x.trim();
+                        if (x.contains("/")) types.add(x);
+                    }
+                }
+                if (types.isEmpty()) { types.add("audio/*"); types.add("video/*"); }
+                i.putExtra(Intent.EXTRA_MIME_TYPES, types.toArray(new String[0]));
                 i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
                 try {
                     a.startActivityForResult(i, PICK_FILES);

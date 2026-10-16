@@ -170,6 +170,22 @@ body.drag-selecting .tracks{touch-action:none}
 .qt .cover{width:60px;height:60px}
 .qt .nm{font-weight:700;flex:1;min-width:0}
 .qt .fab{position:static;width:36px;height:36px}
+.qt-ic{display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 22%,var(--raise));color:var(--accent)}
+.qt-ic svg{width:26px;height:26px}
+.greet-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.greet-row .greet{margin-right:auto}
+.home-edit{flex:none}
+.he-list{list-style:none;margin:8px 0 14px;padding:0;display:flex;flex-direction:column;gap:4px;max-height:44vh;overflow:auto}
+.he-list li{display:flex;align-items:center;gap:4px;padding:6px 8px;border-radius:8px;background:color-mix(in srgb,var(--fg) 4%,transparent)}
+.he-check{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
+.he-check>span{display:flex;flex-direction:column;min-width:0}
+.he-check .small{font-size:12px}
+.he-list .icon-btn svg{transform:rotate(-90deg)}
+.he-list .he-down svg{transform:rotate(90deg)}
+.he-list li:first-child [data-act="he-up"],.he-list li:last-child [data-act="he-down"]{visibility:hidden}
+.he-h{margin:6px 0 2px;font-size:15px}
+.he-sc{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.he-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:color-mix(in srgb,var(--fg) 6%,transparent);font-size:13px;cursor:pointer}
 .shelf-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:34px 0 10px}
 .shelf-head h2{margin:0;font:700 22px/1.2 var(--font-display);letter-spacing:-.01em}
 .shelf-head p{margin:0;color:var(--muted);font-size:14px}
@@ -866,7 +882,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 /* Things that belong to a person (not a device): saved per account on the server, cached here per account. */
-const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres'];
+const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home'];
 const store = {
   uid: '',          // the signed-in account (and its server) once known
   onChange: null,   // called when a synced value changes, so it can be sent to the server
@@ -1152,6 +1168,7 @@ function normalizeServer(a) {
   return a;
 }
 const canEditMusic = () => server.on && !!me && (me.role === 'owner' || !!me.canEdit);
+const canAddFromYouTube = () => server.on && !!me;   // anyone signed in can bring songs (e.g. from a Spotify import) into the library
 // Songs uploaded before uploads had owners belong to the owner.
 const ownsUpload = r => !!me && !!r && (r.uploadedBy ? r.uploadedBy === me.id : me.role === 'owner');
 // Only the person who uploaded a song (or the owner) can edit or delete it. Everyone can play and download it.
@@ -1244,13 +1261,13 @@ function renderUploadStatus() {
     const more = server.queue.length ? ` · ${server.queue.length} more` : '';
     el.innerHTML = `<span class="ell"><b>${c.pct < 100 ? 'Uploading' : 'Processing'}</b> ${esc(c.name)}${more}</span><span class="up-track"><span style="width:${c.pct}%"></span></span>`;
   } else if (d) {
-    el.innerHTML = `<span class="ell"><b>${d.retry ? 'Connection dropped, trying again' : `Saving ${dlq.done + 1} of ${dlq.total}`}</b> ${esc(d.title)}</span><span class="up-track"><span style="width:${d.pct}%"></span></span>`;
+    el.innerHTML = `<span class="ell"><b>${d.retry ? 'Connection dropped, trying again' : `Downloading to this device ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`}</b> ${esc(d.title)}</span><span class="up-track"><span style="width:${d.pct}%"></span></span>`;
   } else if (ytJobs.finding) {
     const f = ytJobs.finding;
-    el.innerHTML = `<span class="ell"><b>Finding songs on YouTube</b> ${f.done} of ${f.total}</span><span class="up-track"><span style="width:${Math.round(f.done / f.total * 100)}%"></span></span>`;
+    el.innerHTML = `<span class="ell"><b>Adding to Murmur library: finding songs</b> ${f.done} of ${f.total}</span><span class="up-track"><span style="width:${Math.round(f.done / f.total * 100)}%"></span></span>`;
   } else if (ytJobs.list.some(jobRunning)) {
     const run = ytJobs.list.filter(jobRunning), j = run[0], st = jobStats(j);
-    el.innerHTML = `<span class="ell"><b>YouTube ${Math.min(st.n, st.fin + 1)} of ${st.n}</b> ${st.cur ? esc(st.cur.title) : ''}${run.length > 1 ? ` · ${run.length - 1} more waiting` : ''}${st.eta ? ` · ${st.eta}` : ''}</span><span class="up-track"><span style="width:${st.pct}%"></span></span>`;
+    el.innerHTML = `<span class="ell"><b>Adding to Murmur library ${Math.min(st.n, st.fin + 1)} of ${st.n}</b> ${st.cur ? esc(st.cur.title) : ''}${run.length > 1 ? ` · ${run.length - 1} more waiting` : ''}${st.eta ? ` · ${st.eta}` : ''}</span><span class="up-track"><span style="width:${st.pct}%"></span></span>`;
   } else { el.hidden = true; return; }
   el.hidden = false;
 }
@@ -1396,7 +1413,7 @@ const dlNoun = col => col.kind === 'Album' ? 'album' : ['playlist', 'liked', 'im
 const dlSkipped = col => col.tracks.filter(id => !dlTargets([id]).length).length;
 const ytOnlyText = n => n === 1 ? '1 song has no match on YouTube, so it can’t be downloaded.' : n + ' songs have no match on YouTube, so they can’t be downloaded.';
 function downloadTracks(ids) {
-  const want = ids.filter(id => canDownload(id) && !offline.has(id) && !dlq.queue.includes(id) && !(dlq.cur && dlq.cur.id === id));
+  const want = ids.filter(id => canDownload(id) && !localPlayable(id) && !dlq.queue.includes(id) && !(dlq.cur && dlq.cur.id === id));
   if (!want.length) {
     toast(ids.some(canDownload) ? 'Already downloaded' : 'These songs can’t be downloaded.');
     return;
@@ -1457,7 +1474,7 @@ async function pumpDownloads() {
   dlq.busy = false; dlq.cur = null; dlq.done = 0; dlq.total = 0;
   renderUploadStatus(); syncDownloads(); renderSidebar();
   if (state.view.name === 'collection' && state.view.type === 'downloads') render();
-  if (saved) toast(`Downloaded ${plural(saved, 'song')}. ${saved > 1 ? 'They' : 'It'} will play offline on this device.`);
+  if (saved) toast(`Downloaded ${plural(saved, 'song')} to this device. ${saved > 1 ? 'They' : 'It'} will play offline.`);
 }
 async function dropDownload(id) {
   try { await Offline.del(id); } catch (e) {}
@@ -1467,7 +1484,9 @@ async function dropDownload(id) {
 async function removeDownloads(ids) {
   ids = ids.filter(id => offline.has(id));
   if (!ids.length) return;
+  const before = dlq.queue.length;
   dlq.queue = dlq.queue.filter(id => !ids.includes(id));
+  dlq.total -= before - dlq.queue.length;   // keeps "N of M" right
   for (const id of ids) await dropDownload(id);
   if (!server.on) forgetTracks(ids);   // offline: these songs can no longer play here
   state.sel = null; render(); renderNP();
@@ -1483,16 +1502,17 @@ function confirmRemoveDownloads(ids) {
 /* Keep download badges and buttons current without re-rendering the page. */
 function syncDownloads() {
   const busy = new Set([...dlq.queue, ...(dlq.cur ? [dlq.cur.id] : [])]);
-  $$('.row[data-tid]').forEach(r => { r.classList.toggle('is-dl', offline.has(r.dataset.tid)); r.classList.toggle('is-dling', busy.has(r.dataset.tid)); });
+  $$('.row[data-tid]').forEach(r => { r.classList.toggle('is-dl', localPlayable(r.dataset.tid)); r.classList.toggle('is-dling', busy.has(r.dataset.tid)); });
   $$('[data-act="col-dl"]').forEach(b => {
     const col = getCollection(b.dataset.type, b.dataset.id); if (!col) return;
-    const ups = dlTargets(col.tracks), have = ups.filter(id => offline.has(id)).length;
-    const done = ups.length && have === ups.length, going = ups.some(id => busy.has(id)), noun = dlNoun(col);
+    // Count songs (not files): two songs can share one download, and a Spotify song's download is its YouTube match.
+    const ups = col.tracks.filter(id => canDownload(id)), have = ups.filter(localPlayable).length;
+    const done = ups.length && have === ups.length, going = dlTargets(ups).some(id => busy.has(id)) || ups.some(id => busy.has(id));
     b.classList.toggle('on', !!done); b.classList.toggle('busy', going && !done);
-    const text = done ? 'Downloaded' : going ? `Downloading ${have} of ${ups.length}` : have ? `Download the rest (${ups.length - have})` : `Download ${noun}`;
+    const text = done ? 'On this device' : going ? `Downloading to device ${have} of ${ups.length}` : have ? `Download the rest to device (${ups.length - have})` : 'Download to device';
     b.innerHTML = icon(done ? 'dlFill' : 'download') + `<span>${text}</span>`;
     const skipped = dlSkipped(col);
-    b.title = (done ? 'Saved on this device. Click to remove the download.' : 'Save every song on this device to play with no connection.')
+    b.title = (done ? 'Saved on this device for offline listening. Click to remove the download.' : 'Save every song on this phone or computer to play with no connection. (It doesn’t change the Murmur library.)')
       + (skipped ? ' ' + ytOnlyText(skipped) : '');
     b.setAttribute('aria-label', b.title);
     const note = b.parentElement && b.parentElement.querySelector('.dl-note');
@@ -1566,7 +1586,7 @@ store.onChange = k => {
   userSync.dirty.add(k); savePending();
   clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 800);
 };
-const SYNC_EMPTY = k => k === 'plays' || k === 'genres' ? {} : [];
+const SYNC_EMPTY = k => k === 'plays' || k === 'genres' || k === 'home' ? {} : [];
 /* Another device may have saved since this one last looked. Instead of replacing its changes, combine them:
    start from what both saw last time (base), keep what each side added or removed. */
 function merge3(k, base, local, srv) {
@@ -2626,7 +2646,7 @@ function collectionOf(type, id) {
     return { type, id: 'liked', kind: 'Playlist', title: 'Liked Songs', desc: '', sub: '<b>You</b>', tracks: [...state.liked].filter(visible).reverse(), liked: true, color: '#7b4fd9' };
   }
   if (type === 'downloads') {
-    const tracks = [...UPLOADS.trackIds, ...SHARED.trackIds].filter(t => offline.has(t) && visible(t));
+    const tracks = [...offline.keys()].filter(visible);
     const bytes = tracks.reduce((s, t) => s + (offline.get(t).size || 0), 0);
     return { type, id: 'downloads', kind: 'On this device', title: 'Downloaded', sub: `<b>You</b>${bytes ? ' · ' + fmtSize(bytes) : ''}`,
       desc: 'Downloaded songs play with no connection.', tracks, dlCover: true, color: '#3a8f7a' };
@@ -2677,6 +2697,18 @@ function collectionOf(type, id) {
       sub: `<b>${esc(imp.owner || 'Spotify')}</b> · ${inM} of ${tracks.length} in Murmur`, tracks, cover: imp.cover || SPALBUM.cover, color: '#2fa36b', imported: true };
   }
   if (type === 'mlist') return memberCollection(id);
+  if (type === 'history') {
+    const tracks = store.get('history', []).filter(visible);
+    if (!tracks.length) return null;
+    return { type, id, kind: 'Playlist', title: 'Recently played', desc: 'The last songs you listened to, on any device.', sub: '<b>You</b>', tracks, mosaic: mosaicFor(tracks), cover: tCover(tracks[0]), color: '#5d6b8a' };
+  }
+  if (type === 'mygenre') {
+    const plays = store.get('plays', {});
+    const ids = [...new Set([...store.get('history', []), ...Object.keys(plays), ...state.liked, ...UPLOADS.trackIds, ...SHARED.trackIds])]
+      .filter(t => visible(t) && !TRACKS[t].disc && genreFor(t) === id).sort((a, b) => (plays[b] || 0) - (plays[a] || 0));
+    if (!ids.length) return null;
+    return { type, id, kind: 'Genre', title: id, desc: `Your ${id} songs, most played first.`, sub: '<b>You</b>', tracks: ids, mosaic: mosaicFor(ids), cover: tCover(ids[0]), color: '#4f7b6a' };
+  }
   if (type === 'catq') {
     return { type, id, kind: 'Songs', title: id.replace(/^genre:/, ''), sub: '<b>Song catalog</b>', tracks: (cat.results.get(id) || []).filter(visible), color: '#5d8bf4' };
   }
@@ -2796,6 +2828,8 @@ function notePlay(id) {
   const plays = store.get('plays', {});
   plays[id] = (plays[id] || 0) + 1;
   store.set('plays', plays);
+  // Songs played lately (Home → Recently played songs)
+  store.set('history', [id, ...store.get('history', []).filter(x => x !== id)].slice(0, 50));
   noteYtPlay(id);
 }
 /* ---------- genres: guessed from each song's album on Deezer (by the server, shared by everyone);
@@ -3060,25 +3094,113 @@ function shelf(title, items, note) {
 }
 
 /* ================= views ================= */
+/* ---------- Home: what's on it and in what order is yours (Edit), and follows you to every device ---------- */
+const HOME_SECTIONS = [
+  ['shortcuts', 'Shortcuts', 'Tiles at the top'],
+  ['recentSongs', 'Recently played songs', 'The last songs you listened to'],
+  ['topArtists', 'Your top artists', 'Who you play and like most'],
+  ['genres', 'Your genres', 'What you listen to most'],
+  ['recent', 'Jump back in', 'Playlists and albums you opened lately'],
+  ['albums', 'Your albums', 'Grouped from your uploads'],
+  ['shared', 'From people on Murmur', 'Songs others uploaded'],
+  ['discover', 'New songs for you', 'Picked from your taste'],
+  ['youtube', 'Popular in your genres', ''],
+  ['madeForYou', 'Made for you', 'Murmur mixes'],
+  ['newAlbums', 'New albums', 'Murmur’s demo music'],
+  ['artists', 'Artists', 'Murmur’s demo artists']
+];
+const HOME_ACTIONS = { 'sp-import': ['Import from Spotify', 'plus'], upload: ['Upload music', 'upload'], 'go-search': ['Search', 'search'] };
+function homePrefs() {
+  const p = store.get('home', {}) || {};
+  const known = HOME_SECTIONS.map(x => x[0]), order = (p.order || []).filter(k => known.includes(k));
+  return { order: [...order, ...known.filter(k => !order.includes(k))], off: p.off || [], shortcuts: Array.isArray(p.shortcuts) ? p.shortcuts : null };
+}
+const splitKey = k => { const i = k.indexOf(':'); return [k.slice(0, i), k.slice(i + 1)]; };
+function autoShortcuts() {
+  return [['liked', 'liked'], ...(server.on || server.offlineMode ? [['album', 'uploads']] : []), ...(offline.size ? [['downloads', 'downloads']] : []), ['history', 'songs'], ...state.playlists.slice(0, 2).map(p => ['playlist', p.id]), ...sp.imports.slice(0, 1).map(i => ['import', i.id]), ...visCurated().map(p => ['playlist', p.id])]
+    .filter(([t, i]) => getCollection(t, i)).slice(0, 6).map(x => x.join(':')).concat(server.on ? ['act:sp-import'] : []);
+}
+function shortcutTile(k) {
+  const [t, i] = splitKey(k);
+  if (t === 'act') {
+    const a = HOME_ACTIONS[i]; if (!a || (i === 'upload' && !canEditMusic()) || (i === 'sp-import' && !server.on)) return '';
+    return `<div class="qt qt-act" data-act="${i}" role="button" tabindex="0"><span class="cover qt-ic">${icon(a[1])}</span><span class="nm ell">${a[0]}</span></div>`;
+  }
+  const col = getCollection(t, i); if (!col) return '';
+  return `<div class="qt" data-act="open" data-type="${t}" data-id="${esc(i)}" data-col-key="${t}:${esc(i)}" role="button" tabindex="0">${coverHTML(col, '')}<span class="nm ell">${esc(col.title)}</span>${col.tracks.length ? playFab(t, i) : ''}</div>`;
+}
+// Your listening, weighted: plays, likes and what you played lately.
+function tasteTally(keyOf) {
+  const w = new Map(), plays = store.get('plays', {}), add = (id, n) => { if (!TRACKS[id] || !visible(id) || TRACKS[id].disc) return; const k = keyOf(id); if (k) w.set(k, (w.get(k) || 0) + n); };
+  Object.entries(plays).forEach(([id, n]) => add(id, Math.min(n, 20)));
+  state.liked.forEach(id => add(id, 3));
+  store.get('history', []).forEach((id, i) => add(id, Math.max(0.5, 3 - i * 0.1)));
+  return [...w.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0]);
+}
+function topArtists() {
+  const seen = new Map();
+  return tasteTally(id => { const a = cleanArtist(TRACKS[id].artist); if (!a || /^(unknown artist|youtube|various artists|spotify)$/i.test(a)) return ''; const k = normKey(a); if (!seen.has(k)) seen.set(k, a); return k; })
+    .map(k => seen.get(k)).slice(0, 12);
+}
+const topGenres = () => tasteTally(id => { const g = genreFor(id); return g && g[0] !== '\u0000' ? g : ''; }).slice(0, 10);
+function songCard(id, type, colId, i) {
+  const t = TRACKS[id];
+  return `<div class="card" data-act="col-play" data-type="${type}" data-id="${esc(colId)}" data-i="${i}" data-tid="${id}" role="button" tabindex="0" aria-label="Play ${esc(t.title)} by ${esc(t.artist)}">
+    <div class="card-art"><img class="cover" src="${esc(tCover(id))}" alt="" loading="lazy"></div>
+    <div><div class="nm ell">${esc(t.title)}</div><div class="sb ell">${esc(t.artist)}</div></div></div>`;
+}
+function homeSection(k) {
+  switch (k) {
+    case 'shortcuts': {
+      const tiles = (homePrefs().shortcuts || autoShortcuts()).map(shortcutTile).filter(Boolean);
+      return tiles.length ? `<div class="quick">${tiles.join('')}</div>` : '';
+    }
+    case 'recentSongs': {
+      const col = getCollection('history', 'songs'); if (!col) return '';
+      return `<div class="shelf-head"><h2>Recently played songs</h2><div class="head-actions"><button class="text-btn" data-act="open" data-type="history" data-id="songs">See all</button></div></div>
+        <div class="shelf">${col.tracks.slice(0, 14).map((id, i) => songCard(id, 'history', 'songs', i)).join('')}</div>`;
+    }
+    case 'topArtists': return shelf('Your top artists', topArtists().map(a => card('artist', a)), 'From what you play and like');
+    case 'genres': return shelf('Your genres', topGenres().map(g => card('mygenre', g)), 'Your songs, by genre');
+    case 'recent': return shelf('Jump back in', state.recent.map(splitKey).filter(([t, i]) => getCollection(t, i)).map(([t, i]) => card(t, i)));
+    case 'albums': return shelf('Your albums', upAlbums().map(a => card('album', a.id)), 'Grouped from the album tags on your uploads');
+    case 'shared': return shelf('From people on Murmur', [SHARED.trackIds.some(visible) ? card('album', 'shared') : '', ...upAlbums(true).filter(a => !a.mine).map(a => card('album', a.id))], 'Songs other people uploaded. Play them or download them.');
+    case 'discover': return discoverShelfHTML();
+    case 'youtube': return ytShelvesHTML();
+    case 'madeForYou': return shelf('Made for you', visCurated().map(p => card('playlist', p.id)), 'Mixes built from your listening');
+    case 'newAlbums': return shelf('New albums', visAlbums().map(a => card('album', a.id)));
+    case 'artists': return shelf('Artists', visArtists().map(a => card('artist', a)));
+  }
+  return '';
+}
 function viewHome() {
   const h = new Date().getHours();
   const greet = h < 5 ? 'Still up?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-  const quick = [['liked', 'liked'], ...(server.on || server.offlineMode ? [['album', 'uploads']] : []), ...(offline.size ? [['downloads', 'downloads']] : []),...visCurated().map(p => ['playlist', p.id]), ...state.playlists.slice(0, 2).map(p => ['playlist', p.id])]
-    .filter(([t, i]) => getCollection(t, i)).slice(0, 6);
-  const recent = state.recent.map(k => { const i = k.indexOf(':'); return [k.slice(0, i), k.slice(i + 1)]; }).filter(([t, i]) => getCollection(t, i));
-  return `<h1 class="greet">${greet}</h1>
-  <div class="quick">${quick.map(([t, i]) => {
-    const col = getCollection(t, i);
-    return `<div class="qt" data-act="open" data-type="${t}" data-id="${i}" data-col-key="${t}:${i}" role="button" tabindex="0">${coverHTML(col, '')}<span class="nm ell">${esc(col.title)}</span>${col.tracks.length ? playFab(t, i) : ''}</div>`;
-  }).join('')}</div>
-  ${shelf('Your albums', upAlbums().map(a => card('album', a.id)), 'Grouped from the album tags on your uploads')}
-  ${shelf('From people on Murmur', [SHARED.trackIds.some(visible) ? card('album', 'shared') : '', ...upAlbums(true).filter(a => !a.mine).map(a => card('album', a.id))], 'Songs other people uploaded. Play them or download them.')}
-  ${discoverShelfHTML()}
-  ${ytShelvesHTML()}
-  ${shelf('Made for you', visCurated().map(p => card('playlist', p.id)), 'Mixes built from your listening')}
-  ${shelf('Recently played', recent.map(([t, i]) => card(t, i)))}
-  ${shelf('New albums', visAlbums().map(a => card('album', a.id)))}
-  ${shelf('Artists', visArtists().map(a => card('artist', a)))}`;
+  const p = homePrefs();
+  return `<div class="greet-row"><h1 class="greet">${greet}</h1><button class="text-btn home-edit" data-act="home-edit" aria-label="Edit Home">${icon('edit')}<span>Edit</span></button></div>
+  ${p.order.filter(k => !p.off.includes(k)).map(homeSection).join('\n')}`;
+}
+function openHomeEdit() {
+  const p = homePrefs(), sc = new Set(p.shortcuts || autoShortcuts());
+  const name = Object.fromEntries(HOME_SECTIONS.map(x => [x[0], x]));
+  const cands = [['liked:liked'], ['album:uploads'], ['downloads:downloads'], ['history:songs'],
+    ...state.playlists.map(x => ['playlist:' + x.id]), ...sp.imports.map(x => ['import:' + x.id]), ...visCurated().map(x => ['playlist:' + x.id]),
+    ...upAlbums().map(a => ['album:' + a.id]), ...Object.keys(HOME_ACTIONS).map(a => ['act:' + a])]
+    .map(([k]) => k).filter((k, i, a) => a.indexOf(k) === i).filter(k => { const [t, i] = splitKey(k); return t === 'act' ? (i !== 'upload' || canEditMusic()) : !!getCollection(t, i); });
+  const label = k => { const [t, i] = splitKey(k); return t === 'act' ? HOME_ACTIONS[i][0] : getCollection(t, i).title; };
+  openModal({ title: 'Edit Home', confirm: 'Save', html: `
+    <p class="small">Turn sections on or off and move them up or down.</p>
+    <ol class="he-list" id="heList">${p.order.map(k => `<li data-k="${k}"><input type="hidden" name="all" value="${k}">
+      <label class="he-check"><input type="checkbox" name="sec" value="${k}"${p.off.includes(k) ? '' : ' checked'}><span><b>${name[k][1]}</b>${name[k][2] ? `<span class="small">${name[k][2]}</span>` : ''}</span></label>
+      <button type="button" class="icon-btn" data-act="he-up" aria-label="Move ${name[k][1]} up">${icon('chev')}</button><button type="button" class="icon-btn he-down" data-act="he-down" aria-label="Move ${name[k][1]} down">${icon('chev')}</button></li>`).join('')}</ol>
+    <h3 class="he-h">Shortcuts</h3><p class="small">Pick up to 8 tiles for the top of Home.</p>
+    <div class="he-sc">${cands.map(k => `<label class="he-chip"><input type="checkbox" name="sc" value="${esc(k)}"${sc.has(k) ? ' checked' : ''}><span>${esc(label(k))}</span></label>`).join('')}</div>
+    <p><button type="button" class="link-btn" data-act="he-reset">Back to the default Home</button></p>`,
+    onSubmit: fd => {
+      const all = fd.getAll('all'), on = new Set(fd.getAll('sec'));
+      store.set('home', { order: all, off: all.filter(k => !on.has(k)), shortcuts: fd.getAll('sc').slice(0, 8) });
+      if (state.view.name === 'home') render();
+    } });
 }
 /* Search uses the bar at the top of the screen; this view only shows results. */
 function viewSearch() {
@@ -3240,7 +3362,7 @@ function viewCollection(type, id) {
   const delLabel = col.imported ? 'Delete import' : col.editable ? 'Delete playlist' : col.uploaded ? (albumOk ? 'Delete album' : '') : (col.demo || col.curated) ? 'Remove from library' : '';
   const del = delLabel ? `<button class="text-btn" data-act="col-delete" data-type="${type}" data-id="${esc(id)}">${icon('trash')}<span>${delLabel}</span></button>` : '';
   const dlBtn = type !== 'downloads' && col.tracks.length && (server.on || dlTargets(col.tracks).some(t => offline.has(t)))
-    ? `<button class="text-btn dl-btn dl-col" data-act="col-dl" data-type="${type}" data-id="${esc(id)}">${icon('download')}<span>Download ${dlNoun(col)}</span></button><span class="small dl-note"></span>` : '';
+    ? `<button class="text-btn dl-btn dl-col" data-act="col-dl" data-type="${type}" data-id="${esc(id)}">${icon('download')}<span>Download to device</span></button><span class="small dl-note"></span>` : '';
   const clearDl = type === 'downloads' && n ? `<button class="text-btn" data-act="dl-clear">${icon('trash')}<span>Remove all downloads</span></button>` : '';
   const editAlbum = (albumOk ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '')
     + (col.uploaded && col.mine && !col.uploadsAll ? (state.hiddenCols.has('album:' + id)
@@ -3623,12 +3745,12 @@ function renderNP() {
     <button class="icon-btn like${state.liked.has(t.id) ? ' on' : ''}" data-act="like" data-tid="${t.id}" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
   ${t.sp ? `<div class="np-card"><span class="eyebrow">${t.disc ? 'Suggested for you' : 'From your Spotify import'}</span>${t.disc && t.because ? `<p class="small">Because you listen to ${esc(t.because)}</p>` : ''}
     <dl class="facts"><dt>Album</dt><dd>${esc(t.album)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Playing from</dt><dd>${{ file: 'Your file in Murmur', yt: 'YouTube', none: 'Nothing found yet', new: 'Looking it up…' }[spStatus(t.id)]}</dd></dl>
-    <div class="acct-actions">${server.on ? `<button class="text-btn" data-act="m-dlpick" data-tid="${t.id}">${icon('download')}<span>Download…</span></button>` : ''}${canEditMusic() && srcs.ready && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-getcopy" data-tid="${t.id}">${icon('download')}<span>Find a downloadable copy</span></button>` : ''}${canEditMusic() && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-bring" data-tid="${t.id}">${icon('upload')}<span>Bring into Murmur</span></button>` : ''}
+    <div class="acct-actions">${server.on ? `<button class="text-btn" data-act="m-dlpick" data-tid="${t.id}">${icon('download')}<span>Download or add to library…</span></button>` : ''}${canEditMusic() && srcs.ready && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-getcopy" data-tid="${t.id}">${icon('download')}<span>Find a downloadable copy</span></button>` : ''}${canEditMusic() && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-bring" data-tid="${t.id}">${icon('upload')}<span>Bring into Murmur</span></button>` : ''}
       ${yt.enabled ? `<button class="text-btn" data-act="m-spver" data-tid="${t.id}">${icon('search')}<span>Choose a YouTube version</span></button>` : ''}</div></div>`
   : t.yt ? `<div class="np-card"><span class="eyebrow">From YouTube</span>
     <dl class="facts"><dt>Channel</dt><dd>${esc(t.artist)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd>${t.genreTag ? `<dt>Suggested for</dt><dd>${esc(t.genreTag)}</dd>` : ''}</dl>
-    <p class="small">Plays in YouTube’s player, so it needs a connection and can’t be downloaded.${canEditMusic() && srcs.ready ? ` <button type="button" class="link-btn" data-act="m-getcopy" data-tid="${t.id}">Find a downloadable copy</button>` : ''}</p>
-    <div class="acct-actions"><button type="button" class="text-btn" data-act="m-dlpick" data-tid="${t.id}">${icon('download')}<span>Download…</span></button>
+    <p class="small">Plays from YouTube. Download it to this device to play offline, or add it to the Murmur library to keep it for everyone.${canEditMusic() && srcs.ready ? ` <button type="button" class="link-btn" data-act="m-getcopy" data-tid="${t.id}">Find a downloadable copy</button>` : ''}</p>
+    <div class="acct-actions"><button type="button" class="text-btn" data-act="m-dlpick" data-tid="${t.id}">${icon('download')}<span>Download or add to library…</span></button>
     <a class="text-btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(t.ytId)}" target="_blank" rel="noopener">${icon('expand')}<span>Open on YouTube</span></a></div></div>`
   : t.src ? `<div class="np-card"><span class="eyebrow">Your file</span>
     <dl class="facts"><dt>Format</dt><dd>${esc(t.format.toUpperCase())}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Size</dt><dd>${fmtSize(t.size)}</dd>${t.addedAt ? `<dt>Added</dt><dd>${new Date(t.addedAt).toLocaleDateString()}</dd>` : ''}</dl>
@@ -3693,13 +3815,13 @@ function renderMenu() {
       + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
       + b('genre', icon('list') + `<span class="ell">Genre: ${esc(genreFor(t.id) || 'add one')}</span>`)
       + (t.yt ? b('ytopen', icon('expand') + 'Open on YouTube') : '')
-      + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download…') : '')
+      + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download or add to library…') : '')
       + (t.sp ? '<hr>' + (canEditMusic() ? b('bring', icon('upload') + (spStatus(t.id) === 'file' ? 'Replace the file in Murmur' : 'Bring into Murmur (upload your copy)')) : '')
         + (yt.enabled ? b('spver', icon('search') + 'Choose a YouTube version') : '')
         + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
-      + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '')
+      + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download to this device (offline)') : '')
         + (server.on ? b('save', icon('save') + 'Save file to device') : '')
-        : canDownload(t.id) ? '<hr>' + (localPlayable(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download for offline') : '') : '')
+        : canDownload(t.id) ? '<hr>' + (localPlayable(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download to this device (offline)') : '') : '')
       + (t.src && canChange(t.id) ? b('edit', icon('edit') + 'Edit details') : '')
       + (editable ? '<hr>' + b('remove', icon('list') + 'Remove from this playlist') : '')
       + (t.src && !canChange(t.id) ? '' : '<hr>' + (t.src
@@ -3881,7 +4003,7 @@ function renderSelBar() {
       ${col && col.editable ? `<button class="sb" data-act="sel-remove"${dis}>${icon('list')}<span>Remove from playlist</span></button>` : ''}
       ${anyFile && (server.on || allDl) ? `<button class="sb" data-act="sel-dl"${dis}>${icon(allDl ? 'dlFill' : 'download')}<span>${allDl ? 'Remove download' : 'Download'}</span></button>` : ''}
       <button class="sb" data-act="sel-genre"${dis}>${icon('list')}<span>Set genre</span></button>
-      ${yt.enabled && canEditMusic() && ids.some(id => !TRACKS[id].src) ? `<button class="sb" data-act="sel-yt"${dis}>${icon('download')}<span>Get from YouTube</span></button>` : ''}
+      ${yt.enabled && canAddFromYouTube() && ids.some(id => !TRACKS[id].src) ? `<button class="sb" data-act="sel-yt"${dis}>${icon('download')}<span>Add to Murmur library</span></button>` : ''}
       ${allFiles && ids.every(canChange) ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
       ${anyFile && !ids.filter(id => TRACKS[id].src).every(canChange) ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
       <button class="sb done" data-act="sel-done">Done</button>`;
@@ -4208,6 +4330,15 @@ function act(el, e) {
     /* YouTube */
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
     case 'disc-play': playFrom('discover', 'mix', +d.i); break;
+    case 'col-play': playFrom(d.type, d.id, +d.i); break;
+    case 'home-edit': openHomeEdit(); break;
+    case 'he-up': case 'he-down': {
+      const li = el.closest('li'), to = d.act === 'he-up' ? li.previousElementSibling : li.nextElementSibling;
+      if (to) { if (d.act === 'he-up') to.before(li); else to.after(li); el.focus(); }
+      break;
+    }
+    case 'he-reset': closeModal(); store.set('home', {}); render(); toast('Home is back to the default'); break;
+    case 'go-search': { const i = $('#tq'); if (i) i.focus(); break; }
     case 'cat-play': playFrom('catq', d.q, +d.i); break;
     case 'disc-refresh': loadDiscover(true); break;
     case 'sp-import': closeModal(); openLinkImport(); break;
@@ -4861,10 +4992,12 @@ function syncLinkResult(tid) {
         const opt = (act, ic, title, sub, off) => `<button type="button" class="dls-opt" data-act="${act}" data-tid="${esc(tid)}"${off ? ' disabled' : ''}>
       ${icon(ic)}<span><b>${title}</b><span class="small">${sub}</span></span></button>`;
         const sourcesOn = srcs.list.filter(x => x.ready).map(x => x.name);
-        openModal({ title: `Download “${esc(t.title)}”`, confirm: false, cancel: 'Close', html: `<p class="small">Where do you want it from?</p>
+        const inLib = !!t.src || (t.sp && spStatus(tid) === 'file');
+        openModal({ title: `“${esc(t.title)}”`, confirm: false, cancel: 'Close', html: `<p class="small">Two different things:</p>
     <div class="dls-list">
-      ${file ? opt('dls-file', 'download', 'Murmur', offline.has(file) ? 'Already saved on this device' : 'Save it on this device to play offline') + opt('dls-save', 'save', 'Murmur: save the file', 'Get the audio file itself') : ''}
-      ${opt('dls-yt', 'play', 'YouTube', yt.enabled ? 'Pick the right video, listen to it, and get its link' : 'Connect YouTube in People & settings first', !yt.enabled)}
+      ${file ? opt('dls-file', 'download', 'Download to this device', localPlayable(tid) ? 'Already on this device for offline' : 'Plays with no signal, only on this phone or computer') : ''}
+      ${inLib ? '' : opt('dls-yt', 'upload', 'Add to the Murmur library', yt.enabled ? 'Your Murmur server gets it from YouTube and keeps it in the library (Uploads), with its real name and artist' : 'Connect YouTube in People & settings first', !yt.enabled || !canAddFromYouTube())}
+      ${file && TRACKS[file] && TRACKS[file].src ? opt('dls-save', 'save', 'Save the audio file', 'Get the .mp3 itself, into Files or Downloads') : ''}
     </div>`, onSubmit: () => {} });
     }
 
@@ -4940,7 +5073,7 @@ function syncLinkResult(tid) {
 
     async function showYouTubeLink(v, y) {
         if (needDownloadServer()) return;
-        const dl = ytProgress({ title: 'Downloading from YouTube', cover: y.cover, name: y.title || 'YouTube song', by: y.artist || '' });
+        const dl = ytProgress({ title: 'Adding to the Murmur library', cover: y.cover, name: y.title || 'YouTube song', by: y.artist || '' });
         try {
             const job = await startYtJob([{ link: `https://www.youtube.com/watch?v=${v}`, title: y.title || 'YouTube song' }], y.title || 'YouTube song', '');
             ytJobs.watch = { id: job.id, dl };
@@ -4958,16 +5091,16 @@ function syncLinkResult(tid) {
         if (ytJobs.finding) { toast('Still finding videos for the last batch. Try again in a moment.'); return; }
         const items = [], missed = [];
         ytJobs.finding = { done: 0, total: todo.length, ctx }; renderUploadStatus(); updateJobUI();
-        toast(`Finding ${plural(todo.length, 'song')} on YouTube. You can keep using Murmur.`);
+        toast(`Adding ${plural(todo.length, 'song')} to the Murmur library. You can keep using Murmur.`);
         // Two songs at a time (the server searches two at once).
         let next = 0, stop = false;
         const one = async t => {
             // A YouTube song someone picked by hand is already the one they want.
             if (t.yt) items.push({ link: `https://www.youtube.com/watch?v=${t.ytId}`, title: t.title });
             // Already matched to a video (it plays from YouTube): no search needed.
-            else if (t.sp && sp.matches[t.key] && sp.matches[t.key].yt && sp.matches[t.key].yt.id) items.push({ link: `https://www.youtube.com/watch?v=${sp.matches[t.key].yt.id}`, title: t.title, key: t.key });
+            else if (t.sp && sp.matches[t.key] && sp.matches[t.key].yt && sp.matches[t.key].yt.id) items.push({ link: `https://www.youtube.com/watch?v=${sp.matches[t.key].yt.id}`, title: t.title, key: t.key, song: { title: t.title, artist: t.artist } });
             else {
-                try { const best = await bestYouTubeFor(t); if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title, key: t.sp ? t.key : '' }); else missed.push(t.title); }
+                try { const best = await bestYouTubeFor(t); if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title, key: t.sp ? t.key : '', song: { title: t.title, artist: t.artist } }); else missed.push(t.title); }
                 catch (e) { missed.push(t.title); if (/quota|daily/i.test(e.message)) { stop = true; toast(e.message); } }
             }
             ytJobs.finding.done++; renderUploadStatus(); updateJobUI();
@@ -5004,13 +5137,13 @@ function syncLinkResult(tid) {
         return { miss, pick };
     }
     function ytBatchBtn(type, id, col) {
-        if (!yt.enabled || !canEditMusic() || type === 'discover') return '';
+        if (!yt.enabled || !canAddFromYouTube() || type === 'discover') return '';
         const { miss, pick } = ytBatch(col.allTracks);
         if (!miss.length) return '';
         if (!pick.length) return `<span class="small yt-limit">${icon('download')} YouTube’s daily limit is used up. More songs tomorrow.</span>`;
         const all = pick.length === miss.length;
         const why = all ? '' : miss.length - pick.length > 0 && pick.length >= YT_JOB_MAX ? ' (100 at a time)' : ' (today’s YouTube limit)';
-        return `<button class="text-btn" data-act="col-yt" data-type="${type}" data-id="${esc(id)}" title="Downloads as many songs as YouTube allows right now${why}">${icon('download')}<span>${all ? `Get ${plural(pick.length, 'missing song')} from YouTube` : `Download ${pick.length} of ${miss.length} now${why}`}</span></button>`;
+        return `<button class="text-btn" data-act="col-yt" data-type="${type}" data-id="${esc(id)}" title="Your Murmur server gets these songs from YouTube and keeps them in the library for everyone${why}. To play them offline, use Download to device.">${icon('download')}<span>${all ? `Add ${plural(pick.length, 'missing song')} to Murmur library` : `Add ${pick.length} of ${miss.length} to Murmur library now${why}`}</span></button>`;
     }
     async function refreshYtAllowance() {
         try {
@@ -5084,11 +5217,11 @@ function syncLinkResult(tid) {
         if (!it) return;
         if (!$('#ytdlStage')) { if (j.finishedAt) ytJobs.watch = null; return; }   // popup hidden: the corner shows it instead
         if (it.state === 'waiting') w.dl.stage('Waiting for another download to finish…', null);
-        else if (it.state === 'working') w.dl.stage(it.pct < 80 ? 'Downloading…' : it.pct < 95 ? 'Converting to MP3…' : 'Adding the cover and song info…', it.pct);
+        else if (it.state === 'working') w.dl.stage(it.pct < 80 ? 'Getting it from YouTube…' : it.pct < 95 ? 'Converting to MP3…' : 'Naming it and adding the cover…', it.pct);
         else {
             ytJobs.watch = null;
-            if (it.state === 'done') w.dl.finish(true, 'Added to your library');
-            else if (it.state === 'skipped') w.dl.finish(true, 'Already in your library');
+            if (it.state === 'done') w.dl.finish(true, 'Added to the Murmur library (Uploads)');
+            else if (it.state === 'skipped') w.dl.finish(true, 'Already in the Murmur library');
             else w.dl.finish(false, it.state === 'cancelled' ? 'Cancelled' : `Couldn’t download it: ${it.msg || 'YouTube refused'}`);
             if (it.msg) w.dl.log(it.msg);
         }

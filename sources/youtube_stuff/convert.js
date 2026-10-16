@@ -40,7 +40,8 @@ function convert(links, format, onLine, done, opts = {}) {
         '-o', opts.outDir ? path.join(outDir, '%(id)s.%(ext)s') : path.join(outDir, '%(channel)s', '%(title)s.%(ext)s'),
     ];
 
-    if (archive) args.push('--download-archive', archive);           // remembers finished videos so re-runs skip them
+    if (archive) args.push('--download-archive', archive);
+    if (opts.infoJson) args.push('--write-info-json', '--no-write-playlist-metafiles');   // the video's details, for naming the song           // remembers finished videos so re-runs skip them
     // YouTube sign-in cookies (cookies.txt) are private: they live in the server's data folder (DATA_DIR), never in
     // git or the Docker image. The project folder is still checked for older setups.
     const cookiesPath = [process.env.DATA_DIR && path.join(process.env.DATA_DIR, 'cookies.txt'), path.resolve(__dirname, '../../cookies.txt')]
