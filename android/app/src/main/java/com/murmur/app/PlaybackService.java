@@ -206,9 +206,10 @@ public class PlaybackService extends Service {
                 .setGroup("murmur-controls")
                 .setCategory(Notification.CATEGORY_TRANSPORT)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setStyle(new Notification.DecoratedCustomViewStyle())
                 .setCustomContentView(small)
-                .setCustomBigContentView(big);
+                .setCustomBigContentView(big)
+                .setCustomHeadsUpContentView(small);
+        // (No DecoratedCustomViewStyle: Android 12+ still adds its header, but the card isn't framed a second time.)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) b.setPriority(Notification.PRIORITY_LOW);
         try { nm.notify(CONTROLS_ID, b.build()); } catch (Exception ignored) {}
     }

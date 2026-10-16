@@ -2,7 +2,7 @@
 <!-- The same card folded: song, artist, previous / play-pause / next. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="64dp"
-    android:background="@drawable/n_card" android:clipToOutline="true">
+    android:background="#FF15121C">
     <ImageView android:id="@+id/n_bg" android:layout_width="match_parent" android:layout_height="match_parent"
         android:scaleType="centerCrop" android:importantForAccessibility="no"/>
     <ImageView android:layout_width="match_parent" android:layout_height="match_parent"

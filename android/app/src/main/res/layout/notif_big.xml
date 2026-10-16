@@ -3,7 +3,7 @@
      a progress bar, and shuffle / previous / play-pause / next / like. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="136dp"
-    android:background="@drawable/n_card" android:clipToOutline="true">
+    android:background="#FF15121C">
     <ImageView android:id="@+id/n_bg" android:layout_width="match_parent" android:layout_height="match_parent"
         android:scaleType="centerCrop" android:importantForAccessibility="no"/>
     <ImageView android:layout_width="match_parent" android:layout_height="match_parent"
