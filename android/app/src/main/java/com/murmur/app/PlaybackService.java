@@ -36,6 +36,10 @@ public class PlaybackService extends Service {
     static final String ACTION_STOP = "com.murmur.app.STOP";
     private static final String CHANNEL = "playback";
     private static final int NOTIFICATION_ID = 1;
+    // Newer Android puts music players only in the quick-settings panel. This second, plain notification puts the
+    // same controls in the notification list too.
+    private static final String CONTROLS_CHANNEL = "controls";
+    private static final int CONTROLS_ID = 2;
 
     static volatile boolean running = false;
 
@@ -82,6 +86,13 @@ public class PlaybackService extends Service {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Now playing", NotificationManager.IMPORTANCE_LOW);
             ch.setDescription("Shows the song that's playing, with play, pause and skip buttons.");
             ch.setShowBadge(false);
+            nm.createNotificationChannel(ch);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CONTROLS_CHANNEL) == null) {
+            NotificationChannel ch = new NotificationChannel(CONTROLS_CHANNEL, "Music controls in the notification list", NotificationManager.IMPORTANCE_LOW);
+            ch.setDescription("Play, pause and skip in your notifications, besides the player in quick settings.");
+            ch.setShowBadge(false);
+            ch.setSound(null, null);
             nm.createNotificationChannel(ch);
         }
         session = new MediaSession(this, "Murmur");
@@ -135,6 +146,7 @@ public class PlaybackService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         else startForeground(NOTIFICATION_ID, n);
         updateSession();
+        showControls();
         // Hold the CPU and Wi-Fi awake only while music is actually playing.
         if (playing) {
             if (!wakeLock.isHeld()) wakeLock.acquire(6 * 60 * 60 * 1000L);
@@ -165,6 +177,31 @@ public class PlaybackService extends Service {
                 .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_next, "Next", serviceIntent(ACTION_CONTROL, "next", 3)).build())
                 .setStyle(new Notification.MediaStyle().setMediaSession(session.getSessionToken()).setShowActionsInCompactView(0, 1, 2));
         return b.build();
+    }
+
+    /** The plain notification with the song and previous / play-pause / next, shown in the notification list. */
+    private void showControls() {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (title.isEmpty()) { nm.cancel(CONTROLS_ID); return; }
+        Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, CONTROLS_CHANNEL) : new Notification.Builder(this);
+        b.setSmallIcon(R.drawable.ic_stat_murmur)
+                .setContentTitle(title)
+                .setContentText(artist.isEmpty() ? (playing ? "Playing" : "Paused") : artist + (playing ? "" : " · Paused"))
+                .setLargeIcon(art)
+                .setContentIntent(openAppIntent())
+                .setOngoing(playing)
+                .setOnlyAlertOnce(true)
+                .setShowWhen(false)
+                .setGroup("murmur-controls")
+                .setCategory(Notification.CATEGORY_TRANSPORT)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_previous, "⏮ Previous", serviceIntent(ACTION_CONTROL, "prev", 4)).build())
+                .addAction(new Notification.Action.Builder(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
+                        playing ? "⏸ Pause" : "▶ Play", serviceIntent(ACTION_CONTROL, "toggle", 5)).build())
+                .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_next, "Next ⏭", serviceIntent(ACTION_CONTROL, "next", 6)).build());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) b.setPriority(Notification.PRIORITY_LOW);
+        try { nm.notify(CONTROLS_ID, b.build()); } catch (Exception ignored) {}
     }
 
     private void updateSession() {
@@ -210,6 +247,7 @@ public class PlaybackService extends Service {
                 art = got;
                 updateSession();
                 getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, buildNotification());
+                showControls();
             });
         }).start();
     }
@@ -226,6 +264,7 @@ public class PlaybackService extends Service {
     }
 
     private void shutDown() {
+        getSystemService(NotificationManager.class).cancel(CONTROLS_ID);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE); else stopForeground(true);
@@ -243,6 +282,7 @@ public class PlaybackService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        getSystemService(NotificationManager.class).cancel(CONTROLS_ID);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
         if (session != null) session.release();

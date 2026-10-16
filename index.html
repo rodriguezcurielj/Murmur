@@ -6034,8 +6034,8 @@ function setTheme(id) {
 const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '2.6';
-const ANDROID_NEW = 'Play, pause and skip from the notification bar and lock screen work every time, and you can pick a photo for your profile picture.';
+const ANDROID_LATEST = '2.7';
+const ANDROID_NEW = 'Play, pause and skip now show in your notification list too (not just quick settings), the buttons work every time, and you can pick a photo for your profile picture.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;

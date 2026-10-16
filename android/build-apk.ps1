@@ -20,7 +20,7 @@ $out = Join-Path (Split-Path -Parent $here) 'apps\Murmur.apk'
 New-Item -ItemType Directory -Force (Split-Path $out) | Out-Null
 Copy-Item $apk $out -Force
 # Phones with an older app see "New Murmur update available" (index.html, ANDROID_LATEST).
-$ver = (Select-String -Path (Join-Path $here 'appuild.gradle') -Pattern "versionName '([^']+)'").Matches[0].Groups[1].Value
+$ver = (Select-String -Path (Join-Path $here 'app\build.gradle') -Pattern "versionName '([^']+)'").Matches[0].Groups[1].Value
 $page = Join-Path (Split-Path -Parent $here) 'index.html'
 $html = [IO.File]::ReadAllText($page)
 $html = [regex]::Replace($html, "const ANDROID_LATEST = '[^']*';", "const ANDROID_LATEST = '$ver';")
