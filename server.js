@@ -226,6 +226,8 @@ async function runJob(job) {
             if (item.key) await linkToSpotify(item.key, have.id, job.user);
             continue;
         }
+        const full = overLimit(job.user);
+        if (full) { item.state = 'failed'; item.msg = full; item.pct = 100; continue; }
         item.state = 'working';
         for (let attempt = 1; attempt <= 2 && item.state === 'working'; attempt++) {
             item.pct = 0;
@@ -277,6 +279,92 @@ app.delete('/api/convert/jobs/:id', auth.requireUser, (req, res) => {
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+/* Admin → Servers: how this server is doing. */
+const backups = require('./backup')(DATA, auth);
+backups.routes(app);
+const STARTED = Date.now();
+const VERSION = (() => {   // the same app on two servers gives the same code
+    const h = crypto.createHash('sha1');
+    for (const f of ['public/index.html', 'server.js', 'songmeta.js', 'ytaudio.js']) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
+    return h.digest('hex').slice(0, 8);
+})();
+async function serverInfo() {
+    let disk = null;
+    try { const s = await fsp.statfs(DATA); disk = { free: s.bavail * s.bsize, total: s.blocks * s.bsize }; } catch {}
+    let id = ''; try { id = fs.readFileSync(path.join(DATA, 'server-id.txt'), 'utf8').trim(); } catch {}
+    const b = await backups.list();
+    return {
+        id, version: VERSION, startedAt: STARTED, now: Date.now(), platform: process.platform, node: process.version,
+        songs: library.length, musicBytes: library.reduce((n, t) => n + (t.size || 0), 0), users: auth.userCount(),
+        disk, names: nameFix, lastBackup: b[0] || null, backups: b.length
+    };
+}
+app.get('/api/admin/server', auth.requireOwner, async (req, res) => res.json(await serverInfo()));
+// Other servers ask with the shared sync key (a browser can't reach every server itself).
+app.get('/api/sync/info', sync.guard, async (req, res) => res.json(await serverInfo()));
+app.post('/api/sync/backup', sync.guard, async (req, res) => { await backups.backUp(); res.json({ ok: true }); });
+app.get('/api/sync/backup/:date', sync.guard, async (req, res) => {
+    const b = await backups.bundle(String(req.params.date));
+    if (!b) return res.status(404).json({ error: 'That backup is gone.' });
+    res.json(b);
+});
+// The servers listed in config.js (the same list people pick from).
+function knownServers() {
+    let txt = '';
+    for (const f of [path.join(__dirname, 'public', 'config.js'), path.join(__dirname, 'config.js')]) { try { txt = fs.readFileSync(f, 'utf8'); break; } catch {} }
+    return [...txt.matchAll(/\{\s*name:\s*'([^']+)',\s*url:\s*'(https?:\/\/[^']+)'/g)].map(m => ({ name: m[1], url: m[2].replace(/\/+$/, '') }));
+}
+app.get('/api/admin/servers', auth.requireOwner, async (req, res) => {
+    const me = await serverInfo();
+    const out = await Promise.all(knownServers().map(async s => {
+        try {
+            const r = await sync.askPeer(s.url, '/api/sync/info');
+            if (!r.ok) {
+                // Older code (no /api/sync/info), or a server that isn't linked by sync: is it up at all?
+                const h = await fetch(s.url + '/api/health', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+                return { ...s, state: h && h.ok ? 'old' : 'off' };
+            }
+            const info = await r.json();
+            return { ...s, state: 'ok', info, self: info.id === me.id };
+        } catch (e) {
+            const h = await fetch(s.url + '/api/health', { signal: AbortSignal.timeout(8000) }).catch(() => null);
+            return { ...s, state: h && h.ok ? 'old' : 'off' };
+        }
+    }));
+    // This server answers for itself even if it can't reach its own public address.
+    if (!out.some(x => x.self)) {
+        const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+        const mine = out.find(x => x.url.replace(/^https?:\/\//, '') === host);
+        if (mine) Object.assign(mine, { state: 'ok', info: me, self: true });
+        else out.unshift({ name: 'This server', url: '', state: 'ok', info: me, self: true });
+    }
+    res.json({ servers: out, version: VERSION });
+});
+const pickServer = url => knownServers().find(s => s.url === String(url || '').replace(/\/+$/, ''));
+app.post('/api/admin/servers/backup', auth.requireOwner, async (req, res) => {
+    const b = req.body || {};
+    if (b.self) { await backups.backUp(); return res.json({ ok: true }); }
+    const s = pickServer(b.url);
+    if (!s) return res.status(400).json({ error: 'Pick one of the servers.' });
+    try {
+        const r = await sync.askPeer(s.url, '/api/sync/backup', { method: 'POST', timeout: 60000 });
+        res.status(r.ok ? 200 : 502).json(r.ok ? { ok: true } : { error: `${s.name} couldn’t back up.` });
+    } catch (e) { res.status(502).json({ error: `${s.name} didn’t answer.` }); }
+});
+app.get('/api/admin/servers/backup', auth.requireOwner, async (req, res) => {
+    const d = String(req.query.date || '');
+    let b = null;
+    if (req.query.self === '1') b = await backups.bundle(d);
+    else {
+        const s = pickServer(req.query.url);
+        if (!s) return res.status(400).json({ error: 'Pick one of the servers.' });
+        try { const r = await sync.askPeer(s.url, '/api/sync/backup/' + encodeURIComponent(d), { timeout: 60000 }); if (r.ok) b = await r.json(); } catch {}
+    }
+    if (!b) return res.status(404).json({ error: 'Couldn’t get that backup.' });
+    res.setHeader('Content-Disposition', `attachment; filename="murmur-backup-${d}.json"`);
+    res.json(b);
+});
 app.get('/api/tracks', (req, res) => res.json({ tracks: library }));
 
 const mediaError = (status, message) => Object.assign(new Error(message), { status, expose: true });
@@ -351,9 +439,27 @@ async function addMediaFile(srcPath, original, user, extra = {}) {
     }
 }
 
+/* Storage limits per person (Admin → Accounts): the music they added counts against it. */
+const usedBy = uid => library.reduce((n, t) => n + (t.uploadedBy === uid ? t.size || 0 : 0), 0);
+const fmtGB = b => b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(1) + ' GB' : Math.round(b / 1024 ** 2) + ' MB';
+function overLimit(user, adding = 0) {
+    const lim = auth.storageLimit(user.id);
+    if (!lim) return '';
+    const used = usedBy(user.id);
+    return used + adding > lim ? `You’ve used ${fmtGB(used)} of your ${fmtGB(lim)} of music space. Delete some of your songs, or ask the owner for more.` : '';
+}
+app.get('/api/me/storage', (req, res) => res.json({ used: usedBy(req.user.id), limit: auth.storageLimit(req.user.id) }));
+app.get('/api/admin/storage', auth.requireOwner, (req, res) => {
+    const used = {};
+    for (const t of library) if (t.uploadedBy) used[t.uploadedBy] = (used[t.uploadedBy] || 0) + (t.size || 0);
+    res.json({ used });
+});
+
 app.post('/api/upload', auth.requireEdit, upload.single('file'), async (req, res) => {
     const f = req.file;
     if (!f) return res.status(400).json({ error: 'No file received.' });
+    const full = overLimit(req.user, f.size);
+    if (full) { await fsp.rm(f.path, { force: true }); return res.status(413).json({ error: full }); }
     try { res.json({ track: await addMediaFile(f.path, Buffer.from(f.originalname, 'latin1').toString('utf8'), req.user) }); }
     catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });

@@ -105,7 +105,7 @@ module.exports = function createAuth(file, opts = {}) {
   const publicUser = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', expiresAt: s ? s.expiresAt : null, remembered: s ? s.remember : false });
   // A player on another site can't use our cookie, so it gets the token, plus a read-only key for audio and cover URLs.
   const creds = (req, s, token) => crossSite(req) ? { token, mediaKey: s.mediaKey } : {};
-  const personView = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', createdAt: u.createdAt,
+  const personView = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', createdAt: u.createdAt, storageMB: u.storageMB || 0,
     sessions: db.sessions.filter(x => x.userId === u.id).map(x => ({ id: x.id, device: x.device, createdAt: x.createdAt, expiresAt: x.expiresAt, remember: x.remember, lastSeen: x.lastSeen, current: !!s && x.id === s.id })) });
 
   /* --- middleware --- */
@@ -133,7 +133,8 @@ module.exports = function createAuth(file, opts = {}) {
     next();
   }
   function requireUser(req, res, next) {
-    if (PUBLIC.has(req.path)) return next();
+    // /api/sync/... is for other Murmur servers; each of those routes checks the shared sync key itself.
+    if (PUBLIC.has(req.path) || req.path.startsWith('/sync/')) return next();
     const a = current(req);
     if (!a) return res.status(401).json({ error: 'Please sign in.' });
     req.user = a.user; req.session = a.session; req.token = a.token;
@@ -252,6 +253,12 @@ module.exports = function createAuth(file, opts = {}) {
         u.name = name;
       }
       if (b.canEdit != null && u.role !== 'owner') u.canEdit = !!b.canEdit;
+      // How much music they may add (megabytes; 0 = no limit). The owner has no limit.
+      if (b.storageMB != null && u.role !== 'owner') {
+        const mb = Math.round(Number(b.storageMB));
+        if (!(mb >= 0 && mb <= 10e6)) return res.status(400).json({ error: 'Enter a size, or 0 for no limit.' });
+        u.storageMB = mb;
+      }
       if (b.pin != null) {
         if (!validPin(b.pin)) return res.status(400).json({ error: 'The PIN must be exactly 4 digits.' });
         setPin(u, b.pin);
@@ -289,5 +296,8 @@ module.exports = function createAuth(file, opts = {}) {
       strip: s => ({ ...s, lastSeen: 0 }) }
   };
 
-  return { cors, sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes, syncCollections };
+  // Storage limit in bytes for a person (0 = no limit).
+  const storageLimit = uid => { const u = db.users.find(x => x.id === uid); return u && u.role !== 'owner' && u.storageMB ? u.storageMB * 1024 * 1024 : 0; };
+  const userCount = () => db.users.length;
+  return { cors, sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes, syncCollections, storageLimit, userCount };
 };

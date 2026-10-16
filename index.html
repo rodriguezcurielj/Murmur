@@ -609,6 +609,21 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .dev-drop .dev-out{flex:none;margin-left:auto;padding:4px 10px;font-size:12px}
 .dev-none{margin:0;font-size:12px}
 .act-from{color:var(--accent)}
+.srv-card .person-head{align-items:center}
+.srv-ic{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);flex:none}
+.srv-ic svg{width:20px;height:20px}
+.srv-badge{margin-left:auto;flex:none;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--fg) 8%,transparent)}
+.srv-badge.good{background:color-mix(in srgb,#3fb950 22%,transparent);color:#3fb950}
+.srv-badge.warn{background:color-mix(in srgb,#d29922 22%,transparent);color:#d29922}
+.srv-badge.bad{background:color-mix(in srgb,#f85149 22%,transparent);color:#f85149}
+.srv-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:4px 0;font-size:14px}
+.srv-facts dt{color:var(--muted)}
+.srv-facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.srv-warn{color:#d29922}
+.srv-bar{height:6px;border-radius:3px;background:color-mix(in srgb,var(--fg) 10%,transparent);overflow:hidden}
+.srv-bar span{display:block;height:100%;background:var(--accent)}
+.srv-bar.full span{background:#f85149}
+@media (max-width:520px){.srv-card .person-head{flex-wrap:wrap}.srv-badge{margin-left:0}}
 
 /* ---------- YouTube ---------- */
 .yt-box{position:fixed;right:16px;bottom:100px;z-index:45;width:min(356px,calc(100vw - 32px));background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--line);box-shadow:0 16px 40px rgba(0,0,0,.55)}
@@ -4341,7 +4356,11 @@ function act(el, e) {
     /* account & people */
     case 'gate-remember': el.disabled = true; chooseRemember(d.v === '1'); break;
     case 'acct': openAccount(); break;
-    case 'adm-tab': store.set('adminTab', d.k); if (d.k === 'activity') activityData = null; render(); $('#main').scrollTop = 0; break;
+    case 'adm-tab': store.set('adminTab', d.k); if (d.k === 'activity') activityData = null; if (d.k === 'servers') srvInfo = null; render(); $('#main').scrollTop = 0; break;
+    case 'srv-refresh': srvInfo = null; render(); break;
+    case 'srv-backup': backupNow(d.url, d.self === '1', el); break;
+    case 'srv-dl': downloadBackup(d.url, d.self === '1', d.date, d.name); break;
+    case 'p-storage': openStorageLimit(d.id); break;
     case 'act-refresh': activityData = null; render(); break;
     case 'p-share': { const u = (people || []).find(x => x.id === d.id); if (u) openShareLogin({ name: u.name }); break; }
     case 'share-go': if (shareMsg) navigator.share({ title: 'Murmur', text: shareMsg.text }).catch(() => {}); break;
@@ -6092,8 +6111,24 @@ document.addEventListener('toggle', e => {
   if (d.open) { openDevices = d.dataset.uid; document.querySelectorAll('.dev-drop[open]').forEach(o => { if (o !== d) o.open = false; }); }
   else if (openDevices === d.dataset.uid) openDevices = null;
 }, true);
+let storageUsed = {};   // person id -> bytes of music they added
+const storageText = u => { const used = storageUsed[u.id] || 0; return u.storageMB ? `${fmtSize(used)} of ${fmtSize(u.storageMB * 1048576)} used` : `${fmtSize(used)} used · no limit`; };
+function openStorageLimit(uid) {
+  const u = people && people.find(x => x.id === uid); if (!u) return;
+  const gb = u.storageMB ? +(u.storageMB / 1024).toFixed(2) : '';
+  openModal({ title: `Music space for ${esc(u.name)}`, confirm: 'Save', html: `
+    <p>Songs ${esc(u.name)} uploads or adds from YouTube count against this. They’ve used <b>${fmtSize(storageUsed[u.id] || 0)}</b>.</p>
+    <div class="field"><label for="slGb">Limit in GB (leave empty for no limit)</label><input id="slGb" name="gb" type="number" min="0" step="any" inputmode="decimal" value="${gb}" placeholder="No limit"></div>
+    <p class="small">When they reach it, uploads and YouTube adds stop until they delete songs or you give them more. Nothing they already have is removed.</p>`,
+    onSubmit: async fd => {
+      const v = String(fd.get('gb') || '').trim(), mb = v ? Math.round(parseFloat(v) * 1024) : 0;
+      if (v && !(mb >= 0)) { toast('Enter a number of GB'); return; }
+      try { await api('PATCH', 'api/users/' + uid, { storageMB: mb }); toast(mb ? `${u.name} can use up to ${v} GB` : `${u.name} has no limit now`); loadPeople(); } catch (e) { toast(e.message); }
+    } });
+}
 async function loadPeople() {
   try { people = (await api('GET', 'api/users')).users; } catch (e) { people = []; toast(e.message); }
+  try { storageUsed = (await api('GET', 'api/admin/storage')).used || {}; } catch (e) {}
   if (state.view.name === 'people') render();
 }
 function viewPeople() {
@@ -6112,6 +6147,7 @@ function viewPeople() {
         <button class="text-btn" data-act="p-lib" data-id="${u.id}">${icon('library')}<span>${u.id === me.id ? 'My library (admin view)' : 'View library'}</span></button>
         <button class="text-btn" data-act="p-pin" data-id="${u.id}">${icon('edit')}<span>${u.id === me.id ? 'Change my PIN' : 'Set new PIN'}</span></button>
         ${u.id === me.id ? '' : `<button class="text-btn" data-act="p-share" data-id="${u.id}">${icon('share')}<span>Share login</span></button>`}
+        ${u.role === 'owner' ? '' : `<button class="text-btn" data-act="p-storage" data-id="${u.id}">${icon('server')}<span>${storageText(u)}</span></button>`}
         ${u.role === 'owner' ? '' : `<label class="switch"><input type="checkbox" data-act="p-edit" data-id="${u.id}" ${u.canEdit ? 'checked' : ''}><span>Can add, edit and delete music</span></label>
         <button class="text-btn danger" data-act="p-del" data-id="${u.id}">${icon('trash')}<span>Delete</span></button>`}
       </div>
@@ -6130,6 +6166,7 @@ function viewPeople() {
         <button class="m-ok" type="submit">Create account</button>
       </form>`
     : tab === 'activity' ? `<h2 class="sub-head">Activity</h2>${activityHTML()}`
+    : tab === 'servers' ? `<h2 class="sub-head">Servers</h2>${serversHTML()}`
     : `<h2 class="sub-head">Accounts</h2>
       <p class="small" style="max-width:60ch">When someone chooses “Remember this computer” they stay signed in there for 90 days, then need their PIN again. Deleting someone signs them out everywhere.</p>
       <div class="people">${people.map(person).join('')}</div>`;
@@ -6223,7 +6260,7 @@ async function addPerson(form) {
 }
 
 /* ================= admin: four sections behind buttons ================= */
-const ADMIN_TABS = [['media', 'YouTube & Spotify', 'play'], ['new', 'New account', 'plus'], ['accounts', 'Accounts', 'user'], ['activity', 'Activity', 'eq']];
+const ADMIN_TABS = [['media', 'YouTube & Spotify', 'play'], ['new', 'New account', 'plus'], ['accounts', 'Accounts', 'user'], ['activity', 'Activity', 'eq'], ['servers', 'Servers', 'server']];
 const adminTab = () => { const t = store.get('adminTab', 'accounts'); return ADMIN_TABS.some(x => x[0] === t) ? t : 'accounts'; };
 function adminTabsHTML() {
   const cur = adminTab();
@@ -6309,6 +6346,70 @@ function welcomeHTML() {
 function rerenderWelcome() { const w = $('#gate .welcome'); if (w) w.outerHTML = welcomeHTML() || ''; }
 
 /* ---------- activity: how much each person uses Murmur ---------- */
+/* ---------- Admin → Servers: every Murmur server at a glance ----------
+   The server you're on asks the others (with the servers' shared sync key), since a browser can't reach them all. */
+let srvInfo = null;   // { loading } | { servers: [{ name, url, state: 'ok'|'old'|'off', info, self }], version } | { error }
+function loadServers() {
+  srvInfo = { loading: true };
+  api('GET', 'api/admin/servers')
+    .then(r => { srvInfo = r; })
+    .catch(e => { srvInfo = { error: /404/.test(e.message) ? 'This server is on an older version without this page. Open Admin on an updated server.' : e.message }; })
+    .finally(() => { if (state.view.name === 'people' && adminTab() === 'servers') render(); });
+}
+const upFor = ms => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : m < 2880 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} days`; };
+function serversHTML() {
+  if (!srvInfo) loadServers();
+  const intro = `<p class="small" style="max-width:62ch">Every Murmur server, whether it’s up, how full it is, and its backups. Each server backs up the song list, accounts, libraries and settings once a day and keeps 14 days (the music itself is already copied between servers).</p>
+    <p><button class="text-btn" data-act="srv-refresh">${icon('repeat')}<span>Check again</span></button></p>`;
+  if (srvInfo.loading) return intro + '<p class="small">Checking every server… (up to 10 seconds)</p>';
+  if (srvInfo.error) return intro + `<p class="gate-err">${esc(srvInfo.error)}</p>`;
+  const newest = srvInfo.version;
+  const card = x => {
+    const i = x.info;
+    const badge = { ok: ['Online', 'good'], old: ['Online · old version', 'warn'], off: ['Offline', 'bad'] }[x.state] || ['?', ''];
+    let body = '';
+    if (x.state === 'ok') {
+      const d = i.disk, usedPct = d && d.total ? Math.round((1 - d.free / d.total) * 100) : 0;
+      body = `<dl class="srv-facts">
+          <dt>Songs</dt><dd>${i.songs.toLocaleString()} · ${fmtSize(i.musicBytes)}</dd>
+          <dt>Accounts</dt><dd>${i.users}</dd>
+          <dt>Disk</dt><dd>${d ? `${fmtSize(d.free)} free of ${fmtSize(d.total)}` : 'Unknown'}</dd>
+          <dt>Running for</dt><dd>${upFor(i.now - i.startedAt)}</dd>
+          <dt>Version</dt><dd>${esc(i.version)}${i.version === newest ? ' · same as this one' : ' · <b class="srv-warn">different from this one, update it</b>'}</dd>
+          <dt>Last backup</dt><dd>${i.lastBackup ? `${esc(i.lastBackup.date)} (${fmtSize(i.lastBackup.bytes)}) · ${i.backups} kept` : 'None yet'}</dd>
+          ${i.names && i.names.running ? `<dt>Song names</dt><dd>Fixing ${i.names.done} of ${i.names.total}</dd>` : ''}
+        </dl>
+        ${d ? `<div class="srv-bar${usedPct > 90 ? ' full' : ''}" title="${usedPct}% of the disk used"><span style="width:${usedPct}%"></span></div>` : ''}
+        <div class="person-actions"><button class="text-btn" data-act="srv-backup" data-url="${esc(x.url)}" data-self="${x.self ? 1 : 0}">${icon('save')}<span>Back up now</span></button>
+          ${i.lastBackup ? `<button class="text-btn" data-act="srv-dl" data-url="${esc(x.url)}" data-self="${x.self ? 1 : 0}" data-date="${esc(i.lastBackup.date)}" data-name="${esc(x.name)}">${icon('download')}<span>Download backup</span></button>` : ''}</div>`;
+    } else if (x.state === 'old') body = '<p class="small">It answers, but it runs older code (or isn’t linked to the other servers by sync), so it can’t show its details. Update it: git pull, then restart it.</p>';
+    else body = '<p class="small">Didn’t answer. It may be switched off, asleep, or offline.</p>';
+    return `<article class="person srv-card"><header class="person-head"><span class="srv-ic">${icon('server')}</span>
+        <div class="person-meta"><h3>${esc(x.name)}${x.self ? ' <span class="badge">You’re on this one</span>' : ''}</h3><span class="small">${esc((x.url || '').replace(/^https?:\/\//, ''))}</span></div>
+        <span class="srv-badge ${badge[1]}">${badge[0]}</span></header>${body}</article>`;
+  };
+  return intro + `<div class="people">${srvInfo.servers.map(card).join('')}</div>`;
+}
+async function backupNow(url, self, btn) {
+  if (btn) btn.disabled = true;
+  try { await api('POST', 'api/admin/servers/backup', { url, self: !!self }); toast('Backed up'); srvInfo = null; render(); }
+  catch (e) { toast('Couldn’t back up: ' + e.message); if (btn) btn.disabled = false; }
+}
+async function downloadBackup(url, self, date, name) {
+  try {
+    const r = await fetch(apiUrl(`api/admin/servers/backup?date=${encodeURIComponent(date)}&${self ? 'self=1' : 'url=' + encodeURIComponent(url)}`), { headers: authHeaders(), credentials: 'include' });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'The server said no.');
+    const blob = await r.blob(), file = `murmur-backup-${String(name || 'server').replace(/\W+/g, '-')}-${date}.json`;
+    if (window.MurmurAndroid && window.MurmurAndroid.saveFile) {
+      const b64 = await new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result).split(',')[1]); f.onerror = rej; f.readAsDataURL(blob); });
+      toast(window.MurmurAndroid.saveFile(file, 'application/json', b64) ? 'Saved to Downloads' : 'Couldn’t save it');
+      return;
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  } catch (e) { toast('Couldn’t download it: ' + e.message); }
+}
+
 let activityData = null;
 async function loadActivity() {
   try { activityData = await api('GET', 'api/admin/activity'); }

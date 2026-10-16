@@ -165,5 +165,10 @@ module.exports = function createSync(dataDir, collections, opts = {}) {
     setInterval(syncAll, EVERY_MS).unref();
   }
 
-  return { routes, middleware, start };
+  // Ask another server (with the shared key) for something: Admin → Servers uses this.
+  async function askPeer(base, p, init = {}) {
+    if (!key) throw new Error('Sync is off on this server (no MURMUR_SYNC_KEY).');
+    return fetch(base.replace(/\/+$/, '') + p, { ...init, headers: { ...(init.headers || {}), 'x-murmur-sync': key }, signal: AbortSignal.timeout(init.timeout || 10000) });
+  }
+  return { routes, middleware, start, askPeer, guard: (req, res, next) => authorized(req) ? next() : res.status(404).json({ error: 'Not found.' }) };
 };
