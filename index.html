@@ -3649,11 +3649,23 @@ function nowPlayingInfo() {
     cover: absUrl(cover), art: /^data:/.test(shareable) ? shareable : absUrl(shareable),
     duration: isFinite(dur) && dur > 0 ? Math.round(dur * 1000) : 0, position: isFinite(pos) ? Math.round(pos * 1000) : 0, speed: (pbState().speed || 1) };
 }
+let notifAsked = false;
 function notifyApp() {
   const np = nowPlayingInfo();
   updateMediaSession(np);
   const app = window.MurmurAndroid;
   if (!app) return;
+  // Music controls in the notification bar and on the lock screen need notifications on for Murmur.
+  if (np && np.playing && !notifAsked && typeof app.notificationsOn === 'function') {
+    notifAsked = true;
+    let on = true; try { on = app.notificationsOn(); } catch (e) {}
+    if (!on && Date.now() - store.get('notifAskedAt', 0) > 3 * 86400e3) {
+      store.set('notifAskedAt', Date.now());
+      setTimeout(() => openModal({ title: 'Control the music from anywhere', confirm: 'Turn on notifications', cancel: 'Not now',
+        html: '<p>Turn on notifications for Murmur to get play, pause and skip in your notification bar, on the lock screen and with headphone or car buttons.</p><p class="small">In the settings that open, switch on <b>Allow notifications</b> (and <b>Now playing</b>).</p>',
+        onSubmit: () => { try { app.openNotificationSettings(); } catch (e) {} } }), 1500);
+    }
+  }
   if (typeof app.setNowPlaying === 'function') {
     const key = np ? [np.playing, np.title, np.artist, np.album, np.art, np.duration, Math.round(np.position / 2000), np.speed].join('|') : '';
     if (key === lastAppState) return;

@@ -66,10 +66,14 @@ public class MainActivity extends Activity {
 
     /** Notification, lock-screen and headphone buttons: pass them to the page ("toggle", "play", "pause", "next", "prev"). */
     static void control(String action) {
-        MainActivity a = current;
-        if (a == null || a.web == null || action == null) return;
+        if (action == null) return;
         String safe = action.replaceAll("[^a-z0-9]", "");
-        a.runOnUiThread(() -> a.web.evaluateJavascript("window.murmurControl && window.murmurControl('" + safe + "')", null));
+        // The page lives on even when Android has closed the screen behind it, so buttons go straight to it.
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            MainActivity a = current;
+            WebView w = a != null && a.web != null ? a.web : keptWeb;
+            if (w != null) w.evaluateJavascript("window.murmurControl && window.murmurControl('" + safe + "')", null);
+        });
     }
 
     /**
@@ -383,7 +387,31 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "2.3"; }
+        public String version() { return "2.6"; }
+
+        /** Whether Android shows Murmur's "now playing" notification (it can be turned off in the phone's settings). */
+        @JavascriptInterface
+        public boolean notificationsOn() {
+            android.app.NotificationManager nm = app.getSystemService(android.app.NotificationManager.class);
+            if (nm == null || !nm.areNotificationsEnabled()) return false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                android.app.NotificationChannel ch = nm.getNotificationChannel("playback");
+                if (ch != null && ch.getImportance() == android.app.NotificationManager.IMPORTANCE_NONE) return false;
+            }
+            return true;
+        }
+
+        /** Opens Murmur's notification settings, to turn the music controls on. */
+        @JavascriptInterface
+        public void openNotificationSettings() {
+            MainActivity a = current;
+            Context c = a != null ? a : app;
+            Intent i = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    ? new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, app.getPackageName())
+                    : new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + app.getPackageName()));
+            if (a == null) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try { c.startActivity(i); } catch (Exception ignored) {}
+        }
 
         @JavascriptInterface
         public int adsBlocked() { return AdBlock.blocked; }
