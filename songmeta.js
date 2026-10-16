@@ -7,7 +7,7 @@
 // First the video title is cleaned up; then Apple's free song catalog (iTunes Search, no key) is asked, and when it
 // clearly has the same song its spelling of the title and artists is used, plus its genre.
 
-const VERSION = /\b(remix(es)?|rmx|mix|instrumental|slowed|reverb|sped[\s-]*up|speed[\s-]*up|nightcore|acoustic|ac[uú]stic[oa]|live|en vivo|en directo|remaster(ed)?|version|versi[oó]n|edit|cover|extended|karaoke|bootleg|flip|vip|demo|unplugged|a ?cappella|acapella|8d|bass ?boost(ed)?|epicenter|piano|orchestral|sierreñ[oa]|banda|mariachi|tumbado|corrido|lofi|lo-fi|chopped|screwed|muffled|underwater|bachata|cumbia|ballad|balada|radio edit|clean|explicit|tiktok)\b/i;
+const VERSION = /\b(remix(es)?|rmx|mix|instrumental|slowed|reverb|sped[\s-]*up|speed[\s-]*up|nightcore|acoustic|ac[uú]stic[oa]|live|en vivo|en directo|remaster(ed)?|version|versi[oó]n|edit|cover|extended|karaoke|bootleg|flip|vip|demo|unplugged|a ?cappella|acapella|8d|bass ?boost(ed)?|epicenter|piano|orchestral|sierreñ[oa]|banda|mariachi|tumbado|corrido|lofi|lo-fi|chopped|screwed|muffled|underwater|bachata|cumbia|ballad|balada|radio edit|clean|censored|tiktok)\b/i;
 const FEAT = /^\s*(feat\.?|ft\.?|featuring|con|with|w\/)\s+/i;
 const JUNK = /\b(official|oficial|video|v[ií]deo|audio|lyrics?|letras?|visuali[sz]er|hd|hq|4k|1080p|720p|mv|m\/v|clip|estreno|exclusiv[oa]|premiere|subtitulad[oa]|sub|español|english|full song|topic|records|music group|entertainment|prod\.?|dir\.?|shot by|in4k)\b/i;
 const LABELY = /\b(records|music group|entertainment|lyrics|letras|music|radio|tv|channel|beats|vevo|oficial|official|label|studio|network|media|nation|world|hits|mx|latino)\b/i;

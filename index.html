@@ -3678,7 +3678,8 @@ function nowPlayingInfo() {
   const dur = Engine.duration, pos = Engine.position();
   return { playing: !!Engine.playing, title: t.title || '', artist: cleanArtist(t.artist) || '', album: t.yt ? 'YouTube' : (t.albumTag || t.album || ''),
     cover: absUrl(cover), art: /^data:/.test(shareable) ? shareable : absUrl(shareable),
-    duration: isFinite(dur) && dur > 0 ? Math.round(dur * 1000) : 0, position: isFinite(pos) ? Math.round(pos * 1000) : 0, speed: (pbState().speed || 1) };
+    duration: isFinite(dur) && dur > 0 ? Math.round(dur * 1000) : 0, position: isFinite(pos) ? Math.round(pos * 1000) : 0, speed: (pbState().speed || 1),
+    shuffle: !!state.shuffle, liked: state.liked.has(t.id) };
 }
 let notifAsked = false;
 function notifyApp() {
@@ -3698,7 +3699,7 @@ function notifyApp() {
     }
   }
   if (typeof app.setNowPlaying === 'function') {
-    const key = np ? [np.playing, np.title, np.artist, np.album, np.art, np.duration, Math.round(np.position / 2000), np.speed].join('|') : '';
+    const key = np ? [np.playing, np.title, np.artist, np.album, np.art, np.duration, Math.round(np.position / 2000), np.speed, np.shuffle, np.liked].join('|') : '';
     if (key === lastAppState) return;
     lastAppState = key;
     try { app.setNowPlaying(JSON.stringify(np || { playing: false, title: '', artist: '' })); } catch (e) {}
@@ -3746,6 +3747,8 @@ window.murmurControl = action => {
   else if (action === 'pause') { if (Engine.playing) togglePlay(); }
   else if (action === 'next') next(false);
   else if (action === 'prev') prev();
+  else if (action === 'shuffle') { const b = document.querySelector('[data-act="shuffle"]'); if (b) act(b); else { state.shuffle = !state.shuffle; store.set('shuffle', state.shuffle); if (state.list.length) buildOrder(state.order[state.pos]); } notifyApp(); }
+  else if (action === 'like') { toggleLike(state.current); notifyApp(); }
   else if (/^seek\d+$/.test(action)) { Engine.seek(Number(action.slice(4)) / 1000); notifyApp(); }   // the app's progress bar, in milliseconds
 };
 function updateToggles() {
@@ -4693,7 +4696,7 @@ async function saveMatch(key, patch) {
 /* Pick the YouTube result that's most likely the same recording. */
 function pickBest(t, ids) {
   const artist = normKey(t.artist.split(',')[0]), title = normKey(t.title);
-  const bad = /\b(live|cover|karaoke|instrumental|remix|sped up|slowed|8d|reaction|nightcore|reverb)\b/;
+  const bad = /\b(live|cover|karaoke|instrumental|remix|sped up|slowed|8d|reaction|nightcore|reverb|clean|censored|censurad[oa]|radio edit|radio version|kidz bop|sin groserias|version limpia)\b/;
   let best = null, top = -Infinity;
   ids.forEach(id => {
     const v = TRACKS[id]; if (!v) return;
@@ -4704,6 +4707,7 @@ function pickBest(t, ids) {
     if (artist && (ch.includes(artist) || artist.includes(ch) || vt.includes(artist))) s += 30;
     if (title && vt.includes(title)) s += 25;
     if (bad.test(vt) && !bad.test(title)) s -= 45;
+    if (/\b(explicit|uncensored|dirty|sin censura)\b/.test(vt)) s += 8;
     if (s > top) { top = s; best = id; }
   });
   return top > -45 ? best : null;
@@ -5353,7 +5357,11 @@ function syncLinkResult(tid) {
         // Spanish and other common extras
         'en vivo', 'vivo', 'en directo', 'directo', 'en concierto', 'concierto', 'ensayo', 'detras de camaras', 'reaccion',
         'acustico', 'acustica', 'version', 'sesion', 'karaoke', 'en estudio', 'live session', 'duet', 'dueto', '360',
-        'dolby atmos', 'spatial audio', 'mix', 'megamix', 'medley', 'popurri', 'en vivo desde', 'tour', 'teaser', 'preview'];
+        'dolby atmos', 'spatial audio', 'mix', 'megamix', 'medley', 'popurri', 'en vivo desde', 'tour', 'teaser', 'preview',
+        // censored copies: the original (with its real words) is wanted
+        'censored', 'censurado', 'censurada', 'clean version', 'radio edit', 'radio version', 'radio', 'tv version', 'family friendly',
+        'no swearing', 'no cussing', 'without swearing', 'sin groserias', 'sin malas palabras', 'version limpia', 'limpia', 'kidz bop', 'kids'];
+    const YT_UNCENSORED = /(^| )(explicit|uncensored|dirty|sin censura|explicito|explicita)( |$)/;
     function ytScore(t, y) {
         const song = ytNorm(t.title), bare = ytNorm(String(t.title).replace(/\s*[([].*?[)\]]/g, '').replace(/\s+-\s+.*$/, ''));
         const vid = ytNorm(y.title), artists = String(t.artist || '').split(/,|&| x | y | feat\.? | ft\.? /i).map(a => ytCompact(cleanArtist(a))).filter(Boolean);
@@ -5382,6 +5390,7 @@ function syncLinkResult(tid) {
         const extra = vid.split(' ').filter(w => w && !known.has(w) && !inName.includes(w) && !/^\d{4}$/.test(w)).length;
         s -= Math.min(40, extra * 6);
         if (/(^| )(official )?audio( |$)/.test(vid)) s += 15;
+        if (YT_UNCENSORED.test(vid)) s += 12;   // says it's the uncensored original
         if (/#\w/.test(String(y.title))) s -= 30;   // hashtag clips
         if (/(^| )lyrics?( video)?( |$)/.test(vid)) s -= 5;
         if (t.duration && y.duration) {
@@ -6053,8 +6062,8 @@ function setTheme(id) {
 const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '2.7';
-const ANDROID_NEW = 'Play, pause and skip now show in your notification list too (not just quick settings), the buttons work every time, and you can pick a photo for your profile picture.';
+const ANDROID_LATEST = '2.8';
+const ANDROID_NEW = 'A new Spotify-style music card in your notifications (cover, progress, shuffle, skip and like), the buttons work every time, and you can pick a photo for your profile picture.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;

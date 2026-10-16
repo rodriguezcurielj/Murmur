@@ -286,7 +286,8 @@ backups.routes(app);
 const STARTED = Date.now();
 const VERSION = (() => {   // the same app on two servers gives the same code
     const h = crypto.createHash('sha1');
-    for (const f of ['public/index.html', 'server.js', 'songmeta.js', 'ytaudio.js']) { try { h.update(fs.readFileSync(path.join(__dirname, f))); } catch {} }
+    // Line endings are ignored, so a Windows copy and a Linux copy of the same code match.
+    for (const f of ['public/index.html', 'server.js', 'songmeta.js', 'ytaudio.js']) { try { h.update(fs.readFileSync(path.join(__dirname, f), 'utf8').replace(/\r\n/g, '\n')); } catch {} }
     return h.digest('hex').slice(0, 8);
 })();
 async function serverInfo() {

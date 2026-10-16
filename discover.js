@@ -32,9 +32,17 @@ module.exports = function createDiscover(dataDir) {
     const r = await fetch('https://api.deezer.com/' + path, { signal: AbortSignal.timeout(8000) });
     const data = await r.json();
     if (data && data.error) throw new Error(data.error.message || 'Deezer error');
+    if (data && Array.isArray(data.data)) data.data = uncensored(data.data);
     cache.set(path, { at: Date.now(), data });
     if (cache.size > 2000) cache.delete(cache.keys().next().value);
     return data;
+  }
+  // The catalog often lists a song twice: the original and an edited ("clean", censored) copy. Keep the original.
+  // explicit_content_lyrics: 1 = explicit, 3 = edited.
+  function uncensored(list) {
+    const key = t => `${(t.artist && t.artist.id) || ''}|${String(t.title_short || t.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
+    const hasOriginal = new Set(list.filter(t => t && t.explicit_content_lyrics !== 3 && t.type !== 'artist').map(key));
+    return list.filter(t => !(t && t.explicit_content_lyrics === 3 && hasOriginal.has(key(t))));
   }
   // An album's main genre, or '' if Deezer doesn't say.
   async function albumGenre(id) {
@@ -78,6 +86,7 @@ module.exports = function createDiscover(dataDir) {
     cover: (t.album && (t.album.cover_medium || t.album.cover)) || '',
     duration: t.duration || 0,
     isrc: t.isrc || '',
+    explicit: t.explicit_lyrics === true || t.explicit_content_lyrics === 1,
     url: t.link || '',
     because
   });

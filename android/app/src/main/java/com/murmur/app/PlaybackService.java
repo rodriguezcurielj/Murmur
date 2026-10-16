@@ -49,7 +49,7 @@ public class PlaybackService extends Service {
     private String title = "", artist = "", album = "", artUrl = "";
     private long duration = 0, position = 0, positionAt = 0;
     private float speed = 1f;
-    private boolean playing = false;
+    private boolean playing = false, shuffle = false, liked = false;
     private Bitmap art;
 
     /** Called from the page (any thread) whenever the song or play/pause state changes. */
@@ -103,6 +103,8 @@ public class PlaybackService extends Service {
             @Override public void onSkipToPrevious() { MainActivity.control("prev"); }
             @Override public void onStop() { MainActivity.control("pause"); }
             @Override public void onSeekTo(long pos) { MainActivity.control("seek" + Math.max(0, pos)); }
+            // Shuffle and like buttons on the player (like Spotify's)
+            @Override public void onCustomAction(String action, android.os.Bundle extras) { MainActivity.control(action); }
         });
         session.setSessionActivity(openAppIntent());
         session.setActive(true);
@@ -133,6 +135,7 @@ public class PlaybackService extends Service {
                 duration = Math.max(0, j.optLong("duration", 0)); position = Math.max(0, j.optLong("position", 0));
                 positionAt = SystemClock.elapsedRealtime();
                 speed = (float) j.optDouble("speed", 1);
+                shuffle = j.optBoolean("shuffle", false); liked = j.optBoolean("liked", false);
                 String a = j.optString("art", "");
                 if (!a.equals(artUrl)) { artUrl = a; art = null; loadArt(a); }
             } catch (Exception ignored) {}
@@ -179,16 +182,23 @@ public class PlaybackService extends Service {
         return b.build();
     }
 
-    /** The plain notification with the song and previous / play-pause / next, shown in the notification list. */
+    /** The now-playing card in the notification list, like Spotify's: the cover behind the song and artist, a
+     *  progress bar, and shuffle / previous / play-pause / next / like (folded: previous / play-pause / next). */
     private void showControls() {
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (title.isEmpty()) { nm.cancel(CONTROLS_ID); return; }
+        android.widget.RemoteViews big = card(R.layout.notif_big), small = card(R.layout.notif_small);
+        long pos = position + (playing && positionAt > 0 ? (long) ((SystemClock.elapsedRealtime() - positionAt) * speed) : 0);
+        big.setProgressBar(R.id.n_progress, 1000, duration > 0 ? (int) Math.min(1000, pos * 1000 / duration) : 0, false);
+        big.setImageViewResource(R.id.n_shuffle, shuffle ? R.drawable.n_shuffle_on : R.drawable.n_shuffle);
+        big.setImageViewResource(R.id.n_like, liked ? R.drawable.n_heart_on : R.drawable.n_heart);
+        big.setOnClickPendingIntent(R.id.n_shuffle, serviceIntent(ACTION_CONTROL, "shuffle", 7));
+        big.setOnClickPendingIntent(R.id.n_like, serviceIntent(ACTION_CONTROL, "like", 8));
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, CONTROLS_CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(R.drawable.ic_stat_murmur)
                 .setContentTitle(title)
-                .setContentText(artist.isEmpty() ? (playing ? "Playing" : "Paused") : artist + (playing ? "" : " · Paused"))
-                .setLargeIcon(art)
+                .setContentText(artist)
                 .setContentIntent(openAppIntent())
                 .setOngoing(playing)
                 .setOnlyAlertOnce(true)
@@ -196,12 +206,24 @@ public class PlaybackService extends Service {
                 .setGroup("murmur-controls")
                 .setCategory(Notification.CATEGORY_TRANSPORT)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_previous, "⏮ Previous", serviceIntent(ACTION_CONTROL, "prev", 4)).build())
-                .addAction(new Notification.Action.Builder(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
-                        playing ? "⏸ Pause" : "▶ Play", serviceIntent(ACTION_CONTROL, "toggle", 5)).build())
-                .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_next, "Next ⏭", serviceIntent(ACTION_CONTROL, "next", 6)).build());
+                .setStyle(new Notification.DecoratedCustomViewStyle())
+                .setCustomContentView(small)
+                .setCustomBigContentView(big);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) b.setPriority(Notification.PRIORITY_LOW);
         try { nm.notify(CONTROLS_ID, b.build()); } catch (Exception ignored) {}
+    }
+
+    /** The parts both sizes of the card share. */
+    private android.widget.RemoteViews card(int layout) {
+        android.widget.RemoteViews v = new android.widget.RemoteViews(getPackageName(), layout);
+        v.setTextViewText(R.id.n_title, title);
+        v.setTextViewText(R.id.n_artist, artist);
+        if (art != null) v.setImageViewBitmap(R.id.n_bg, art);
+        v.setImageViewResource(R.id.n_play, playing ? R.drawable.n_pause : R.drawable.n_play);
+        v.setOnClickPendingIntent(R.id.n_prev, serviceIntent(ACTION_CONTROL, "prev", 4));
+        v.setOnClickPendingIntent(R.id.n_play, serviceIntent(ACTION_CONTROL, "toggle", 5));
+        v.setOnClickPendingIntent(R.id.n_next, serviceIntent(ACTION_CONTROL, "next", 6));
+        return v;
     }
 
     private void updateSession() {
@@ -217,6 +239,10 @@ public class PlaybackService extends Service {
         if (duration > 0) actions |= PlaybackState.ACTION_SEEK_TO;   // drag the bar to jump in the song
         session.setPlaybackState(new PlaybackState.Builder()
                 .setActions(actions)
+                .addCustomAction(new PlaybackState.CustomAction.Builder("shuffle", shuffle ? "Shuffle off" : "Shuffle on",
+                        shuffle ? R.drawable.n_shuffle_on : R.drawable.n_shuffle).build())
+                .addCustomAction(new PlaybackState.CustomAction.Builder("like", liked ? "Remove from Liked Songs" : "Save to Liked Songs",
+                        liked ? R.drawable.n_heart_on : R.drawable.n_heart).build())
                 .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
                         duration > 0 ? position : PlaybackState.PLAYBACK_POSITION_UNKNOWN, playing ? speed : 0f,
                         positionAt > 0 ? positionAt : SystemClock.elapsedRealtime())
