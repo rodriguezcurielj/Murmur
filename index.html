@@ -6016,6 +6016,26 @@ function setTheme(id) {
 }
 /* "Get the apps": downloads live on the GitHub Pages download page. The device you're on is listed first. */
 const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
+/* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
+   this to the version it builds. (Apps before 2.6 all report "2.3".) */
+const ANDROID_LATEST = '2.6';
+const ANDROID_NEW = 'Play, pause and skip from the notification bar and lock screen work every time, and you can pick a photo for your profile picture.';
+const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
+function checkAppUpdate() {
+  const app = window.MurmurAndroid;
+  if (!app || typeof app.version !== 'function') return;
+  let v = ''; try { v = String(app.version()); } catch (e) { return; }
+  if (!v || v.startsWith('ios') || verNum(v) >= verNum(ANDROID_LATEST)) return;
+  const snooze = store.get('appUpdSnooze', null);
+  if (snooze && snooze.v === ANDROID_LATEST && Date.now() - snooze.at < 86400e3) return;   // "Later": ask again tomorrow
+  openModal({ title: 'New Murmur update available', confirm: 'Update now', cancel: 'Later', html: `
+    <p>Version <b>${ANDROID_LATEST}</b> of the Android app is out. ${ANDROID_NEW}</p>
+    <ol class="steps small"><li>Tap <b>Update now</b>. Your phone downloads the update.</li><li>Open the download and tap <b>Update</b> (allow installing from your browser if it asks).</li></ol>
+    <p class="small">Your music, downloads and sign-in stay as they are.</p>`,
+    onSubmit: () => { store.set('appUpdSnooze', { v: ANDROID_LATEST, at: Date.now() }); location.href = APPS_PAGE + 'Murmur.apk'; } });
+  // Closing it without updating counts as "Later".
+  store.set('appUpdSnooze', { v: ANDROID_LATEST, at: Date.now() });
+}
 function appsSectionHTML(bare) {
   const ua = navigator.userAgent;
   const inApp = window.MurmurAndroid && typeof window.MurmurAndroid.version === 'function' ? String(window.MurmurAndroid.version()) : '';
@@ -6421,6 +6441,7 @@ setInterval(() => {
   requestAnimationFrame(frame);
   loadSuggestions();
   if (mode === 'ok') { spFinishLogin(); loadDiscover(); }   // coming back from the Spotify sign-in page
+  setTimeout(() => { if ($('#modal').hidden) checkAppUpdate(); }, 4000);
   // Notice when the sign-in ends (90 days up, PIN changed, or removed by the owner).
   if (mode === 'ok') {
     document.addEventListener('visibilitychange', async () => {
