@@ -184,6 +184,7 @@ body.drag-selecting .tracks{touch-action:none}
 .he-list .he-down svg{transform:rotate(90deg)}
 .he-list li:first-child [data-act="he-up"],.he-list li:last-child [data-act="he-down"]{visibility:hidden}
 .he-h{margin:6px 0 2px;font-size:15px}
+.he-sub{margin:10px 0 0;font-weight:700}
 .he-sc{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 .he-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:color-mix(in srgb,var(--fg) 6%,transparent);font-size:13px;cursor:pointer}
 .shelf-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:34px 0 10px}
@@ -3121,7 +3122,13 @@ const HOME_ACTIONS = {
   settings: ['People & settings', 'user', 'acct-people', '', () => server.on && !!me && me.role !== 'owner'],
   admin: ['Admin', 'shield', 'acct-people', '', () => server.on && !!me && me.role === 'owner']
 };
-const scOk = k => { const a = k.startsWith('act:') && HOME_ACTIONS[k.slice(4)]; return !!a && a[4](); };
+// Shortcuts can also be playlists (yours, Spotify imports, Liked Songs, Murmur mixes), but not single songs.
+const SC_LISTS = ['liked', 'playlist', 'import'];
+const scOk = k => {
+  if (k.startsWith('act:')) { const a = HOME_ACTIONS[k.slice(4)]; return !!a && a[4](); }
+  const [t, i] = splitKey(k);
+  return SC_LISTS.includes(t) && !!getCollection(t, i);
+};
 function homePrefs() {
   const p = store.get('home', {}) || {};
   const known = HOME_SECTIONS.map(x => x[0]), order = (p.order || []).filter(k => known.includes(k));
@@ -3132,11 +3139,16 @@ const autoShortcuts = () => ['sp-import', 'go-search', 'library', 'queue', 'admi
 // Saved shortcuts (older ones could be playlists; those are dropped)
 function myShortcuts() {
   const p = homePrefs().shortcuts;
-  if (!p || p.some(k => !k.startsWith('act:'))) return autoShortcuts();   // none saved, or saved before shortcuts were only buttons
-  return p.filter(scOk);
+  if (!p) return autoShortcuts();
+  const ok = p.filter(scOk);
+  return ok.length || !p.length ? ok : autoShortcuts();
 }
 function shortcutTile(k) {
   if (!scOk(k)) return '';
+  if (!k.startsWith('act:')) {
+    const [t, i] = splitKey(k), col = getCollection(t, i);
+    return `<div class="qt" data-act="open" data-type="${t}" data-id="${esc(i)}" data-col-key="${t}:${esc(i)}" role="button" tabindex="0">${coverHTML(col, '')}<span class="nm ell">${esc(col.title)}</span>${col.tracks.length ? playFab(t, i) : ''}</div>`;
+  }
   const a = HOME_ACTIONS[k.slice(4)];
   return `<div class="qt qt-act" data-act="${a[2]}"${a[3] ? ` data-to="${a[3]}"` : ''} role="button" tabindex="0"><span class="cover qt-ic">${icon(a[1])}</span><span class="nm ell">${a[0]}</span></div>`;
 }
@@ -3194,15 +3206,19 @@ function viewHome() {
 function openHomeEdit() {
   const p = homePrefs(), sc = new Set(myShortcuts());
   const name = Object.fromEntries(HOME_SECTIONS.map(x => [x[0], x]));
-  const cands = Object.keys(HOME_ACTIONS).map(a => 'act:' + a).filter(scOk);
-  const label = k => HOME_ACTIONS[k.slice(4)][0];
+  const actions = Object.keys(HOME_ACTIONS).map(a => 'act:' + a).filter(scOk);
+  const lists = ['liked:liked', ...state.playlists.map(x => 'playlist:' + x.id), ...sp.imports.map(x => 'import:' + x.id), ...visCurated().map(x => 'playlist:' + x.id)]
+    .filter((k, n, a) => a.indexOf(k) === n).filter(scOk);
+  const label = k => k.startsWith('act:') ? HOME_ACTIONS[k.slice(4)][0] : getCollection(...splitKey(k)).title;
+  const chips = ks => ks.map(k => `<label class="he-chip"><input type="checkbox" name="sc" value="${esc(k)}"${sc.has(k) ? ' checked' : ''}><span>${esc(label(k))}</span></label>`).join('');
   openModal({ title: 'Edit Home', confirm: 'Save', html: `
     <p class="small">Turn sections on or off and move them up or down.</p>
     <ol class="he-list" id="heList">${p.order.map(k => `<li data-k="${k}"><input type="hidden" name="all" value="${k}">
       <label class="he-check"><input type="checkbox" name="sec" value="${k}"${p.off.includes(k) ? '' : ' checked'}><span><b>${name[k][1]}</b>${name[k][2] ? `<span class="small">${name[k][2]}</span>` : ''}</span></label>
       <button type="button" class="icon-btn" data-act="he-up" aria-label="Move ${name[k][1]} up">${icon('chev')}</button><button type="button" class="icon-btn he-down" data-act="he-down" aria-label="Move ${name[k][1]} down">${icon('chev')}</button></li>`).join('')}</ol>
-    <h3 class="he-h">Shortcuts</h3><p class="small">Pick up to 8 things to do, for the top of Home.</p>
-    <div class="he-sc">${cands.map(k => `<label class="he-chip"><input type="checkbox" name="sc" value="${esc(k)}"${sc.has(k) ? ' checked' : ''}><span>${esc(label(k))}</span></label>`).join('')}</div>
+    <h3 class="he-h">Shortcuts</h3><p class="small">Pick up to 8 for the top of Home.</p>
+    <p class="small he-sub">Buttons</p><div class="he-sc">${chips(actions)}</div>
+    ${lists.length ? `<p class="small he-sub">Playlists</p><div class="he-sc">${chips(lists)}</div>` : ''}
     <p><button type="button" class="link-btn" data-act="he-reset">Back to the default Home</button></p>`,
     onSubmit: fd => {
       const all = fd.getAll('all'), on = new Set(fd.getAll('sec'));
