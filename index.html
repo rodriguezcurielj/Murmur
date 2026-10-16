@@ -170,6 +170,12 @@ body.drag-selecting .tracks{touch-action:none}
 .qt .cover{width:60px;height:60px}
 .qt .nm{font-weight:700;flex:1;min-width:0}
 .qt .fab{position:static;width:36px;height:36px}
+.gp-sug{margin:6px 0 18px}
+.gp-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+.gp-item{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 8px;border-radius:10px;background:var(--raise);min-width:0}
+.gp-item .gp-cover{width:52px;height:52px;flex:none;border-radius:6px}
+.gp-meta{display:flex;flex-direction:column;min-width:0;flex:1}
+.gp-meta b{font-size:15px}
 .qt-ic{display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 22%,var(--raise));color:var(--accent)}
 .qt-ic svg{width:26px;height:26px}
 .greet-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -3114,6 +3120,7 @@ function shelf(title, items, note) {
 const HOME_SECTIONS = [
   ['shortcuts', 'Shortcuts', 'Buttons for things you do often'],
   ['recentSongs', 'Recently played songs', 'The last songs you listened to'],
+  ['genrePlaylists', 'Playlists from your likes', 'Liked Songs sorted by genre, ready to make into playlists'],
   ['topArtists', 'Your top artists', 'Who you play and like most'],
   ['genres', 'Your genres', 'What you listen to most'],
   ['recent', 'Jump back in', 'Playlists and albums you opened lately'],
@@ -3198,6 +3205,7 @@ function homeSection(k) {
       return `<div class="shelf-head"><h2>Recently played songs</h2><div class="head-actions"><button class="text-btn" data-act="open" data-type="history" data-id="songs">See all</button></div></div>
         <div class="shelf">${col.tracks.slice(0, 14).map((id, i) => songCard(id, 'history', 'songs', i)).join('')}</div>`;
     }
+    case 'genrePlaylists': return genrePlaylistsHTML();
     case 'topArtists': return shelf('Your top artists', topArtists().map(a => card('artist', a)), 'From what you play and like');
     case 'genres': return shelf('Your genres', topGenres().map(g => card('mygenre', g)), 'Your songs, by genre');
     case 'recent': return shelf('Jump back in', state.recent.map(splitKey).filter(([t, i]) => getCollection(t, i)).map(([t, i]) => card(t, i)));
@@ -3421,6 +3429,7 @@ function viewCollection(type, id) {
     ${dlBtn}${n ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
   </div>
   ${server.on ? jobPanelsHTML(type, id) : ''}
+  ${col.liked ? genrePlaylistsHTML() : ''}
   ${body}${rec}${['artist', 'album', 'calbum'].includes(type) ? catExtrasHTML(type, id, col) : ''}`;
 }
 function libEntries() {
@@ -4098,6 +4107,34 @@ function toggleLike(tid) {
   setLiked([tid], on);
   toast(on ? 'Added to Liked Songs' : 'Removed from Liked Songs');
 }
+/* Playlists by genre, suggested from Liked Songs: one tap makes the playlist, which is then theirs to rename and edit. */
+function likedGenreSuggestions() {
+  const groups = new Map();
+  [...state.liked].reverse().filter(visible).forEach(id => {
+    const g = genreFor(id); if (!g || g[0] === '\u0000') return;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(id);
+  });
+  const have = new Set(state.playlists.map(x => normKey(x.name))), skipped = new Set(store.get('gpSkipped', []));
+  return [...groups].filter(([g, ids]) => ids.length >= 3 && !have.has(normKey(g)) && !skipped.has(g))
+    .sort((a, b) => b[1].length - a[1].length).map(([genre, ids]) => ({ genre, ids }));
+}
+function genrePlaylistsHTML() {
+  const list = likedGenreSuggestions();
+  if (!list.length) return '';
+  return `<section class="gp-sug"><div class="shelf-head"><h2>Make playlists from your likes</h2><p>Your Liked Songs sorted by genre. Create one, then rename it or add and remove songs.</p></div>
+    <div class="gp-list">${list.slice(0, 8).map(x => `<div class="gp-item">${coverHTML({ mosaic: mosaicFor(x.ids) }, 'gp-cover')}
+      <div class="gp-meta"><b class="ell">${esc(x.genre)}</b><span class="small">${plural(x.ids.length, 'liked song')}</span></div>
+      <button class="text-btn" data-act="gp-make" data-g="${esc(x.genre)}">${icon('plus')}<span>Create</span></button>
+      <button class="icon-btn" data-act="gp-skip" data-g="${esc(x.genre)}" aria-label="Don’t suggest ${esc(x.genre)}">${icon('close')}</button></div>`).join('')}</div>
+    ${list.length > 1 ? `<p><button class="text-btn" data-act="gp-all">${icon('list')}<span>Create all ${Math.min(list.length, 8)}</span></button></p>` : ''}</section>`;
+}
+function makeGenrePlaylist(genre, open) {
+  const x = likedGenreSuggestions().find(v => v.genre === genre); if (!x) return null;
+  const pl = createPlaylist(x.ids); pl.name = genre; savePlaylists();
+  if (open) { toast(`Made “${genre}” with ${plural(x.ids.length, 'song')}. Rename it or edit it any time.`); navigate({ name: 'collection', type: 'playlist', id: pl.id }); }
+  return pl;
+}
 function createPlaylist(tracks = []) {
   let n = state.playlists.length + 1;
   while (state.playlists.some(p => p.name === `My Playlist #${n}`)) n++;
@@ -4389,6 +4426,12 @@ function act(el, e) {
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
     case 'disc-play': playFrom('discover', 'mix', +d.i); break;
     case 'col-play': playFrom(d.type, d.id, +d.i); break;
+    case 'gp-make': makeGenrePlaylist(d.g, true); break;
+    case 'gp-all': {
+      const made = likedGenreSuggestions().slice(0, 8).map(x => makeGenrePlaylist(x.genre, false)).filter(Boolean);
+      toast(`Made ${plural(made.length, 'playlist')}: ${made.map(x => x.name).join(', ')}. Rename or edit them any time.`); render(); renderSidebar(); break;
+    }
+    case 'gp-skip': store.set('gpSkipped', [...new Set([...store.get('gpSkipped', []), d.g])]); render(); break;
     case 'home-edit': openHomeEdit(); break;
     case 'he-up': case 'he-down': {
       const li = el.closest('li'), to = d.act === 'he-up' ? li.previousElementSibling : li.nextElementSibling;
