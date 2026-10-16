@@ -3096,7 +3096,7 @@ function shelf(title, items, note) {
 /* ================= views ================= */
 /* ---------- Home: what's on it and in what order is yours (Edit), and follows you to every device ---------- */
 const HOME_SECTIONS = [
-  ['shortcuts', 'Shortcuts', 'Tiles at the top'],
+  ['shortcuts', 'Shortcuts', 'Buttons for things you do often'],
   ['recentSongs', 'Recently played songs', 'The last songs you listened to'],
   ['topArtists', 'Your top artists', 'Who you play and like most'],
   ['genres', 'Your genres', 'What you listen to most'],
@@ -3109,25 +3109,36 @@ const HOME_SECTIONS = [
   ['newAlbums', 'New albums', 'Murmur’s demo music'],
   ['artists', 'Artists', 'Murmur’s demo artists']
 ];
-const HOME_ACTIONS = { 'sp-import': ['Import from Spotify', 'plus'], upload: ['Upload music', 'upload'], 'go-search': ['Search', 'search'] };
+// Shortcuts are things to do in Murmur (not songs or playlists): [label, icon, data-act, data-to, shown when]
+const HOME_ACTIONS = {
+  'sp-import': ['Import from Spotify', 'plus', 'sp-import', '', () => server.on],
+  'go-search': ['Search', 'search', 'go-search', '', () => true],
+  library: ['Your Library', 'library', 'nav', 'library', () => true],
+  queue: ['Queue', 'queue', 'nav', 'queue', () => true],
+  upload: ['Upload music', 'upload', 'upload', '', () => canEditMusic()],
+  'link-dl': ['Add from a link', 'download', 'link-dl', '', () => canEditMusic() && linkSources().length > 0],
+  playback: ['Playback settings', 'eq', 'pb-open', '', () => true],
+  settings: ['People & settings', 'user', 'acct-people', '', () => server.on && !!me && me.role !== 'owner'],
+  admin: ['Admin', 'shield', 'acct-people', '', () => server.on && !!me && me.role === 'owner']
+};
+const scOk = k => { const a = k.startsWith('act:') && HOME_ACTIONS[k.slice(4)]; return !!a && a[4](); };
 function homePrefs() {
   const p = store.get('home', {}) || {};
   const known = HOME_SECTIONS.map(x => x[0]), order = (p.order || []).filter(k => known.includes(k));
   return { order: [...order, ...known.filter(k => !order.includes(k))], off: p.off || [], shortcuts: Array.isArray(p.shortcuts) ? p.shortcuts : null };
 }
 const splitKey = k => { const i = k.indexOf(':'); return [k.slice(0, i), k.slice(i + 1)]; };
-function autoShortcuts() {
-  return [['liked', 'liked'], ...(server.on || server.offlineMode ? [['album', 'uploads']] : []), ...(offline.size ? [['downloads', 'downloads']] : []), ['history', 'songs'], ...state.playlists.slice(0, 2).map(p => ['playlist', p.id]), ...sp.imports.slice(0, 1).map(i => ['import', i.id]), ...visCurated().map(p => ['playlist', p.id])]
-    .filter(([t, i]) => getCollection(t, i)).slice(0, 6).map(x => x.join(':')).concat(server.on ? ['act:sp-import'] : []);
+const autoShortcuts = () => ['sp-import', 'go-search', 'library', 'queue', 'admin', 'settings', 'playback'].map(k => 'act:' + k).filter(scOk);
+// Saved shortcuts (older ones could be playlists; those are dropped)
+function myShortcuts() {
+  const p = homePrefs().shortcuts;
+  if (!p || p.some(k => !k.startsWith('act:'))) return autoShortcuts();   // none saved, or saved before shortcuts were only buttons
+  return p.filter(scOk);
 }
 function shortcutTile(k) {
-  const [t, i] = splitKey(k);
-  if (t === 'act') {
-    const a = HOME_ACTIONS[i]; if (!a || (i === 'upload' && !canEditMusic()) || (i === 'sp-import' && !server.on)) return '';
-    return `<div class="qt qt-act" data-act="${i}" role="button" tabindex="0"><span class="cover qt-ic">${icon(a[1])}</span><span class="nm ell">${a[0]}</span></div>`;
-  }
-  const col = getCollection(t, i); if (!col) return '';
-  return `<div class="qt" data-act="open" data-type="${t}" data-id="${esc(i)}" data-col-key="${t}:${esc(i)}" role="button" tabindex="0">${coverHTML(col, '')}<span class="nm ell">${esc(col.title)}</span>${col.tracks.length ? playFab(t, i) : ''}</div>`;
+  if (!scOk(k)) return '';
+  const a = HOME_ACTIONS[k.slice(4)];
+  return `<div class="qt qt-act" data-act="${a[2]}"${a[3] ? ` data-to="${a[3]}"` : ''} role="button" tabindex="0"><span class="cover qt-ic">${icon(a[1])}</span><span class="nm ell">${a[0]}</span></div>`;
 }
 // Your listening, weighted: plays, likes and what you played lately.
 function tasteTally(keyOf) {
@@ -3152,7 +3163,7 @@ function songCard(id, type, colId, i) {
 function homeSection(k) {
   switch (k) {
     case 'shortcuts': {
-      const tiles = (homePrefs().shortcuts || autoShortcuts()).map(shortcutTile).filter(Boolean);
+      const tiles = myShortcuts().map(shortcutTile).filter(Boolean);
       return tiles.length ? `<div class="quick">${tiles.join('')}</div>` : '';
     }
     case 'recentSongs': {
@@ -3181,19 +3192,16 @@ function viewHome() {
   ${p.order.filter(k => !p.off.includes(k)).map(homeSection).join('\n')}`;
 }
 function openHomeEdit() {
-  const p = homePrefs(), sc = new Set(p.shortcuts || autoShortcuts());
+  const p = homePrefs(), sc = new Set(myShortcuts());
   const name = Object.fromEntries(HOME_SECTIONS.map(x => [x[0], x]));
-  const cands = [['liked:liked'], ['album:uploads'], ['downloads:downloads'], ['history:songs'],
-    ...state.playlists.map(x => ['playlist:' + x.id]), ...sp.imports.map(x => ['import:' + x.id]), ...visCurated().map(x => ['playlist:' + x.id]),
-    ...upAlbums().map(a => ['album:' + a.id]), ...Object.keys(HOME_ACTIONS).map(a => ['act:' + a])]
-    .map(([k]) => k).filter((k, i, a) => a.indexOf(k) === i).filter(k => { const [t, i] = splitKey(k); return t === 'act' ? (i !== 'upload' || canEditMusic()) : !!getCollection(t, i); });
-  const label = k => { const [t, i] = splitKey(k); return t === 'act' ? HOME_ACTIONS[i][0] : getCollection(t, i).title; };
+  const cands = Object.keys(HOME_ACTIONS).map(a => 'act:' + a).filter(scOk);
+  const label = k => HOME_ACTIONS[k.slice(4)][0];
   openModal({ title: 'Edit Home', confirm: 'Save', html: `
     <p class="small">Turn sections on or off and move them up or down.</p>
     <ol class="he-list" id="heList">${p.order.map(k => `<li data-k="${k}"><input type="hidden" name="all" value="${k}">
       <label class="he-check"><input type="checkbox" name="sec" value="${k}"${p.off.includes(k) ? '' : ' checked'}><span><b>${name[k][1]}</b>${name[k][2] ? `<span class="small">${name[k][2]}</span>` : ''}</span></label>
       <button type="button" class="icon-btn" data-act="he-up" aria-label="Move ${name[k][1]} up">${icon('chev')}</button><button type="button" class="icon-btn he-down" data-act="he-down" aria-label="Move ${name[k][1]} down">${icon('chev')}</button></li>`).join('')}</ol>
-    <h3 class="he-h">Shortcuts</h3><p class="small">Pick up to 8 tiles for the top of Home.</p>
+    <h3 class="he-h">Shortcuts</h3><p class="small">Pick up to 8 things to do, for the top of Home.</p>
     <div class="he-sc">${cands.map(k => `<label class="he-chip"><input type="checkbox" name="sc" value="${esc(k)}"${sc.has(k) ? ' checked' : ''}><span>${esc(label(k))}</span></label>`).join('')}</div>
     <p><button type="button" class="link-btn" data-act="he-reset">Back to the default Home</button></p>`,
     onSubmit: fd => {
