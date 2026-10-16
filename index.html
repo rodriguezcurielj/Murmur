@@ -470,6 +470,43 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .gate-notyou{align-self:flex-start;margin-top:-6px;font-size:14px}
 .gate-srv{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:18px;padding-top:14px;border-top:1px solid color-mix(in srgb,var(--fg) 10%,transparent)}
 .gate-col{width:min(400px,100%);display:flex;flex-direction:column;gap:28px}
+.adm-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 22px}
+.adm-tab{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;border:1px solid color-mix(in srgb,var(--fg) 14%,transparent);background:transparent;color:var(--fg);font:600 14px var(--font);cursor:pointer}
+.adm-tab svg{width:17px;height:17px}
+.adm-tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.share-preview{white-space:pre-wrap;font:14px/1.5 var(--font);background:color-mix(in srgb,var(--fg) 6%,transparent);border-radius:10px;padding:12px 14px;margin:12px 0;max-height:40vh;overflow:auto}
+.share-btns{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.share-btns svg{width:16px;height:16px}
+.welcome{border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 9%,transparent);border-radius:16px;padding:18px}
+.welcome h2{font:700 20px var(--font-display);margin:0 0 6px}
+.wel-big{font-size:17px;margin:8px 0}
+.wel-steps{list-style:none;margin:14px 0;padding:0;display:grid;gap:10px}
+.wel-steps li{display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:12px;opacity:.5;transition:opacity .2s,background .2s,transform .2s}
+.wel-steps li.on{opacity:1;background:color-mix(in srgb,var(--accent) 18%,transparent);transform:scale(1.02);box-shadow:0 0 0 2px var(--accent)}
+.wel-steps li.done{opacity:.75}
+.wel-steps .wel-t{display:block;font-size:16px;margin-bottom:2px}
+.wel-steps .wel-t svg{width:18px;height:18px;vertical-align:-3px}
+.wel-n{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--accent-ink);font-weight:700}
+.wel-n svg{width:16px;height:16px}
+.wel-steps li.on .wel-n{animation:welPulse 1.4s ease-in-out infinite}
+@keyframes welPulse{50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--accent) 30%,transparent)}}
+@media (prefers-reduced-motion:reduce){.wel-steps li.on .wel-n{animation:none}.wel-steps li{transition:none}}
+.wel-nav{display:flex;gap:10px;justify-content:flex-end;margin-bottom:8px}
+.wel-or{margin:12px 0 0}
+.act-list{display:grid;gap:16px;margin-bottom:16px}
+.act-idle{opacity:.7}
+.act-warn{color:var(--danger,#e5677a);margin:4px 0 0}
+.act-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.act-stats div{background:color-mix(in srgb,var(--fg) 5%,transparent);border-radius:10px;padding:10px 12px}
+.act-stats dt{font-size:12px;opacity:.7;margin-bottom:2px}
+.act-stats dd{margin:0;font:700 18px var(--font-display)}
+.act-stats dd .small{font:400 12px var(--font);opacity:.75}
+.act-bars{display:flex;align-items:flex-end;gap:4px;height:56px;margin-top:6px}
+.act-bars span{flex:1;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
+.act-bars-l{display:flex;justify-content:space-between;opacity:.6;margin-top:2px}
+.act-top{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}
+.act-top>.small{width:56px;opacity:.7}
+.act-chip{font-size:13px;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--fg) 8%,transparent)}
 .gate-apps{border-top:1px solid color-mix(in srgb,var(--fg) 10%,transparent);padding-top:20px}
 .gate-apps h2{font:700 17px var(--font-display);margin:0 0 12px}
 .gd-tabs{display:flex;gap:6px;margin:0 0 12px}
@@ -4040,6 +4077,16 @@ function act(el, e) {
     /* account & people */
     case 'gate-remember': el.disabled = true; chooseRemember(d.v === '1'); break;
     case 'acct': openAccount(); break;
+    case 'adm-tab': store.set('adminTab', d.k); if (d.k === 'activity') activityData = null; render(); $('#main').scrollTop = 0; break;
+    case 'act-refresh': activityData = null; render(); break;
+    case 'p-share': { const u = (people || []).find(x => x.id === d.id); if (u) openShareLogin({ name: u.name }); break; }
+    case 'share-go': if (shareMsg) navigator.share({ title: 'Murmur', text: shareMsg.text }).catch(() => {}); break;
+    case 'share-copy': if (shareMsg) copyText(shareMsg.text).then(ok => toast(ok ? 'Message copied. Paste it in a text or chat.' : 'Couldn’t copy. Select the message and copy it.')); break;
+    case 'share-link': if (shareMsg) copyText(shareMsg.link).then(ok => toast(ok ? 'Link copied' : 'Couldn’t copy the link')); break;
+    case 'wel-next': welStep++; rerenderWelcome(); break;
+    case 'wel-prev': welStep = Math.max(0, welStep - 1); rerenderWelcome(); break;
+    case 'wel-skip': { const w = $('#gate .welcome'); if (w) w.remove(); const f = $('#gPin') || $('#gName'); if (f) f.focus(); break; }
+    case 'wel-copy': copyText(location.origin + location.pathname).then(ok => toast(ok ? 'Link copied. Open Safari and paste it.' : 'Couldn’t copy. Copy the address from the address bar.')); break;
     case 'acct-people': closeModal(); people = null; navigate({ name: 'people' }); break;
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-out': closeModal(); signOut(); break;
@@ -5461,7 +5508,7 @@ function showGate(step, msg = '') {
         <p class="small">Don’t have a PIN? Ask the person who runs this Murmur to add you.</p></form>`);
   }
   if (['setup', 'login', 'expired'].includes(step)) html = html.replace(/<\/div>$/, `${gateServerHTML()}</div>`);
-  if (['setup', 'login', 'expired', 'connect', 'unreachable', 'offline-expired'].includes(step)) html = `<div class="gate-col">${html}${gateAppsHTML()}</div>`;
+  if (['setup', 'login', 'expired', 'connect', 'unreachable', 'offline-expired'].includes(step)) html = `<div class="gate-col">${step === 'login' ? welcomeHTML() : ''}${html}${step === 'login' && invite ? '' : gateAppsHTML()}</div>`;
   g.innerHTML = html; g.hidden = false;
   if (step === 'connect' || step === 'unreachable' || step === 'offline-expired') checkServerList();
   const f = (lastName && $('#gPin')) || $('#gName') || g.querySelector('button');
@@ -5750,24 +5797,27 @@ function viewPeople() {
       <div class="person-actions">
         <button class="text-btn" data-act="p-lib" data-id="${u.id}">${icon('library')}<span>${u.id === me.id ? 'My library (admin view)' : 'View library'}</span></button>
         <button class="text-btn" data-act="p-pin" data-id="${u.id}">${icon('edit')}<span>${u.id === me.id ? 'Change my PIN' : 'Set new PIN'}</span></button>
+        ${u.id === me.id ? '' : `<button class="text-btn" data-act="p-share" data-id="${u.id}">${icon('share')}<span>Share login</span></button>`}
         ${u.role === 'owner' ? '' : `<label class="switch"><input type="checkbox" data-act="p-edit" data-id="${u.id}" ${u.canEdit ? 'checked' : ''}><span>Can add, edit and delete music</span></label>
         <button class="text-btn danger" data-act="p-del" data-id="${u.id}">${icon('trash')}<span>Delete</span></button>`}
       </div>
       <ul class="devices" aria-label="Signed-in devices">${devices}</ul></article>`;
   };
-  return `<h1 class="greet">People & settings</h1>
-  ${ytSettingsHTML()}
-  ${spotifySettingsHTML()}
-  ${sourcesSettingsHTML()}
-  <h2 class="sub-head">People</h2>
-  <p class="small" style="max-width:60ch">People you add sign in with their name and a 4-digit PIN. When they choose “Remember this computer” they stay signed in there for 90 days, then need their PIN again. Deleting someone signs them out everywhere.</p>
-  <form id="addPerson" class="person-add">
-    <div class="field"><label for="apName">Name</label><input id="apName" name="name" maxlength="40" required autocomplete="off"></div>
-    <div class="field"><label for="apPin">4-digit PIN</label><input id="apPin" name="pin" ${PIN_ATTRS}></div>
-    <label class="switch"><input type="checkbox" name="canEdit"><span>Can add, edit and delete music</span></label>
-    <button class="m-ok" type="submit">Add person</button>
-  </form>
-  <div class="people">${people.map(person).join('')}</div>`;
+  const tab = adminTab();
+  const body = tab === 'media' ? `${ytSettingsHTML()}${spotifySettingsHTML()}${sourcesSettingsHTML()}`
+    : tab === 'new' ? `<h2 class="sub-head">New account</h2>
+      <p class="small" style="max-width:60ch">They sign in with this name and 4-digit PIN. After you create it, you can share a link that opens Murmur with their name filled in and shows them how to install it on their phone.</p>
+      <form id="addPerson" class="person-add">
+        <div class="field"><label for="apName">Name</label><input id="apName" name="name" maxlength="40" required autocomplete="off"></div>
+        <div class="field"><label for="apPin">4-digit PIN</label><input id="apPin" name="pin" ${PIN_ATTRS}></div>
+        <label class="switch"><input type="checkbox" name="canEdit"><span>Can add, edit and delete music</span></label>
+        <button class="m-ok" type="submit">Create account</button>
+      </form>`
+    : tab === 'activity' ? `<h2 class="sub-head">Activity</h2>${activityHTML()}`
+    : `<h2 class="sub-head">Accounts</h2>
+      <p class="small" style="max-width:60ch">When someone chooses “Remember this computer” they stay signed in there for 90 days, then need their PIN again. Deleting someone signs them out everywhere.</p>
+      <div class="people">${people.map(person).join('')}</div>`;
+  return `<h1 class="greet">Admin</h1>${adminTabsHTML()}<div class="adm-body">${body}</div>`;
 }
 const adminLib = new Map();   // person id -> { data, imports } while the owner looks at their library
 const personName = uid => { const p = (people || []).find(u => u.id === uid); return p ? p.name : (me && me.id === uid ? me.name : 'This person'); };
@@ -5848,11 +5898,157 @@ function ytSettingsHTML() {
 async function addPerson(form) {
   const fd = new FormData(form);
   try {
-    await api('POST', 'api/users', { name: String(fd.get('name') || '').trim(), pin: fd.get('pin'), canEdit: fd.get('canEdit') === 'on' });
-    toast(`Added ${String(fd.get('name')).trim()}. Give them their PIN.`);
+    const name = String(fd.get('name') || '').trim(), pin = String(fd.get('pin') || '');
+    await api('POST', 'api/users', { name, pin, canEdit: fd.get('canEdit') === 'on' });
+    form.reset();
     loadPeople();
+    openShareLogin({ name, pin });
   } catch (e) { toast(e.message); }
 }
+
+/* ================= admin: four sections behind buttons ================= */
+const ADMIN_TABS = [['media', 'YouTube & Spotify', 'play'], ['new', 'New account', 'plus'], ['accounts', 'Accounts', 'user'], ['activity', 'Activity', 'eq']];
+const adminTab = () => { const t = store.get('adminTab', 'accounts'); return ADMIN_TABS.some(x => x[0] === t) ? t : 'accounts'; };
+function adminTabsHTML() {
+  const cur = adminTab();
+  return `<div class="adm-tabs" role="tablist" aria-label="Admin sections">${ADMIN_TABS.map(([k, label, ic]) =>
+    `<button type="button" role="tab" class="adm-tab${k === cur ? ' on' : ''}" aria-selected="${k === cur}" data-act="adm-tab" data-k="${k}">${icon(ic)}<span>${label}</span></button>`).join('')}</div>`;
+}
+
+/* ---------- copying and sharing ---------- */
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) {
+    const t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (er) {} t.remove(); return ok;
+  }
+}
+/* The link someone new opens: Murmur's page, set to this server, with their name filled in. Never the PIN. */
+function inviteLink(name) {
+  const here = SERVERS.find(x => normalizeServer(x.url) === normalizeServer(remote.base || location.origin));
+  const q = new URLSearchParams({ n: name });
+  if (here) q.set('s', here.name);
+  return PAGES_URL + '#welcome?' + q.toString();
+}
+let shareMsg = null;
+function openShareLogin({ name, pin }) {
+  const link = inviteLink(name);
+  const text = `Hi ${name}! I made you a Murmur account so you can listen to music with me.\n\n1. Open this link: ${link}\n2. Sign in with\n   Name: ${name}\n   PIN: ${pin || '(the PIN I gave you)'}\n\nThe page shows you how to put Murmur on your phone.`;
+  shareMsg = { text, link, name };
+  openModal({ title: pin ? `${esc(name)}’s account is ready` : `Share ${esc(name)}’s login`, confirm: false, cancel: 'Done', html: `
+    <p>${pin ? 'Want to share it with them now?' : 'Send them the link to sign in.'} The link opens Murmur with their name filled in and shows the right install steps for their iPhone, Android or computer.</p>
+    <pre class="share-preview">${esc(text)}</pre>
+    <div class="share-btns">
+      ${navigator.share ? `<button type="button" class="m-ok" data-act="share-go">${icon('share')}<span>Share…</span></button>` : ''}
+      <button type="button" class="${navigator.share ? 'text-btn' : 'm-ok'}" data-act="share-copy">${icon('save')}<span>Copy message</span></button>
+      <button type="button" class="text-btn" data-act="share-link">${icon('share')}<span>Copy link only</span></button>
+    </div>
+    ${pin ? '<p class="small">The PIN is only in the message, never in the link.</p>' : ''}` });
+}
+
+/* ---------- welcome page for someone opening their invite link ---------- */
+// Read before signing in: "#welcome?n=<name>&s=<server name>". The name and server are remembered on this device.
+const invite = (() => {
+  const h = location.hash;
+  if (!/^#welcome\b/.test(h)) { try { return JSON.parse(sessionStorage.getItem('murmur:invite') || 'null'); } catch (e) { return null; } }
+  const q = new URLSearchParams(h.replace(/^#welcome\??/, ''));
+  const inv = { name: String(q.get('n') || '').slice(0, 40), server: String(q.get('s') || '') };
+  if (inv.name) store.set('lastName', inv.name);
+  if (inv.server && SERVERS.some(x => x.name === inv.server)) { store.set('serverName', inv.server); store.set('server', null); }
+  try { sessionStorage.setItem('murmur:invite', JSON.stringify(inv)); } catch (e) {}
+  try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) {}
+  return inv;
+})();
+let welStep = 0;
+function welcomeHTML() {
+  if (!invite || installedApp()) return '';
+  const k = deviceKind(), hi = invite.name ? `, ${esc(invite.name)}` : '';
+  if (k === 'ios') {
+    const safari = !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|Instagram|FBAN|FBAV|Snapchat|Line\//.test(navigator.userAgent);
+    if (!safari) return `<section class="welcome"><h2>Welcome${hi}!</h2>
+      <p class="wel-big">First, open this page in <b>Safari</b>.</p>
+      <p class="small">iPhone can only add Murmur to the Home Screen from Safari. Copy the link, open Safari, paste it in the address bar.</p>
+      <button type="button" class="m-ok" data-act="wel-copy">${icon('save')}<span>Copy the link</span></button></section>`;
+    const steps = [
+      [`Tap the <b>Share</b> button ${icon('share')}`, 'It’s at the bottom of the screen (on newer iPhones, tap <b>⋯</b> next to the address first).'],
+      ['Scroll down and tap <b>Add to Home Screen</b>', 'You may need to tap <b>View More</b> to see it.'],
+      ['Keep <b>Open as Web App</b> on, then tap <b>Add</b>', 'Murmur’s icon appears on your Home Screen.'],
+      ['Open <b>Murmur</b> from your Home Screen', `Sign in with your name${invite.name ? ` (<b>${esc(invite.name)}</b>)` : ''} and the PIN you got. Done!`]
+    ];
+    const s = Math.min(welStep, steps.length - 1);
+    return `<section class="welcome"><h2>Welcome${hi}! Put Murmur on your iPhone</h2>
+      <p class="small">Four quick steps, right here in Safari. It then opens full screen like a real app.</p>
+      <ol class="wel-steps">${steps.map(([t, sub], i) => `<li class="${i === s ? 'on' : i < s ? 'done' : ''}"><span class="wel-n">${i < s ? icon('check') : i + 1}</span><span><b class="wel-t">${t}</b><span class="small">${sub}</span></span></li>`).join('')}</ol>
+      <div class="wel-nav">${s > 0 ? `<button type="button" class="text-btn" data-act="wel-prev">Back</button>` : ''}${s < steps.length - 1 ? `<button type="button" class="m-ok" data-act="wel-next">I did it, next step</button>` : ''}</div>
+      <button type="button" class="link-btn" data-act="wel-skip">Skip, just sign in here</button></section>`;
+  }
+  if (k === 'android') return `<section class="welcome"><h2>Welcome${hi}! Get Murmur for Android</h2>
+      <a class="m-ok gd-btn" href="${APPS_PAGE}Murmur.apk" download>${icon('download')}<span>Download the Android app</span></a>
+      <ol class="steps small"><li>Open the downloaded <b>Murmur.apk</b>. If Android asks, allow installing apps from your browser.</li>
+        <li>If Play Protect warns, tap <b>More details → Install anyway</b>.</li>
+        <li>Open Murmur and sign in with your name${invite.name ? ` (<b>${esc(invite.name)}</b>)` : ''} and PIN.</li></ol>
+      <p class="wel-or">Don’t want to install anything? <button type="button" class="link-btn" data-act="wel-skip">Just use the website</button>: sign in below.</p></section>`;
+  return `<section class="welcome"><h2>Welcome${hi}!</h2><p class="small">Sign in below with your name and the PIN you got. Murmur works right here in your browser.</p></section>`;
+}
+function rerenderWelcome() { const w = $('#gate .welcome'); if (w) w.outerHTML = welcomeHTML() || ''; }
+
+/* ---------- activity: how much each person uses Murmur ---------- */
+let activityData = null;
+async function loadActivity() {
+  try { activityData = await api('GET', 'api/admin/activity'); } catch (e) { activityData = { error: e.message }; }
+  if (state.view.name === 'people' && adminTab() === 'activity') render();
+}
+const hm = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} h ${m} min` : `${m} min`; };
+function activityHTML() {
+  if (!activityData) { loadActivity(); return `<p class="small">Loading…</p>`; }
+  if (activityData.error) return `<p class="small">${esc(activityData.error)}</p>`;
+  const days = [], today = new Date(activityData.today + 'T12:00:00');
+  for (let i = 13; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); days.push(d.toLocaleDateString('en-CA')); }
+  const since = n => { const d = new Date(today); d.setDate(d.getDate() - n + 1); return d.toLocaleDateString('en-CA'); };
+  const sum = (p, n, f) => Object.entries(p.days).filter(([d]) => d >= since(n)).reduce((a, [, v]) => a + (v[f] || 0), 0);
+  const rows = (people || []).map(u => {
+    const p = activityData.people[u.id] || { days: {}, genres: {}, artists: {}, last: 0, lastPlay: 0 };
+    return { u, p, play30: sum(p, 30, 'play') };
+  }).sort((a, b) => b.play30 - a.play30);
+  const top = (o, n) => { const e = Object.entries(o).sort((a, b) => b[1] - a[1]), t = e.reduce((a, [, v]) => a + v, 0) || 1;
+    return e.slice(0, n).map(([k, v]) => `<span class="act-chip">${esc(k)} <b>${Math.round(v / t * 100)}%</b></span>`).join('') || '<span class="small">Nothing yet</span>'; };
+  const max = Math.max(60, ...rows.flatMap(r => days.map(d => (r.p.days[d] || {}).play || 0)));
+  return `<p class="small" style="max-width:62ch">For each person: the days they opened Murmur, how long it was open, and how long music actually played. Counted from now on (once a minute while Murmur is open), on every server.</p>
+  <div class="act-list">${rows.map(({ u, p, play30 }) => {
+    const on30 = Object.keys(p.days).filter(d => d >= since(30) && (p.days[d].on || p.days[d].play)).length;
+    const idle = !p.last ? 'Hasn’t used Murmur since this started' : Date.now() - p.last > 14 * 864e5 ? `Not used in ${Math.floor((Date.now() - p.last) / 864e5)} days` : '';
+    return `<article class="person act-card${idle ? ' act-idle' : ''}">
+      <header class="person-head">${avatarHTML(u)}<div class="person-meta"><h3>${esc(u.name)}</h3>
+        <span class="small">${p.last ? `Last online ${ago(p.last)}` : 'Never seen yet'}${p.lastPlay ? ` · last played music ${ago(p.lastPlay)}` : ''}</span></div></header>
+      ${idle ? `<p class="act-warn small">${idle}</p>` : ''}
+      <dl class="act-stats">
+        <div><dt>Days online</dt><dd>${on30}<span class="small"> of the last 30</span></dd></div>
+        <div><dt>Music played</dt><dd>${hm(sum(p, 7, 'play'))}<span class="small"> this week · ${hm(play30)} in 30 days</span></dd></div>
+        <div><dt>App open</dt><dd>${hm(sum(p, 7, 'on'))}<span class="small"> this week · ${hm(sum(p, 30, 'on'))} in 30 days</span></dd></div>
+      </dl>
+      <div class="act-bars" role="img" aria-label="Music played each day, last 14 days">${days.map(d => { const v = (p.days[d] || {}).play || 0;
+        return `<span title="${d}: ${hm(v)}" style="height:${Math.max(v ? 6 : 2, Math.round(v / max * 100))}%"></span>`; }).join('')}</div>
+      <div class="act-bars-l small"><span>2 weeks ago</span><span>today</span></div>
+      <div class="act-top"><span class="small">Genres</span>${top(p.genres, 5)}</div>
+      <div class="act-top"><span class="small">Artists</span>${top(p.artists, 5)}</div>
+    </article>`; }).join('')}</div>
+  <button type="button" class="text-btn" data-act="act-refresh">${icon('repeat')}<span>Refresh</span></button>`;
+}
+
+/* While Murmur is open and signed in: once a minute, how long it was in view and how long music played. */
+const usage = { on: 0, play: 0, tick: Date.now() };
+setInterval(() => {
+  const now = Date.now(), dt = Math.min(10, (now - usage.tick) / 1000); usage.tick = now;
+  if (document.visibilityState === 'visible') usage.on += dt;
+  if (typeof Engine !== 'undefined' && Engine.playing) usage.play += dt;
+}, 5000);
+setInterval(() => {
+  if (!me || !server.on || (usage.on < 5 && usage.play < 5)) return;
+  const t = state.current && TRACKS[state.current];
+  const body = { online: Math.round(usage.on), played: Math.round(usage.play), genre: t ? ((g => g && g[0] !== '\u0000' ? g : '')(genreFor(t.id))) : '', artist: t ? cleanArtist(t.artist) : '' };
+  usage.on = 0; usage.play = 0;
+  api('POST', 'api/me/activity', body).catch(() => {});
+}, 60e3);
 
 /* ================= boot ================= */
 (async () => {

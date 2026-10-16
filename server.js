@@ -111,6 +111,8 @@ youtube.routes(app);
 createDiscover(DATA).routes(app);
 spotify.routes(app);
 userData.routes(app);
+const activity = require('./activity')(DATA, auth);   // who uses Murmur, and how (Admin → Activity)
+activity.routes(app);
 
 const upload = multer({ dest: DIRS.tmp, limits: { fileSize: MAX_MB * 1024 * 1024, files: 1 } });
 
@@ -419,7 +421,8 @@ Object.assign(deferred, {
     spotifyApp: spotify.syncCollections.spotifyApp,
     youtube: youtube.syncCollection,
     sources: sources.syncCollection,
-    ytcache: app.locals.ytAudio.syncCollection   // liked songs kept on disk (their files sync too)
+    ytcache: app.locals.ytAudio.syncCollection,   // liked songs kept on disk (their files sync too)
+    activity: activity.syncCollection
 });
 sync.start();
 
