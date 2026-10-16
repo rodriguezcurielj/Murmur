@@ -574,6 +574,24 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .devices{list-style:none;margin:0;padding:10px 0 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
 .device{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .device>div{display:flex;flex-direction:column;min-width:0}
+.person-sm{padding:12px 14px;gap:8px}
+.person-sm .person-meta h3{font-size:16px}
+.person-sm .person-actions{gap:4px 10px}
+.person-sm .person-actions .text-btn{padding:5px 10px;font-size:13px}
+.person-sm .avatar{width:34px;height:34px;font-size:14px}
+.person-sm .switch{font-size:13px}
+.dev-drop{border-top:1px solid var(--line);padding-top:6px}
+.dev-drop>summary{list-style:none;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--muted);padding:4px 0;user-select:none}
+.dev-drop>summary::-webkit-details-marker{display:none}
+.dev-drop>summary svg{width:14px;height:14px;transition:transform .15s}
+.dev-drop[open]>summary svg{transform:rotate(90deg)}
+.dev-drop .devices{border-top:0;padding:4px 0 0;gap:4px}
+.dev-drop .device{flex-wrap:nowrap;padding:6px 8px;border-radius:8px;background:color-mix(in srgb,var(--fg) 4%,transparent)}
+.dev-drop .device b{font-size:13px}
+.dev-drop .device .small{font-size:12px}
+.dev-drop .dev-out{flex:none;margin-left:auto;padding:4px 10px;font-size:12px}
+.dev-none{margin:0;font-size:12px}
+.act-from{color:var(--accent)}
 
 /* ---------- YouTube ---------- */
 .yt-box{position:fixed;right:16px;bottom:100px;z-index:45;width:min(356px,calc(100vw - 32px));background:#000;border-radius:12px;overflow:hidden;border:1px solid var(--line);box-shadow:0 16px 40px rgba(0,0,0,.55)}
@@ -5778,6 +5796,13 @@ function openChangeMyPin() {
 
 /* ---------- People (owner) ---------- */
 let people = null;
+let openDevices = null;   // the one account whose device list is open
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (!d.classList || !d.classList.contains('dev-drop')) return;
+  if (d.open) { openDevices = d.dataset.uid; document.querySelectorAll('.dev-drop[open]').forEach(o => { if (o !== d) o.open = false; }); }
+  else if (openDevices === d.dataset.uid) openDevices = null;
+}, true);
 async function loadPeople() {
   try { people = (await api('GET', 'api/users')).users; } catch (e) { people = []; toast(e.message); }
   if (state.view.name === 'people') render();
@@ -5786,14 +5811,14 @@ function viewPeople() {
   if (!me || me.role !== 'owner') return `<div class="empty"><h2>Only the owner can manage people</h2></div>`;
   if (!people) { loadPeople(); return `<h1 class="greet">People</h1><p class="small">Loading…</p>`; }
   const person = u => {
-    const devices = u.sessions.length ? u.sessions.map(s => `<li class="device">
+    const devices = u.sessions.map(s => `<li class="device">
         <div><b>${esc(s.device)}</b>${s.current ? ' <span class="badge">This device</span>' : ''}
         <span class="small">${s.remember ? `Remembered until ${when(s.expiresAt)}` : 'This visit only'} · last used ${ago(s.lastSeen)}</span></div>
-        <button class="text-btn" data-act="dev-out" data-id="${s.id}" data-cur="${s.current ? 1 : 0}">Sign out</button></li>`).join('')
-      : '<li class="small">Not signed in anywhere.</li>';
-    return `<article class="person">
+        <button class="text-btn dev-out" data-act="dev-out" data-id="${s.id}" data-cur="${s.current ? 1 : 0}">Sign out</button></li>`).join('');
+    const lastSeen = u.sessions.reduce((a, s) => Math.max(a, s.lastSeen || 0), 0);
+    return `<article class="person person-sm">
       <header class="person-head">${avatarHTML(u)}
-        <div class="person-meta"><h3>${esc(u.name)}</h3><span class="small">${esc(roleLabel(u))} · added ${when(u.createdAt)}</span></div></header>
+        <div class="person-meta"><h3>${esc(u.name)}</h3><span class="small">${esc(roleLabel(u))} · added ${when(u.createdAt)}${lastSeen ? ` · last seen ${ago(lastSeen)}` : ''}</span></div></header>
       <div class="person-actions">
         <button class="text-btn" data-act="p-lib" data-id="${u.id}">${icon('library')}<span>${u.id === me.id ? 'My library (admin view)' : 'View library'}</span></button>
         <button class="text-btn" data-act="p-pin" data-id="${u.id}">${icon('edit')}<span>${u.id === me.id ? 'Change my PIN' : 'Set new PIN'}</span></button>
@@ -5801,7 +5826,9 @@ function viewPeople() {
         ${u.role === 'owner' ? '' : `<label class="switch"><input type="checkbox" data-act="p-edit" data-id="${u.id}" ${u.canEdit ? 'checked' : ''}><span>Can add, edit and delete music</span></label>
         <button class="text-btn danger" data-act="p-del" data-id="${u.id}">${icon('trash')}<span>Delete</span></button>`}
       </div>
-      <ul class="devices" aria-label="Signed-in devices">${devices}</ul></article>`;
+      ${u.sessions.length ? `<details class="dev-drop" data-uid="${u.id}"${openDevices === u.id ? ' open' : ''}>
+        <summary>${icon('chev')}<span>Signed in on ${plural(u.sessions.length, 'device')}</span></summary>
+        <ul class="devices" aria-label="Signed-in devices">${devices}</ul></details>` : '<p class="small dev-none">Not signed in anywhere.</p>'}</article>`;
   };
   const tab = adminTab();
   const body = tab === 'media' ? `${ytSettingsHTML()}${spotifySettingsHTML()}${sourcesSettingsHTML()}`
@@ -5995,7 +6022,21 @@ function rerenderWelcome() { const w = $('#gate .welcome'); if (w) w.outerHTML =
 /* ---------- activity: how much each person uses Murmur ---------- */
 let activityData = null;
 async function loadActivity() {
-  try { activityData = await api('GET', 'api/admin/activity'); } catch (e) { activityData = { error: e.message }; }
+  try { activityData = await api('GET', 'api/admin/activity'); }
+  catch (e) {
+    // An older server (not updated yet) answers 404: the activity of everyone is the same on every server, so use another one.
+    activityData = { error: /404/.test(e.message) ? `${serverLabel(remote.base || location.origin)} is on an older version without Activity, and no other server answered. Update it, or open Admin on another server.` : e.message };
+    if (/404/.test(e.message)) {
+      for (const x of SERVERS) {
+        const b = normalizeServer(x.url);
+        if (b === normalizeServer(remote.base || location.origin)) continue;
+        try {
+          const r = await fetch(joinUrl(b, 'api/admin/activity'), { headers: authHeaders(), cache: 'no-store', signal: AbortSignal.timeout(8000) });
+          if (r.ok) { activityData = { ...(await r.json()), from: x.name }; break; }
+        } catch (er) {}
+      }
+    }
+  }
   if (state.view.name === 'people' && adminTab() === 'activity') render();
 }
 const hm = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} h ${m} min` : `${m} min`; };
@@ -6013,7 +6054,7 @@ function activityHTML() {
   const top = (o, n) => { const e = Object.entries(o).sort((a, b) => b[1] - a[1]), t = e.reduce((a, [, v]) => a + v, 0) || 1;
     return e.slice(0, n).map(([k, v]) => `<span class="act-chip">${esc(k)} <b>${Math.round(v / t * 100)}%</b></span>`).join('') || '<span class="small">Nothing yet</span>'; };
   const max = Math.max(60, ...rows.flatMap(r => days.map(d => (r.p.days[d] || {}).play || 0)));
-  return `<p class="small" style="max-width:62ch">For each person: the days they opened Murmur, how long it was open, and how long music actually played. Counted from now on (once a minute while Murmur is open), on every server.</p>
+  return `${activityData.from ? `<p class="small act-from">This server is on an older version, so this is from <b>${esc(activityData.from)}</b>.</p>` : ''}<p class="small" style="max-width:62ch">For each person: the days they opened Murmur, how long it was open, and how long music actually played. Counted from now on (once a minute while Murmur is open), on every server.</p>
   <div class="act-list">${rows.map(({ u, p, play30 }) => {
     const on30 = Object.keys(p.days).filter(d => d >= since(30) && (p.days[d].on || p.days[d].play)).length;
     const idle = !p.last ? 'Hasn’t used Murmur since this started' : Date.now() - p.last > 14 * 864e5 ? `Not used in ${Math.floor((Date.now() - p.last) / 864e5)} days` : '';
