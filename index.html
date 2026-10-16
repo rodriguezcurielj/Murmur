@@ -1054,7 +1054,8 @@ const remote = { base: '', token: null, mediaKey: null };
 const DEFAULT_SERVERS = [
   { name: 'Port Server', url: 'https://murmur-laptop.tail05789d.ts.net' },
   { name: 'Port Down Server', url: 'https://murmur-laptop.tail05789d.ts.net:8443', note: 'Allows YouTube downloads', downloads: true },
-  { name: 'Hike Server', url: 'https://murmur.tail05789d.ts.net' }
+  { name: 'Hike Server', url: 'https://murmur.tail05789d.ts.net' },
+  { name: 'Dungeon Server', url: 'https://budget-pc.tail05789d.ts.net', note: 'Allows YouTube downloads', downloads: true }
 ];
 const SERVERS = ((cfg && Array.isArray(cfg.servers) && cfg.servers.length) ? cfg.servers
   : (cfg && cfg.server ? [{ name: 'My server', url: cfg.server }]

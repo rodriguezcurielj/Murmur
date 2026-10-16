@@ -13,6 +13,8 @@ window.MURMUR_CONFIG = {
     // downloads: true marks the server(s) that can download from YouTube (people on the others are sent there).
     { name: 'Port Down Server', url: 'https://murmur-laptop.tail05789d.ts.net:8443', note: 'Allows YouTube downloads', downloads: true },
     // "Hike Server": the always-on Azure server (Tailscale Funnel). This address doesn't change.
-    { name: 'Hike Server', url: 'https://murmur.tail05789d.ts.net' }
+    { name: 'Hike Server', url: 'https://murmur.tail05789d.ts.net' },
+    // "Dungeon Server": the budget-pc desktop, native Windows server (start-native.ps1 on 8080, Tailscale on 443).
+    { name: 'Dungeon Server', url: 'https://budget-pc.tail05789d.ts.net', note: 'Allows YouTube downloads', downloads: true }
   ]
 };

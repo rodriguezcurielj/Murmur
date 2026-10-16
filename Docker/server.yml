@@ -24,7 +24,7 @@ services:
       - MURMUR_SYNC_KEY=${MURMUR_SYNC_KEY:-}
       - MURMUR_PEERS=${MURMUR_PEERS:-}
       # Pages allowed to use this server: GitHub Pages plus the Murmur pages hosted on the tailnet.
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://rodriguezcurielj.github.io,https://murmur-laptop.tail05789d.ts.net,https://murmur-laptop.tail05789d.ts.net:8443,https://murmur.tail05789d.ts.net}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://rodriguezcurielj.github.io,https://murmur-laptop.tail05789d.ts.net,https://murmur-laptop.tail05789d.ts.net:8443,https://murmur.tail05789d.ts.net,https://budget-pc.tail05789d.ts.net}
     restart: unless-stopped
 
   # Optional: a free Cloudflare "quick tunnel" gives the server a public https:// address so phones
