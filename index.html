@@ -176,6 +176,9 @@ body.drag-selecting .tracks{touch-action:none}
 .gp-item .gp-cover{width:52px;height:52px;flex:none;border-radius:6px}
 .gp-meta{display:flex;flex-direction:column;min-width:0;flex:1}
 .gp-meta b{font-size:15px}
+.gp-item{cursor:pointer}
+.gp-item:hover{background:var(--hover)}
+.gp-create{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .qt-ic{display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 22%,var(--raise));color:var(--accent)}
 .qt-ic svg{width:26px;height:26px}
 .greet-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -2719,6 +2722,11 @@ function collectionOf(type, id) {
       sub: `<b>${esc(imp.owner || 'Spotify')}</b> · ${inM} of ${tracks.length} in Murmur`, tracks, cover: imp.cover || SPALBUM.cover, color: '#2fa36b', imported: true };
   }
   if (type === 'mlist') return memberCollection(id);
+  if (type === 'gpreview') {
+    const x = likedGenreSuggestions().find(v => v.genre === id); if (!x) return null;
+    return { type, id, kind: 'Suggested playlist', title: id, desc: 'Your liked songs in this genre. Like it? Create the playlist to keep it, then rename it or add and remove songs.',
+      sub: '<b>From your Liked Songs</b>', tracks: x.ids, mosaic: mosaicFor(x.ids), cover: tCover(x.ids[0]), color: '#4f7b6a', gpreview: true };
+  }
   if (type === 'history') {
     const tracks = store.get('history', []).filter(visible);
     if (!tracks.length) return null;
@@ -3426,7 +3434,8 @@ function viewCollection(type, id) {
   <div class="actions">
     ${n ? playFab(type, id, 'big-play') : ''}
     <button class="icon-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}">${icon('shuffle')}</button>
-    ${dlBtn}${n ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
+    ${col.gpreview ? `<button class="text-btn gp-create" data-act="gp-make" data-g="${esc(id)}">${icon('plus')}<span>Create playlist</span></button><button class="text-btn" data-act="gp-skip" data-g="${esc(id)}" data-back="1">${icon('close')}<span>Don’t suggest</span></button>` : ''}
+    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
   </div>
   ${server.on ? jobPanelsHTML(type, id) : ''}
   ${col.liked ? genrePlaylistsHTML() : ''}
@@ -4122,9 +4131,9 @@ function likedGenreSuggestions() {
 function genrePlaylistsHTML() {
   const list = likedGenreSuggestions();
   if (!list.length) return '';
-  return `<section class="gp-sug"><div class="shelf-head"><h2>Make playlists from your likes</h2><p>Your Liked Songs sorted by genre. Create one, then rename it or add and remove songs.</p></div>
-    <div class="gp-list">${list.slice(0, 8).map(x => `<div class="gp-item">${coverHTML({ mosaic: mosaicFor(x.ids) }, 'gp-cover')}
-      <div class="gp-meta"><b class="ell">${esc(x.genre)}</b><span class="small">${plural(x.ids.length, 'liked song')}</span></div>
+  return `<section class="gp-sug"><div class="shelf-head"><h2>Make playlists from your likes</h2><p>Your Liked Songs sorted by genre. Tap one to see its songs, then create it if you like it.</p></div>
+    <div class="gp-list">${list.slice(0, 8).map(x => `<div class="gp-item" data-act="open" data-type="gpreview" data-id="${esc(x.genre)}" role="button" tabindex="0" aria-label="See the songs for ${esc(x.genre)}">${coverHTML({ mosaic: mosaicFor(x.ids) }, 'gp-cover')}
+      <div class="gp-meta"><b class="ell">${esc(x.genre)}</b><span class="small">${plural(x.ids.length, 'liked song')} · tap to see them</span></div>
       <button class="text-btn" data-act="gp-make" data-g="${esc(x.genre)}">${icon('plus')}<span>Create</span></button>
       <button class="icon-btn" data-act="gp-skip" data-g="${esc(x.genre)}" aria-label="Don’t suggest ${esc(x.genre)}">${icon('close')}</button></div>`).join('')}</div>
     ${list.length > 1 ? `<p><button class="text-btn" data-act="gp-all">${icon('list')}<span>Create all ${Math.min(list.length, 8)}</span></button></p>` : ''}</section>`;
@@ -4431,7 +4440,10 @@ function act(el, e) {
       const made = likedGenreSuggestions().slice(0, 8).map(x => makeGenrePlaylist(x.genre, false)).filter(Boolean);
       toast(`Made ${plural(made.length, 'playlist')}: ${made.map(x => x.name).join(', ')}. Rename or edit them any time.`); render(); renderSidebar(); break;
     }
-    case 'gp-skip': store.set('gpSkipped', [...new Set([...store.get('gpSkipped', []), d.g])]); render(); break;
+    case 'gp-skip':
+      store.set('gpSkipped', [...new Set([...store.get('gpSkipped', []), d.g])]);
+      if (d.back) { toast(`Won’t suggest ${d.g} again`); navigate({ name: 'collection', type: 'liked', id: 'liked' }); } else render();
+      break;
     case 'home-edit': openHomeEdit(); break;
     case 'he-up': case 'he-down': {
       const li = el.closest('li'), to = d.act === 'he-up' ? li.previousElementSibling : li.nextElementSibling;
