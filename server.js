@@ -551,6 +551,8 @@ app.post('/api/tracks/names', auth.requireOwner, (req, res) => {
 });
 
 app.locals.ytAudio = require('./ytaudio')(app, auth, DATA, { userRecords: () => userData.syncCollection.get(), matches: () => spotify.syncCollections.matches.get() });   // ad-free YouTube audio through this server
+// Big app installers (Murmur for Windows) that don't fit in GitHub: put them in DATA/downloads.
+app.use('/downloads', express.static(path.join(DATA, 'downloads'), { maxAge: '1h', fallthrough: false }));
 app.use('/media', auth.requireUserFiles, express.static(DIRS.music, { maxAge: '7d', fallthrough: false }));
 app.use('/covers', auth.requireUserFiles, express.static(DIRS.covers, { maxAge: '7d', fallthrough: false }));
 app.use(express.static(path.join(__dirname, 'public'), {

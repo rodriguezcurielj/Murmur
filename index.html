@@ -5883,7 +5883,7 @@ function deviceKind() {
   if (/Android/.test(ua)) return 'android';
   return 'web';
 }
-const installedApp = () => !!window.MurmurAndroid || navigator.standalone === true
+const installedApp = () => !!window.MurmurAndroid || !!window.MurmurDesktop || navigator.standalone === true
   || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 let gateDev = null;
 function gateAppsHTML() {
@@ -5902,7 +5902,10 @@ function gateAppsHTML() {
         <li>If Play Protect warns about an unknown developer, tap <b>More details → Install anyway</b>.</li>
         <li>Open Murmur and sign in.</li></ol>
       <p class="small">Motorola Razr: to use it on the outside screen, turn it on in <b>Settings → External display → Apps</b>.</p>`,
-    web: `<ol class="steps small">
+    web: `<a class="m-ok gd-btn" href="${WINDOWS_APP}" download>${icon('download')}<span>Download Murmur for Windows</span></a>
+      <p class="small">Run <b>Murmur-Setup.exe</b>. If Windows says it protected your PC, click <b>More info → Run anyway</b>. Murmur opens and gets a desktop shortcut. Media keys work, and closing the window keeps the music playing in the tray.</p>
+      <p class="small"><b>Or use it in the browser:</b></p>
+      <ol class="steps small">
         <li>On any computer, open <a href="${PAGES_URL}" target="_blank" rel="noopener">${esc(PAGES_URL.replace(/^https:\/\//, ''))}</a> and sign in.</li>
         <li>Chrome or Edge: click the <b>Install</b> icon at the right end of the address bar (or <b>⋮ → Cast, save and share → Install page as app</b>) to open Murmur in its own window.</li>
         <li>Optional: the <a href="${APPS_PAGE}#extension" target="_blank" rel="noopener">Murmur Ad Blocker</a> removes ads from YouTube songs.</li></ol>`
@@ -6115,6 +6118,9 @@ function setTheme(id) {
 }
 /* "Get the apps": downloads live on the GitHub Pages download page. The device you're on is listed first. */
 const APPS_PAGE = 'https://rodriguezcurielj.github.io/Murmur/apps/';
+// Murmur for Windows (windows/ folder): the installer is too big for GitHub, so the always-on Hike Server hosts it.
+const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe';
+const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
 const ANDROID_LATEST = '3.0';
@@ -6148,11 +6154,13 @@ function appsSectionHTML(bare) {
       ? link(APPS_PAGE + '#and', 'download', 'Android app', 'Opens the download page in your browser', false)
       : link(APPS_PAGE + 'Murmur.apk', 'download', 'Android app', 'Download Murmur.apk and open it to install', true),
     ios: link(PAGES_URL, 'download', 'iPhone', 'Open in Safari → Share → Add to Home Screen', false),
-    ext: link(APPS_PAGE + '#extension', 'download', 'Ad blocker for computers', 'Removes YouTube ads in Chrome, Edge or Brave', false)
+    ext: link(APPS_PAGE + '#extension', 'download', 'Ad blocker for computers', 'Removes YouTube ads in Chrome, Edge or Brave', false),
+    win: window.MurmurDesktop ? '' : link(WINDOWS_APP, 'download', 'Windows app', 'Download Murmur-Setup.exe and run it', true)
   };
-  const order = android ? ['android', 'ios', 'ext'] : ios ? ['ios', 'android', 'ext'] : ['ext', 'android', 'ios'];
+  const order = android ? ['android', 'ios', 'win', 'ext'] : ios ? ['ios', 'android', 'win', 'ext'] : ['win', 'ext', 'android', 'ios'];
   return `<div class="apps-box${bare ? ' bare' : ''}">${bare ? '' : '<div class="eyebrow">Get the apps</div>'}
     ${inApp ? `<p class="small">You’re using the Murmur app (version ${esc(inApp.replace(/^ios-/, ''))}).</p>` : ''}
+    ${window.MurmurDesktop ? `<p class="small">You’re using Murmur for Windows (version ${esc(window.MurmurDesktop.version || '')}).</p>` : ''}
     <div class="app-links">${order.map(k => items[k]).join('')}</div>
     <a class="small" href="${APPS_PAGE}"${tgt}>All downloads and install steps</a></div>`;
 }
@@ -6405,6 +6413,9 @@ function welcomeHTML() {
         <li>If Play Protect warns, tap <b>More details → Install anyway</b>.</li>
         <li>Open Murmur and sign in with your name${invite.name ? ` (<b>${esc(invite.name)}</b>)` : ''} and PIN.</li></ol>
       <p class="wel-or">Don’t want to install anything? <button type="button" class="link-btn" data-act="wel-skip">Just use the website</button>: sign in below.</p></section>`;
+  if (isWindowsPC()) return `<section class="welcome"><h2>Welcome${hi}!</h2><p class="small">Sign in below with your name and the PIN you got. Murmur works right here in your browser, or get the Windows app:</p>
+    <a class="m-ok gd-btn" href="${WINDOWS_APP}" download>${icon('download')}<span>Download Murmur for Windows</span></a>
+    <p class="small">Run <b>Murmur-Setup.exe</b> (if Windows warns, click <b>More info → Run anyway</b>), then sign in with your name${invite && invite.name ? ` (<b>${esc(invite.name)}</b>)` : ''} and PIN.</p></section>`;
   return `<section class="welcome"><h2>Welcome${hi}!</h2><p class="small">Sign in below with your name and the PIN you got. Murmur works right here in your browser.</p></section>`;
 }
 function rerenderWelcome() { const w = $('#gate .welcome'); if (w) w.outerHTML = welcomeHTML() || ''; }
