@@ -112,6 +112,7 @@ youtube.routes(app);
 createDiscover(DATA).routes(app);
 spotify.routes(app);
 userData.routes(app);
+require('./lyrics')(DATA).routes(app);   // song lyrics (LRCLIB), timed to the music
 const activity = require('./activity')(DATA, auth);   // who uses Murmur, and how (Admin → Activity)
 activity.routes(app);
 

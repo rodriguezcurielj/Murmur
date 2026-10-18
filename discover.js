@@ -156,6 +156,29 @@ module.exports = function createDiscover(dataDir) {
       catch (e) { res.status(502).json({ error: 'Couldn’t reach the music catalog for suggestions. Try again later.' }); }
     });
 
+    // Radio (like Pandora): endless songs like an artist or a song. About a quarter are the artist's own hits,
+    // the rest are top songs of similar artists (and their similar artists as the station goes on). Each call
+    // gives the next batch; "exclude" holds what the station already played.
+    app.post('/api/radio', async (req, res) => {
+      const b = req.body || {};
+      const artist = String(b.artist || '').trim().slice(0, 120);
+      const exclude = new Set((Array.isArray(b.exclude) ? b.exclude : []).slice(0, 5000).map(k => norm(k)));
+      const more = (Array.isArray(b.also) ? b.also : []).map(s => String(s).trim()).filter(Boolean).slice(0, 3);
+      if (!artist) return res.status(400).json({ error: 'Pick a song or an artist for the radio.' });
+      try {
+        const found = await dz('search/artist?limit=1&q=' + encodeURIComponent(artist));
+        const a = found.data && found.data[0];
+        if (!a) return res.status(404).json({ error: `Couldn’t find ${artist} in the music catalog.` });
+        const own = shuffle(((await dz(`artist/${a.id}/top?limit=25`)).data || []).map(x => toTrack(x, a.name)).filter(x => !exclude.has(keyOf(x)))).slice(0, 6);
+        const similar = await freshSuggestions([a.name, ...more], exclude, 24, []);
+        const items = [], s = similar.slice();
+        // One of theirs, then about three similar, so the station sounds like them without repeating them.
+        while (own.length || s.length) { if (own.length) items.push(own.shift()); items.push(...s.splice(0, 3)); }
+        const seen = new Set();
+        res.json({ artist: a.name, picture: a.picture_medium || '', items: items.filter(t => { const k = keyOf(t); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 30) });
+      } catch (e) { res.status(502).json({ error: 'Couldn’t reach the music catalog for the radio. Try again in a moment.' }); }
+    });
+
     // An artist page like Spotify's: picture, popular songs, albums and singles, and similar artists.
     app.get('/api/catalog/artist', async (req, res) => {
       const name = String(req.query.name || '').trim().slice(0, 100);

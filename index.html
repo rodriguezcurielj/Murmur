@@ -170,6 +170,21 @@ body.drag-selecting .tracks{touch-action:none}
 .qt .cover{width:60px;height:60px}
 .qt .nm{font-weight:700;flex:1;min-width:0}
 .qt .fab{position:static;width:36px;height:36px}
+.ly-head{display:flex;align-items:center;gap:16px;margin:6px 0 22px}
+.ly-head .cover{width:72px;height:72px;border-radius:8px;flex:none}
+.ly-head h1{font:800 clamp(22px,3vw,30px)/1.15 var(--font-display);margin:0}
+.ly-head>div{min-width:0}
+.ly-lines{display:flex;flex-direction:column;gap:14px;padding-bottom:40vh}
+.ly-lines.plain{padding-bottom:16px;gap:6px}
+.ly-line{margin:0;font:700 clamp(22px,3.2vw,32px)/1.25 var(--font-display);color:color-mix(in srgb,var(--fg) 45%,transparent);transition:color .25s,transform .25s;text-wrap:balance}
+.ly-lines.synced .ly-line{cursor:pointer}
+.ly-lines.synced .ly-line:hover{color:color-mix(in srgb,var(--fg) 75%,transparent)}
+.ly-line.past{color:color-mix(in srgb,var(--fg) 62%,transparent)}
+.ly-line.on{color:var(--fg)}
+.ly-lines.plain .ly-line{font-size:clamp(18px,2.4vw,22px);color:var(--fg)}
+.ly-msg{margin:10px 0}
+.ly-src{margin-top:18px}
+#lyBtn.on{color:var(--accent)}
 .gp-sug{margin:6px 0 18px}
 .gp-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
 .gp-item{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 8px;border-radius:10px;background:var(--raise);min-width:0}
@@ -939,6 +954,9 @@ const STROKE = {
   volume: 'M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13',
   mute: 'M11 5 6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6',
   queue: 'M4 6h16M4 12h16M4 18h10',
+  lyrics: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21',
+  radio: 'M4.5 9.5a10 10 0 0 1 15 0M7.5 12.5a6 6 0 0 1 9 0M12 16a1 1 0 1 0 0 2 1 1 0 0 0 0-2z',
+  thumbDown: 'M10 15v4a3 3 0 0 0 3 3l4-9V2H5.7a2 2 0 0 0-2 1.7l-1.4 9A2 2 0 0 0 4.3 15H10zM17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3',
   chev: 'M9 6l6 6-6 6',
   camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
   lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
@@ -1962,6 +1980,62 @@ function setSleep(min) {
 }
 const sleepLabel = () => sleep.endOfTrack ? 'End of this song' : sleep.until ? `${Math.max(1, Math.round((sleep.until - Date.now()) / 60e3))} min left` : 'Off';
 // Autoplay: when the list ends, keep going with songs like the ones you play (Discover), or your Liked Songs.
+/* ---------- Radio (like Pandora): endless songs like a song or an artist you pick ----------
+   A quarter are the artist's own hits, the rest similar artists' top songs. More are added as it plays.
+   Like a song and the station leans toward that artist; "Not this artist" stops playing them on this station. */
+const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [] };
+const radioKey = t => cleanArtist(t.artist) + '|' + t.title;
+async function fetchRadio() {
+  const exclude = radio.ids.map(id => TRACKS[id]).filter(Boolean).map(radioKey);
+  const r = await api('POST', 'api/radio', { artist: radio.seed.artist, exclude, also: radio.more.slice(-3) });
+  if (r.picture && !radio.seed.cover) radio.seed.cover = r.picture;
+  radio.seed.artist = r.artist || radio.seed.artist;
+  return (r.items || []).filter(x => !radio.banned.has(normKey(cleanArtist(x.artist))))
+    .map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
+}
+async function startRadio(artist, tid) {
+  if (!server.on) { toast('Radio needs a connection to your Murmur server.'); return; }
+  if (radio.loading) return;
+  artist = cleanArtist(artist || (TRACKS[tid] && TRACKS[tid].artist) || '');
+  if (!artist || /^(unknown artist|youtube)$/i.test(artist)) { toast('Murmur doesn’t know who sings this, so it can’t make a radio for it.'); return; }
+  const t = tid && TRACKS[tid];
+  radio.seed = { artist, title: t ? t.title : '', cover: t ? tCover(tid) : '' };
+  radio.ids = t ? [tid] : []; radio.banned = new Set(); radio.more = []; radio.loading = true;
+  toast(`Starting ${artist} Radio…`);
+  try {
+    const ids = await fetchRadio();
+    radio.ids = [...new Set([...radio.ids, ...ids])];
+    radio.loading = false;
+    if (!radio.ids.length) { toast('Couldn’t find songs for that radio. Try another song or artist.'); return; }
+    playFrom('radio', 'station', 0);
+    navigate({ name: 'collection', type: 'radio', id: 'station' });
+  } catch (e) { radio.loading = false; toast(e.message); }
+}
+// Near the end of the station: more songs, so it never stops.
+async function extendRadio() {
+  if (radio.loading || !radio.seed || !(state.ctx && state.ctx.type === 'radio')) return;
+  if (state.pos < state.order.length - 4) return;
+  radio.loading = true;
+  try {
+    const fresh = (await fetchRadio()).filter(id => !radio.ids.includes(id));
+    radio.ids.push(...fresh);
+    if (state.ctx && state.ctx.type === 'radio') fresh.forEach(id => { state.list.push(id); state.order.push(state.list.length - 1); });
+    refreshQueueView();
+    if (state.view.name === 'collection' && state.view.type === 'radio') render();
+  } catch (e) {}
+  radio.loading = false;
+}
+function radioNotThis() {
+  const t = TRACKS[state.current]; if (!t || !(state.ctx && state.ctx.type === 'radio')) return;
+  const a = cleanArtist(t.artist), k = normKey(a);
+  radio.banned.add(k);
+  // Take their other songs out of what's coming up.
+  const keep = (id, i) => i <= state.pos || normKey(cleanArtist((TRACKS[id] || {}).artist)) !== k;
+  const order = state.order.filter((oi, i) => keep(state.list[oi], i));
+  state.order = order; radio.ids = radio.ids.filter((id, i) => id === state.current || normKey(cleanArtist((TRACKS[id] || {}).artist)) !== k);
+  toast(`OK, no more ${a} on this station`);
+  next(false); extendRadio();
+}
 function autoplayNext() {
   if (!pbState().autoplay) return false;
   const played = new Set(state.list);
@@ -2247,6 +2321,10 @@ const Synth = {
 };
 
 /* Uploaded files play through an <audio> element routed into the same Web Audio graph. */
+/* iPhone and iPad pause the browser's audio-effects engine (Web Audio) when the screen locks or you leave
+   Safari, and anything routed through it goes silent. There, songs play straight from the audio element, which
+   iOS keeps playing in the background (no volume levelling, equalizer or crossfade on iPhone). */
+const IOS_DEVICE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const FileEng = {
   audio: null, node: null, track: null, onEnd: null,
   el() {
@@ -2284,7 +2362,7 @@ const FileEng = {
     return this.audio;
   },
   wire() {
-    if (this.node || !Synth.ensure()) return;
+    if (this.node || IOS_DEVICE || !Synth.ensure()) return;
     try { this.node = Synth.ctx.createMediaElementSource(this.el()); this.node.connect(Synth.master); } catch (e) {}
   },
   /* Downloaded songs play from the copy saved on this device; others stream from the server. */
@@ -2336,10 +2414,17 @@ const YTEng = {
           events: {
             onReady: () => resolve(this.player),
             onStateChange: e => {
+              // A video that's no longer the song (skipped while it was still buffering): stop it, and don't let it
+              // play over the next song or skip ahead when it ends.
+              if (!this.track || (this.vid && this.curId() && this.curId() !== this.vid)) {
+                if (!this.track && (e.data === 1 || e.data === 3)) { try { e.target.stopVideo(); } catch (er) {} }
+                return;
+              }
               if (e.data === 0) { this.onEnd && this.onEnd(); return; }
               updatePlayIcons(); highlight();
             },
             onError: () => {
+              if (!this.track || (this.vid && this.curId() && this.curId() !== this.vid)) return;
               const t = this.track;
               if (t) toast(`“${t.title}” can’t be played outside YouTube. Skipping it.`);
               setTimeout(() => next(true), 600);
@@ -2356,8 +2441,11 @@ const YTEng = {
     });
     return this.ready;
   },
+  curId() { try { const d = this.player && this.player.getVideoData && this.player.getVideoData(); return (d && d.video_id) || ''; } catch (e) { return ''; } },
   load(t) {
-    this.track = t; this.cued = false; this.wantPlay = false;
+    // Whatever was loading or playing stops now, so it can't start late over this song.
+    if (this.player && this.player.stopVideo && this.track !== t) { try { this.player.stopVideo(); } catch (e) {} }
+    this.track = t; this.vid = t.ytId; this.cued = false; this.wantPlay = false;
     $('#ytBox').hidden = false; placeYtBox();
     $('#ytOpen').href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(t.ytId);
     // Only cue (load without playing) if nothing asked to play; play() loads and starts in one step.
@@ -2365,8 +2453,8 @@ const YTEng = {
     this.api().then(p => { if (this.track !== t || this.wantPlay) return; p.cueVideoById({ videoId: t.ytId, startSeconds: this.startAt || 0 }); this.cued = true; }).catch(e => toast(e.message));
   },
   unload() {
-    this.track = null;
-    if (this.player && this.player.stopVideo) { try { this.player.stopVideo(); } catch (e) {} }
+    this.track = null; this.vid = '';
+    if (this.player && this.player.stopVideo) { try { this.player.pauseVideo(); this.player.stopVideo(); } catch (e) {} }
     const box = $('#ytBox'); if (box) box.hidden = true;
   },
   get playing() { try { const s = this.player && this.player.getPlayerState(); return !!this.track && (s === 1 || s === 3); } catch (e) { return false; } },
@@ -2540,7 +2628,7 @@ async function matchLikesInBackground() {
   } finally { matchingLikes = false; }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(matchLikesInBackground, 5000); });
-const ytAudioOn = () => !window.MurmurAndroid && !document.documentElement.dataset.murmurAdblock && server.on && !store.get('ytPlayerOnly', false);
+const ytAudioOn = () => (IOS_DEVICE || (!window.MurmurAndroid && !document.documentElement.dataset.murmurAdblock)) && server.on && !store.get('ytPlayerOnly', false);
 const ytAudioBases = () => [remote.base || location.origin, ...SERVERS.map(x => normalizeServer(x.url))]
   .filter((b, i, a) => b && a.indexOf(b) === i && !((ytAudio.until[b] || 0) > Date.now()));
 const ytAudioUrl = (base, t, extra = '') => joinUrl(base, 'ytaudio/' + encodeURIComponent(t.ytId)) + '?' + (remote.mediaKey ? 'k=' + encodeURIComponent(remote.mediaKey) + '&' : '') + extra;
@@ -2556,8 +2644,8 @@ function ytAudioFailed(t, wasPlaying) {
     if (ytAudio.fails[base] >= 2) ytAudio.until[base] = Date.now() + 10 * 60e3;
   }
   if (Engine.mode !== 'file' || FileEng.track !== t) return;
-  const next = ytAudioSrc(t, tried);
-  if (next) { FileEng.load(t, next); if (wasPlaying) FileEng.play(); return; }
+  const alt = ytAudioSrc(t, tried);
+  if (alt) { FileEng.load(t, alt); if (wasPlaying) FileEng.play(); return; }
   // No server could get it: no signal -> the next downloaded song; otherwise YouTube's own player.
   t.ytTried = null;
   if (offlineNow()) { FileEng.unload(); next(true); return; }
@@ -2722,6 +2810,13 @@ function collectionOf(type, id) {
       sub: `<b>${esc(imp.owner || 'Spotify')}</b> · ${inM} of ${tracks.length} in Murmur`, tracks, cover: imp.cover || SPALBUM.cover, color: '#2fa36b', imported: true };
   }
   if (type === 'mlist') return memberCollection(id);
+  if (type === 'radio') {
+    if (!radio.seed) return null;
+    const tracks = radio.ids.filter(visible);
+    return { type, id, kind: 'Radio', title: `${radio.seed.artist} Radio`, sub: '<b>Murmur Radio</b> · keeps going',
+      desc: `Endless songs like ${radio.seed.title ? `“${radio.seed.title}” by ` : ''}${radio.seed.artist}. Like songs to hear more like them, or skip what you don’t want.`,
+      tracks, mosaic: mosaicFor(tracks), cover: radio.seed.cover || (tracks[0] ? tCover(tracks[0]) : null), color: '#c2543b', radio: true };
+  }
   if (type === 'gpreview') {
     const x = likedGenreSuggestions().find(v => v.genre === id); if (!x) return null;
     return { type, id, kind: 'Suggested playlist', title: id, desc: 'Your liked songs in this genre. Like it? Create the playlist to keep it, then rename it or add and remove songs.',
@@ -2851,6 +2946,7 @@ function loadAndPlay(tid, autoplay = true) {
   updatePlayerUI();
   saveResume();
   prepAhead();
+  extendRadio();
 }
 
 /* ================= taste & YouTube suggestions ================= */
@@ -3435,7 +3531,8 @@ function viewCollection(type, id) {
     ${n ? playFab(type, id, 'big-play') : ''}
     <button class="icon-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}">${icon('shuffle')}</button>
     ${col.gpreview ? `<button class="text-btn gp-create" data-act="gp-make" data-g="${esc(id)}">${icon('plus')}<span>Create playlist</span></button><button class="text-btn" data-act="gp-skip" data-g="${esc(id)}" data-back="1">${icon('close')}<span>Don’t suggest</span></button>` : ''}
-    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
+    ${col.radio ? `<button class="text-btn" data-act="radio-not" ${sameCtx('radio', 'station') ? '' : 'disabled'}>${icon('thumbDown')}<span>Not this artist</span></button>` : ''}
+    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) : ''}${type === 'artist' && server.on ? `<button class="text-btn" data-act="artist-radio" data-id="${esc(col.artistName || id)}">${icon('radio')}<span>Artist radio</span></button>` : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
   </div>
   ${server.on ? jobPanelsHTML(type, id) : ''}
   ${col.liked ? genrePlaylistsHTML() : ''}
@@ -3486,6 +3583,58 @@ function viewLibrary() {
   <div class="lib-list${selecting ? ' selecting' : ''}" id="mainLib">${libEntries().map(e => libItem(e, true)).join('')}</div>
   ${restore}`;
 }
+/* ---------- lyrics, timed to the song (LRCLIB through the server) ---------- */
+const ly = { key: '', loading: false, data: null, error: '', lines: [], cur: -1, userAt: 0 };
+const lyKey = t => t ? `${cleanArtist(t.artist)}|${t.title}` : '';
+function parseLrc(txt) {
+  const out = [];
+  String(txt || '').split(/\r?\n/).forEach(l => {
+    const tags = [...l.matchAll(/\[(\d+):(\d+(?:[.:]\d+)?)\]/g)], text = l.replace(/\[[^\]]*\]/g, '').trim();
+    tags.forEach(m => out.push({ t: +m[1] * 60 + parseFloat(m[2].replace(':', '.')), text }));
+  });
+  return out.sort((a, b) => a.t - b.t);
+}
+async function loadLyrics(t) {
+  const key = lyKey(t);
+  ly.key = key; ly.loading = true; ly.data = null; ly.error = ''; ly.lines = []; ly.cur = -1;
+  const dur = Math.round((Engine.duration && isFinite(Engine.duration) ? Engine.duration : 0) || t.duration || 0);
+  const q = new URLSearchParams({ artist: cleanArtist(t.artist) || '', title: t.title || '', album: t.albumTag || (t.sp ? t.album : '') || '', duration: String(dur) });
+  try {
+    if (!server.on) throw new Error('Lyrics need a connection to your Murmur server.');
+    const d = await api('GET', 'api/lyrics?' + q);
+    if (ly.key !== key) return;
+    ly.data = d; ly.lines = d.synced ? parseLrc(d.synced) : [];
+  } catch (e) { if (ly.key !== key) return; ly.error = /404|no lyrics/i.test(e.message) ? 'No lyrics found for this song yet.' : e.message; }
+  ly.loading = false;
+  if (state.view.name === 'lyrics') render();
+}
+function viewLyrics() {
+  const t = TRACKS[state.current];
+  if (!t) return `<div class="empty"><h2>Lyrics</h2><p>Play a song and its lyrics show here, moving along with the music.</p></div>`;
+  if (ly.key !== lyKey(t) && !ly.loading) loadLyrics(t);
+  else if (ly.key !== lyKey(t)) setTimeout(() => loadLyrics(t), 0);
+  const head = `<header class="ly-head"><img class="cover" src="${esc(tCover(t.id))}" alt=""><div><h1 class="ell">${esc(t.title)}</h1><p class="small ell">${esc(cleanArtist(t.artist))}</p></div></header>`;
+  if (ly.loading || ly.key !== lyKey(t)) return head + '<p class="small ly-msg">Finding the lyrics…</p>';
+  if (ly.error) return head + `<p class="ly-msg">${esc(ly.error)}</p>${/connection|reach/i.test(ly.error) ? `<button class="text-btn" data-act="ly-retry">${icon('repeat')}<span>Try again</span></button>` : ''}`;
+  const d = ly.data || {};
+  if (d.instrumental) return head + '<p class="ly-msg">♪ This song is instrumental. No lyrics.</p>';
+  const body = ly.lines.length
+    ? `<div class="ly-lines synced">${ly.lines.map((l, i) => `<p class="ly-line${i === ly.cur ? ' on' : ''}${i < ly.cur ? ' past' : ''}" data-act="ly-seek" data-t="${l.t}" data-i="${i}">${l.text ? esc(l.text) : '♪'}</p>`).join('')}</div>`
+    : `<div class="ly-lines plain">${String(d.plain || '').split(/\r?\n/).map(l => `<p class="ly-line">${esc(l) || '&nbsp;'}</p>`).join('')}</div><p class="small ly-msg">These lyrics aren’t timed to the song.</p>`;
+  return head + body + `<p class="small ly-src">Lyrics from ${esc(d.source || 'LRCLIB')}${ly.lines.length ? ' · tap a line to jump there' : ''}</p>`;
+}
+// Follow the song: light up the line being sung and keep it in the middle (unless you're scrolling yourself).
+function tickLyrics() {
+  if (state.view.name !== 'lyrics' || !ly.lines.length || ly.key !== lyKey(TRACKS[state.current])) return;
+  const pos = Engine.position() + 0.25;
+  let i = -1; for (let k = 0; k < ly.lines.length && ly.lines[k].t <= pos; k++) i = k;
+  if (i === ly.cur) return;
+  ly.cur = i;
+  $$('.ly-line').forEach((el, k) => { el.classList.toggle('on', k === i); el.classList.toggle('past', k < i); });
+  const el = i >= 0 && $(`.ly-line[data-i="${i}"]`);
+  if (el && Date.now() - ly.userAt > 4000) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+['wheel', 'touchmove'].forEach(ev => document.addEventListener(ev, e => { if (e.target.closest && e.target.closest('.ly-lines')) ly.userAt = Date.now(); }, { passive: true }));
 function viewQueue() {
   if (!state.current) return `<div class="empty"><h2>Nothing playing yet</h2>Start any album or playlist and your queue shows up here.</div>`;
   const upcoming = state.order.slice(state.pos + 1).map(i => state.list[i]);
@@ -3556,6 +3705,7 @@ function buildShell() {
     </div>
     <div class="p-right">
       <button class="icon-btn" data-act="pb-open" aria-label="Playback settings" title="Playback settings">${icon('eq')}</button>
+      <button class="icon-btn" data-act="nav" data-to="lyrics" id="lyBtn" aria-label="Lyrics">${icon('lyrics')}</button>
       <button class="icon-btn" data-act="nav" data-to="queue" id="qBtn" aria-label="Queue">${icon('queue')}</button>
       <button class="icon-btn" data-act="np-toggle" id="npBtn" aria-label="Now playing panel">${icon('panel')}</button>
       <button class="icon-btn" data-act="mute" id="muteBtn" aria-label="Mute">${icon('volume')}</button>
@@ -3581,7 +3731,7 @@ function buildShell() {
     <div class="full-top">
       <button class="icon-btn" data-act="full-close" aria-label="Close player">${icon('down')}</button>
       <div class="full-ctx"><span class="eyebrow">Playing from</span><b class="ell" id="fCtx"></b></div>
-      <span class="full-top-r"><button class="icon-btn" data-act="pb-open" aria-label="Playback settings">${icon('eq')}</button><button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button></span>
+      <span class="full-top-r"><button class="icon-btn" data-act="pb-open" aria-label="Playback settings">${icon('eq')}</button><button class="icon-btn" data-act="go-lyrics" aria-label="Lyrics">${icon('lyrics')}</button><button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button></span>
     </div>
     <img class="cover full-cover" id="fCover" alt="">
     <div class="video-switch" id="fVideoSwitch" role="group" aria-label="Show for YouTube songs" hidden>
@@ -3601,10 +3751,12 @@ function buildShell() {
 function render() {
   const v = state.view, el = $('#view');
   const qb = $('#qBtn'); if (qb) { qb.classList.toggle('on', v.name === 'queue'); qb.setAttribute('aria-pressed', v.name === 'queue'); }
+  const lb = $('#lyBtn'); if (lb) { lb.classList.toggle('on', v.name === 'lyrics'); lb.setAttribute('aria-pressed', v.name === 'lyrics'); }
   if (v.name === 'home') el.innerHTML = viewHome();
   else if (v.name === 'search') el.innerHTML = viewSearch();
   else if (v.name === 'library') el.innerHTML = viewLibrary();
   else if (v.name === 'queue') el.innerHTML = viewQueue();
+  else if (v.name === 'lyrics') el.innerHTML = viewLyrics();
   else if (v.name === 'people') el.innerHTML = viewPeople();
   else if (v.name === 'member') el.innerHTML = viewMember(v.id);
   else if (v.name === 'sources') el.innerHTML = viewMySources();
@@ -3789,6 +3941,7 @@ function updateLikes() {
 }
 function updatePlayerUI() {
   const t = TRACKS[state.current];
+  if (state.view.name === 'lyrics' && t && ly.key !== lyKey(t)) render();   // a new song: its lyrics
   if (t) {
     const a = ALBUM_MAP[t.albumId] || UPLOADS;
     $('#pCover').src = tCover(t.id); $('#pCover').alt = t.album;
@@ -3846,6 +3999,7 @@ function frame() {
   $('#miniBar').style.width = (pct * 100) + '%';
   if (!$('#full').hidden) { drawViz(); const f = $('#full'); f.classList.toggle('scrolls', f.scrollHeight > f.clientHeight + 4); }
   if (YTEng.track) placeYtBox();   // follow the big cover as the layout changes
+  tickLyrics();
   syncVideoSwitch();
   requestAnimationFrame(frame);
 }
@@ -3881,7 +4035,8 @@ function renderMenu() {
   const b = (op, label, extra = '') => `<button role="menuitem" data-act="m" data-op="${op}" ${extra}>${label}</button>`;
   let html = `<div class="menu-title ell">${m.multi ? `Add ${plural(m.tids.length, 'song')} to` : `${esc(t.title)} · ${esc(t.artist)}`}</div>`;
   if (!m.sub) {
-    html += b('queue', icon('queue') + 'Add to queue')
+    html += (server.on ? b('radio', icon('radio') + 'Start radio') : '')
+      + b('queue', icon('queue') + 'Add to queue')
       + b('like', icon('heart') + (state.liked.has(t.id) ? 'Remove from Liked Songs' : 'Save to Liked Songs'))
       + b('sub', icon('plus') + 'Add to playlist')
       + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
@@ -4113,6 +4268,7 @@ function setLiked(ids, on) {
 function toggleLike(tid) {
   if (!tid) return;
   const on = !state.liked.has(tid);
+  if (on && state.ctx && state.ctx.type === 'radio' && TRACKS[tid]) { const a = cleanArtist(TRACKS[tid].artist); if (a && !radio.more.includes(a)) radio.more.push(a); }
   setLiked([tid], on);
   toast(on ? 'Added to Liked Songs' : 'Removed from Liked Songs');
 }
@@ -4274,7 +4430,7 @@ function act(el, e) {
   switch (d.act) {
     case 'nav':
       // The queue button toggles: tapping it again goes back to what you were looking at (and where you'd scrolled to).
-      if (d.to === 'queue' && state.view.name === 'queue') { if (hist.i > 0) history.back(); else navigate({ name: 'home' }); }
+      if ((d.to === 'queue' || d.to === 'lyrics') && state.view.name === d.to) { if (hist.i > 0) history.back(); else navigate({ name: 'home' }); }
       else navigate({ name: d.to });
       break;
     case 'logo-home': {
@@ -4328,6 +4484,7 @@ function act(el, e) {
       else if (op === 'spopen') { const a = document.createElement('a'); a.href = TRACKS[tids[0]].url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
       else if (op === 'ytopen') { const a = document.createElement('a'); a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(TRACKS[tids[0]].ytId); a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
       else if (op === 'dl') downloadTracks(tids);
+      else if (op === 'radio') startRadio('', tids[0]);
       else if (op === 'undl') confirmRemoveDownloads(tids);
       else if (op === 'save') saveToDevice(tids[0]);
       else if (op === 'delete') removeTracks(tids);
@@ -4435,6 +4592,8 @@ function act(el, e) {
     case 'yt-play': playFrom('ytq', d.q, +d.i); break;
     case 'disc-play': playFrom('discover', 'mix', +d.i); break;
     case 'col-play': playFrom(d.type, d.id, +d.i); break;
+    case 'radio-not': radioNotThis(); break;
+    case 'artist-radio': startRadio(d.id); break;
     case 'gp-make': makeGenrePlaylist(d.g, true); break;
     case 'gp-all': {
       const made = likedGenreSuggestions().slice(0, 8).map(x => makeGenrePlaylist(x.genre, false)).filter(Boolean);
@@ -4571,6 +4730,9 @@ function act(el, e) {
     case 'full-close': $('#full').hidden = true; break;
     case 'upload': $('#fileGlobal').click(); break;
     case 'go-queue': $('#full').hidden = true; navigate({ name: 'queue' }); break;
+    case 'go-lyrics': $('#full').hidden = true; navigate({ name: 'lyrics' }); break;
+    case 'ly-seek': if (state.current) { Engine.seek(+d.t); ly.userAt = 0; notifyApp(); } break;
+    case 'ly-retry': ly.key = ''; render(); break;
   }
 }
 
