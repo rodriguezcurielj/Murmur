@@ -1,13 +1,13 @@
 // Murmur for Windows: the Murmur website in its own window, plus what a music app needs on a computer.
 // - Media keys and the Windows media pop-up (cover, play/pause, skip) come from the page's media session.
-// - Closing the window keeps the music playing in the system tray (right-click the tray icon to quit).
+// - Closing the window quits Murmur completely; while it's open the tray icon has play/pause, next and previous.
 // - Built-in ad blocker (same list as the Android app's AdBlock.java), links to other sites open in the browser,
 //   and a check for a newer version of this app on start.
-const { app, BrowserWindow, Tray, Menu, shell, session, nativeImage, dialog, net } = require('electron');
+const { app, BrowserWindow, Tray, Menu, shell, session, nativeImage, dialog, net, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const HOME = 'https://rodriguezcurielj.github.io/Murmur/';
+const HOME = process.env.MURMUR_URL || 'https://rodriguezcurielj.github.io/Murmur/';   // MURMUR_URL: try the app against a test server
 const UPDATE_INFO = 'https://rodriguezcurielj.github.io/Murmur/apps/windows.json';
 const VERSION = app.getVersion();
 
@@ -54,12 +54,15 @@ function createWindow() {
     const st = readState();
     win = new BrowserWindow({
         width: 1280, height: 820, minWidth: 360, minHeight: 520, ...(st.bounds || {}),
-        title: 'Murmur', backgroundColor: '#120f17', autoHideMenuBar: true, show: false,
+        title: 'Murmur', backgroundColor: st.frameBg || '#120f17', autoHideMenuBar: true, show: false,
+        // No Windows title bar: the page's top strip is the title bar, and the window buttons sit on it in the theme's colours.
+        titleBarStyle: 'hidden', titleBarOverlay: { color: st.frameBg || '#120f17', symbolColor: st.frameFg || '#a798b4', height: 36 },
         icon: path.join(__dirname, 'icon.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false, additionalArguments: ['--murmur-version=' + VERSION] }
     });
     if (st.max) win.maximize();
     win.once('ready-to-show', () => win.show());
+    win.webContents.once('did-finish-load', () => { if (!win.isVisible()) win.show(); });   // ready-to-show doesn't always come with the hidden title bar
     win.loadURL(HOME);
 
     win.webContents.setWindowOpenHandler(({ url }) => {
@@ -70,17 +73,8 @@ function createWindow() {
     win.on('page-title-updated', e => e.preventDefault());   // keep "Murmur" in the title bar
 
     for (const ev of ['resize', 'move']) win.on(ev, () => { clearTimeout(win._t); win._t = setTimeout(saveState, 400); });
-    // Closing the window keeps the music going; the tray icon brings it back.
-    win.on('close', e => {
-        saveState();
-        if (quitting) return;
-        e.preventDefault(); win.hide();
-        const s = readState();
-        if (!s.toldTray && tray) {
-            tray.displayBalloon({ title: 'Murmur is still playing', content: 'Murmur keeps playing here. Right-click this icon to quit.', iconType: 'info' });
-            try { fs.writeFileSync(stateFile(), JSON.stringify({ ...s, toldTray: true })); } catch {}
-        }
-    });
+    // Closing the window quits Murmur completely (music stops, tray icon goes away).
+    win.on('close', () => { saveState(); quitting = true; });
 }
 
 function createTray() {
@@ -147,6 +141,15 @@ async function checkUpdate() {
     } catch {}
 }
 
+// The page sends its theme colours (background, icon colour) for the window buttons.
+ipcMain.on('murmur-frame', (e, c) => {
+    const hex = v => /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v) : null;
+    const bg = hex(c && c.bg), fg = hex(c && c.fg);
+    if (!win || !bg || !fg) return;
+    try { win.setTitleBarOverlay({ color: bg, symbolColor: fg }); win.setBackgroundColor(bg); } catch {}
+    const st = readState();
+    if (st.frameBg !== bg || st.frameFg !== fg) try { fs.writeFileSync(stateFile(), JSON.stringify({ ...st, frameBg: bg, frameFg: fg })); } catch {}
+});
 app.on('second-instance', show);
 app.on('before-quit', () => { quitting = true; });
 app.whenReady().then(() => {
@@ -156,4 +159,4 @@ app.whenReady().then(() => {
     win.once('show', thumbButtons);
     setTimeout(checkUpdate, 8000);
 });
-app.on('window-all-closed', () => { if (quitting) app.quit(); });
+app.on('window-all-closed', () => app.quit());

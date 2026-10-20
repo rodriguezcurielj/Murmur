@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "url": "https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe",
-  "notes": "First version of Murmur for Windows."
+  "notes": "Murmur draws its own title bar (no plain Windows frame; the window buttons match your theme), and closing the window now quits Murmur completely."
 }

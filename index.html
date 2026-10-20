@@ -25,6 +25,7 @@ window.MURMUR_THEMES = [
   { id: 'coffee', name: 'Coffee', c: ['#16110d', '#201913', '#2b221a', '#362b21', '#45372b', '#f7efe6', '#bba892', '#d9a066', '#2a1606'] },
   { id: 'neon', name: 'Neon', c: ['#07070d', '#0f0f1a', '#171728', '#202036', '#2b2b47', '#f1f1ff', '#9d9dc4', '#ff3df2', '#2a0127'] },
   { id: 'noir', name: 'Noir', c: ['#000000', '#0e0e0e', '#1a1a1a', '#242424', '#333333', '#ffffff', '#a0a0a0', '#ffffff', '#000000'] },
+  { id: 'blackblue', name: 'Black & Blue', c: ['#000000', '#121212', '#1f1f1f', '#2a2a2a', '#333333', '#ffffff', '#b3b3b3', '#1e90ff', '#000000'] },
   { id: 'paper', name: 'Paper', light: true, c: ['#faf7f2', '#ffffff', '#f1ece4', '#e8e1d6', '#ddd4c6', '#1f1a15', '#6b6157', '#d96a1e', '#ffffff'] },
   { id: 'daylight', name: 'Daylight', light: true, c: ['#f4f6fb', '#ffffff', '#e9edf6', '#dde3f0', '#cfd7e8', '#121826', '#5a6478', '#2f6bff', '#ffffff'] },
   { id: 'mint', name: 'Mint', light: true, c: ['#f2f8f4', '#ffffff', '#e3f0e7', '#d5e8db', '#c3dccb', '#10201a', '#52695d', '#1f9d63', '#ffffff'] },
@@ -38,6 +39,8 @@ window.murmurApplyTheme = function (id) {
   r.setProperty('color-scheme', t.light ? 'light' : 'dark');
   document.documentElement.dataset.theme = t.id;
   var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t.c[0]);
+  // Murmur for Windows draws its own title bar: the window buttons take the theme's colours.
+  var d = window.MurmurDesktop; if (d && d.setFrame) { document.documentElement.classList.add('desktop-frame'); d.setFrame(t.c[0], t.c[6]); }
   return t.id;
 };
 try { window.murmurApplyTheme(JSON.parse(localStorage.getItem('murmur:theme') || '"murmur"')); } catch (e) {}
@@ -72,6 +75,13 @@ svg.i{width:20px;height:20px;flex:none}
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 
 /* ---------- shell ---------- */
+html.desktop-frame .app{padding-top:var(--tb-h)}
+html.desktop-frame{--tb-h:36px}
+html.desktop-frame body::before{content:'';position:fixed;top:0;left:0;right:0;height:var(--tb-h);background:var(--bg);-webkit-app-region:drag;app-region:drag;z-index:95}
+html.desktop-frame .topbar{-webkit-app-region:drag;app-region:drag}
+html.desktop-frame .topbar>*{-webkit-app-region:no-drag;app-region:no-drag}
+html.desktop-frame .full,html.desktop-frame .modal-back{top:var(--tb-h)}
+html.desktop-frame .menu,html.desktop-frame .toast{-webkit-app-region:no-drag;app-region:no-drag}
 .app{height:100%;display:grid;grid-template-columns:280px minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;gap:8px;padding:8px}
 .app.np-on{grid-template-columns:280px minmax(0,1fr) 310px}
 .sidebar{grid-column:1;grid-row:1;display:flex;flex-direction:column;gap:8px;min-height:0}
@@ -422,7 +432,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .radio-chips .chip svg{width:14px;height:14px}
 .full-radio{margin:4px auto 0}
 .stations{flex:none;display:flex;flex-direction:column;padding:12px 8px 8px;min-height:0;max-height:32vh}
-.st-list{min-height:0}
+.st-list{min-height:0;overflow-x:hidden}
 .st-ic{display:grid;place-items:center;background:linear-gradient(140deg,#c2543b 0%,#ffb070 100%);color:#fff}
 .st-ic svg{width:50%;height:50%}
 .st-del{opacity:0;flex:none}
@@ -6190,7 +6200,7 @@ function gateAppsHTML() {
         <li>Open Murmur and sign in.</li></ol>
       <p class="small">Motorola Razr: to use it on the outside screen, turn it on in <b>Settings → External display → Apps</b>.</p>`,
     web: `<a class="m-ok gd-btn" href="${WINDOWS_APP}" download>${icon('download')}<span>Download Murmur for Windows</span></a>
-      <p class="small">Run <b>Murmur-Setup.exe</b>. If Windows says it protected your PC, click <b>More info → Run anyway</b>. Murmur opens and gets a desktop shortcut. Media keys work, and closing the window keeps the music playing in the tray.</p>
+      <p class="small">Run <b>Murmur-Setup.exe</b>. If Windows says it protected your PC, click <b>More info → Run anyway</b>. Murmur opens and gets a desktop shortcut. Media keys and the Windows media pop-up work.</p>
       <p class="small"><b>Or use it in the browser:</b></p>
       <ol class="steps small">
         <li>On any computer, open <a href="${PAGES_URL}" target="_blank" rel="noopener">${esc(PAGES_URL.replace(/^https:\/\//, ''))}</a> and sign in.</li>
@@ -6442,7 +6452,7 @@ function appsSectionHTML(bare) {
       : link(APPS_PAGE + 'Murmur.apk', 'download', 'Android app', 'Download Murmur.apk and open it to install', true),
     ios: link(PAGES_URL, 'download', 'iPhone', 'Open in Safari → Share → Add to Home Screen', false),
     ext: link(APPS_PAGE + '#extension', 'download', 'Ad blocker for computers', 'Removes YouTube ads in Chrome, Edge or Brave', false),
-    win: window.MurmurDesktop ? '' : link(WINDOWS_APP, 'download', 'Windows app', 'Download Murmur-Setup.exe and run it', true)
+    win: link(WINDOWS_APP, 'download', 'Windows app', window.MurmurDesktop ? 'You’re using it. Download it again for another PC' : 'Download Murmur-Setup.exe and run it', true)
   };
   const order = android ? ['android', 'ios', 'win', 'ext'] : ios ? ['ios', 'android', 'win', 'ext'] : ['win', 'ext', 'android', 'ios'];
   return `<div class="apps-box${bare ? ' bare' : ''}">${bare ? '' : '<div class="eyebrow">Get the apps</div>'}
