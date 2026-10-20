@@ -421,6 +421,17 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .radio-chips .chip{display:inline-flex;align-items:center;gap:6px}
 .radio-chips .chip svg{width:14px;height:14px}
 .full-radio{margin:4px auto 0}
+.stations{flex:none;display:flex;flex-direction:column;padding:12px 8px 8px;min-height:0;max-height:32vh}
+.st-list{min-height:0}
+.st-ic{display:grid;place-items:center;background:linear-gradient(140deg,#c2543b 0%,#ffb070 100%);color:#fff}
+.st-ic svg{width:50%;height:50%}
+.st-del{opacity:0;flex:none}
+.st-item:hover .st-del,.st-item:focus-within .st-del{opacity:1}
+@media (hover:none){.st-del{opacity:1}}
+.st-empty{display:flex;gap:10px;align-items:flex-start;text-align:left;padding:8px;border-radius:8px;font-size:13px;color:var(--muted)}
+.st-empty:hover{background:var(--raise);color:var(--fg)}
+.st-empty svg{width:18px;height:18px;flex:none;margin-top:1px}
+.st-page{margin-bottom:22px;max-width:640px}
 .lib-title{display:flex;align-items:center;gap:12px;font-weight:700;color:var(--muted)}
 .lib-title:hover{color:var(--fg)}
 .lib-title.on{color:var(--fg)}
@@ -771,7 +782,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
   .p-left .p-artist{pointer-events:none}
   .mini-bar{display:block;position:absolute;left:8px;right:8px;bottom:0;height:2px;background:color-mix(in srgb,var(--fg) 25%,transparent);border-radius:2px}
   .mini-bar span{display:block;height:100%;background:var(--fg);width:0}
-  .bottom-nav{display:grid;grid-template-columns:repeat(3,1fr);background:var(--bg);padding:4px 0 6px}
+  .bottom-nav{display:grid;grid-template-columns:repeat(4,1fr);background:var(--bg);padding:4px 0 6px}
   .bottom-nav button{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--muted);padding:6px 0}
   .bottom-nav button.on{color:var(--fg)}
   .bottom-nav svg{width:24px;height:24px}
@@ -931,7 +942,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 /* Things that belong to a person (not a device): saved per account on the server, cached here per account. */
-const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home'];
+const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home', 'stations'];
 const store = {
   uid: '',          // the signed-in account (and its server) once known
   onChange: null,   // called when a synced value changes, so it can be sent to the server
@@ -1653,6 +1664,7 @@ function merge3(k, base, local, srv) {
   if (k === 'liked' || k === 'hidden' || k === 'hiddenCols') return setMerge(base, local, srv);
   if (k === 'spTracks') return setMerge(base, local, srv, x => x && x.key);
   if (k === 'ytTracks') return setMerge(base, local, srv, x => x && x.id);
+  if (k === 'stations') return setMerge(base, local, srv, x => x && x.id);
   if (k === 'playlists') {
     const bm = byId(base, x => x.id), sm = byId(srv, x => x.id);
     return setMerge(base, local, srv, x => x && x.id).map(p => {
@@ -1718,7 +1730,7 @@ function mergeKey(k, server, local) {
   if (local == null) return server;
   if (server == null) return local;
   if (k === 'liked' || k === 'hidden' || k === 'hiddenCols') return [...new Set([...local, ...server])];
-  if (k === 'spTracks' || k === 'ytTracks') {
+  if (k === 'spTracks' || k === 'ytTracks' || k === 'stations') {
     const id = k === 'spTracks' ? x => x.key : x => x.id, m = byId(server, id);
     local.forEach(x => { if (x && id(x) != null && !m.has(id(x))) m.set(id(x), x); });
     return [...m.values()];
@@ -1763,7 +1775,7 @@ async function loadUserData() {
     userSync.seen = data.updatedAt || 0;
     /* Keep what this device changed but couldn't send. Once per device and account, also merge in likes, songs and
        playlists this device has that the server lacks (saving from the Android app and GitHub Pages used to fail). */
-    const MERGE = ['liked', 'spTracks', 'ytTracks', 'playlists', 'plays', 'genres'];
+    const MERGE = ['liked', 'spTracks', 'ytTracks', 'playlists', 'plays', 'genres', 'stations'];
     const mergedKey = 'murmur:merged1:' + store.uid;
     let firstMerge = false; try { firstMerge = !localStorage.getItem(mergedKey); } catch (e) {}
     const up = new Set();
@@ -1992,7 +2004,7 @@ const sleepLabel = () => sleep.endOfTrack ? 'End of this song' : sleep.until ? `
 /* ---------- Radio (like Pandora): endless songs like a song or an artist you pick ----------
    A quarter are the artist's own hits, the rest similar artists' top songs. More are added as it plays.
    Like a song and the station leans toward that artist; "Not this artist" stops playing them on this station. */
-const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [] };
+const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [], stationId: '' };
 const radioKey = t => cleanArtist(t.artist) + '|' + t.title;
 async function fetchRadio() {
   const exclude = radio.ids.map(id => TRACKS[id]).filter(Boolean).map(radioKey);
@@ -2002,13 +2014,13 @@ async function fetchRadio() {
   return (r.items || []).filter(x => !radio.banned.has(normKey(cleanArtist(x.artist))))
     .map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
 }
-async function startRadio(artist, tid) {
+async function startRadio(artist, tid, saved) {
   if (!server.on) { toast('Radio needs a connection to your Murmur server.'); return; }
   if (radio.loading) return;
   artist = cleanArtist(artist || (TRACKS[tid] && TRACKS[tid].artist) || '');
   if (!artist || /^(unknown artist|youtube)$/i.test(artist)) { toast('Murmur doesn’t know who sings this, so it can’t make a radio for it.'); return; }
   const t = tid && TRACKS[tid];
-  radio.seed = { artist, title: t ? t.title : '', cover: t ? tCover(tid) : '' };
+  radio.seed = { artist, title: t ? t.title : (saved && saved.title) || '', cover: t ? tCover(tid) : (saved && saved.cover) || '' };
   radio.ids = t ? [tid] : []; radio.banned = new Set(); radio.more = []; radio.loading = true;
   toast(`Starting ${artist} Radio…`);
   try {
@@ -2016,9 +2028,60 @@ async function startRadio(artist, tid) {
     radio.ids = [...new Set([...radio.ids, ...ids])];
     radio.loading = false;
     if (!radio.ids.length) { toast('Couldn’t find songs for that radio. Try another song or artist.'); return; }
+    saveStation(radio.seed, t ? tid : (saved && saved.tid) || '');
     playFrom('radio', 'station', 0);
     navigate({ name: 'collection', type: 'radio', id: 'station' });
   } catch (e) { radio.loading = false; toast(e.message); }
+}
+/* Your radio stations: every radio you start is kept (newest first) so you can play it again.
+   Synced like the rest of your library: { id, artist, title, tid, cover, at } */
+const stations = () => (store.get('stations', []) || []).filter(x => x && x.id && x.artist);
+const stationId = (artist, title) => 'st-' + normKey(artist) + (title ? '~' + normKey(title) : '');
+function saveStation(seed, tid) {
+  const id = stationId(seed.artist, seed.title), old = stations().find(x => x.id === id) || {};
+  radio.stationId = id;
+  store.set('stations', [{ id, artist: seed.artist, title: seed.title || '', tid: tid || old.tid || '', cover: seed.cover || old.cover || '', at: Date.now() },
+    ...stations().filter(x => x.id !== id)].slice(0, 50));
+  renderStations();
+}
+function playStation(id) {
+  const st = stations().find(x => x.id === id); if (!st) return;
+  if (radio.stationId === id && state.ctx && state.ctx.type === 'radio') { navigate({ name: 'collection', type: 'radio', id: 'station' }); return; }
+  startRadio(st.artist, st.tid && TRACKS[st.tid] ? st.tid : '', st);
+}
+function deleteStation(id) {
+  const st = stations().find(x => x.id === id); if (!st) return;
+  store.set('stations', stations().filter(x => x.id !== id));
+  renderStations(); if (state.view.name === 'stations') render();
+  toast(`Removed ${st.artist} Radio`);
+}
+function stationItem(st) {
+  const on = radio.stationId === st.id && state.ctx && state.ctx.type === 'radio';
+  return `<div class="lib-item st-item${on ? ' playing' : ''}" data-act="station-play" data-id="${esc(st.id)}" role="button" tabindex="0" title="Play ${esc(st.artist)} Radio">
+    ${st.cover ? `<img class="cover" src="${esc(st.cover)}" alt="" loading="lazy">` : `<span class="cover st-ic">${icon('radio')}</span>`}
+    <div class="meta"><div class="nm ell">${esc(st.artist)} Radio</div><div class="sb ell">${st.title ? `From “${esc(st.title)}”` : 'Radio station'}</div></div>
+    <button class="icon-btn st-del" data-act="station-del" data-id="${esc(st.id)}" aria-label="Remove ${esc(st.artist)} Radio" title="Remove station">${icon('close')}</button></div>`;
+}
+function renderStations() {
+  const el = $('#sideStations'); if (!el) return;
+  const list = stations();
+  el.innerHTML = list.length ? list.map(stationItem).join('')
+    : `<button class="st-empty" data-act="new-station">${icon('plus')}<span>Create your first station: pick an artist or song and it plays music like it, forever.</span></button>`;
+}
+function newStation() {
+  if (!server.on) { toast('Radio needs a connection to your Murmur server.'); return; }
+  const artists = topArtists().slice(0, 8);
+  openModal({ title: 'Create a radio station', confirm: 'Start radio', html: `
+    <div class="field"><label for="stQ">Artist or song</label><input id="stQ" name="q" maxlength="100" autocomplete="off" placeholder="For example Peso Pluma or Ella Baila Sola" required></div>
+    ${artists.length ? `<p class="small">Or one of your artists:</p><div class="radio-chips">${artists.map(a => `<button type="button" class="chip" data-act="station-artist" data-id="${esc(a)}">${icon('radio')}${esc(a)}</button>`).join('')}</div>` : ''}`,
+    onSubmit: fd => { radioFromQuery(String(fd.get('q') || '')); } });
+}
+function viewStations() {
+  const list = stations();
+  return `<h1 class="greet">Your radio stations</h1>
+    <button class="radio-cta" data-act="new-station">${icon('plus')}<span><b>Create a radio station</b><small>Pick an artist or song. Murmur keeps playing music like it, and your likes steer it.</small></span></button>
+    ${list.length ? `<div class="lib-list st-page">${list.map(stationItem).join('')}</div>` : '<p class="small">No stations yet. Every radio you start shows up here.</p>'}
+    ${radioChipsHTML()}`;
 }
 // Near the end of the station: more songs, so it never stops.
 async function extendRadio() {
@@ -3391,20 +3454,34 @@ function ytResultsHTML(q) {
   return `<div class="shelf-head"><h2>From YouTube</h2>${shown.length ? `<div class="head-actions"><p>${plural(shown.length, 'song')}</p>${selBtn('ytq', key)}</div>` : ''}</div>
     ${shown.length ? trackList(shown, 'ytq', key, { head: false }) : '<p class="small">YouTube found no songs for that.</p>'}`;
 }
-// Big "Start radio" button on search results: the artist you searched, or the top song's artist.
-function radioCtaHTML(q) {
-  if (!server.on) return '';
+// What a radio from a search is built on: the artist you searched (also when they're only
+// featured on the songs, like Peso Pluma on Eslabon Armado's), otherwise the top song.
+function radioSeedFor(q) {
   const ids = (cat.results.get(q.toLowerCase()) || []).concat(searchTracks(q)).filter(id => TRACKS[id] && visible(id));
   const top = ids[0], nq = normKey(q);
-  // An artist that matches the search, also when they're only featured on the songs (Eslabon Armado, Peso Pluma).
   const named = ids.slice(0, 10).flatMap(id => String(TRACKS[id].artist).split(/\s*(?:,|&|\/|;|\bx\b|\bfeat\.?|\bft\.?|\bwith\b|\by\b)\s*/i))
     .map(x => x.trim()).find(x => x && nq && (normKey(x) === nq || (nq.length > 3 && normKey(x).includes(nq))));
   const a = named || (top ? cleanArtist(TRACKS[top].artist) : ''), na = normKey(a);
-  const isArtist = !top || !!named || !a || na.includes(nq) || nq.includes(na);
+  // The top song's exact title wins (Ella Baila Sola the song, not the band).
+  if (top && normKey(TRACKS[top].title) === nq && normKey(cleanArtist(TRACKS[top].artist)) !== nq) return { artist: cleanArtist(TRACKS[top].artist), tid: top };
+  return !top || !!named || !a || na.includes(nq) || nq.includes(na) ? { artist: a || q } : { artist: a, tid: top };
+}
+async function radioFromQuery(q) {
+  q = String(q || '').trim(); if (!q) return;
+  if (!server.on) { toast('Radio needs a connection to your Murmur server.'); return; }
+  const key = q.toLowerCase();
+  if (!cat.results.has(key)) { try { cat.results.set(key, catIds((await api('GET', 'api/catalog/search?q=' + encodeURIComponent(key))).items || [])); } catch (e) {} }
+  const seed = radioSeedFor(q);
+  startRadio(seed.artist, seed.tid);
+}
+// Big "Start radio" button on search results.
+function radioCtaHTML(q) {
+  if (!server.on) return '';
+  const seed = radioSeedFor(q);
   const btn = (attrs, title, sub) => `<button class="radio-cta" ${attrs}>${icon('radio')}<span><b>${title}</b><small>${sub}</small></span></button>`;
-  return isArtist
-    ? btn(`data-act="artist-radio" data-id="${esc(a || q)}"`, `Start ${esc(a || q)} Radio`, 'Endless songs like this artist. Likes steer it.')
-    : btn(`data-act="radio-song" data-tid="${esc(top)}"`, 'Start radio', `Endless songs like “${esc(TRACKS[top].title)}” by ${esc(a)}`);
+  return seed.tid
+    ? btn(`data-act="radio-song" data-tid="${esc(seed.tid)}"`, 'Start radio', `Endless songs like “${esc(TRACKS[seed.tid].title)}” by ${esc(seed.artist)}`)
+    : btn(`data-act="artist-radio" data-id="${esc(seed.artist)}"`, `Start ${esc(seed.artist)} Radio`, 'Endless songs like this artist. Likes steer it.');
 }
 function radioChipsHTML() {
   if (!server.on) return '';
@@ -3494,7 +3571,7 @@ function closeDrop() {
 function pickDrop(k) {
   const it = drop.items[k], input = $('#tq'); if (!it) return;
   if (it.kind === 'song') { closeDrop(); input.blur(); playFrom('search', input.value.trim(), it.i); return; }
-  if (it.kind === 'radio') { closeDrop(); input.blur(); startRadio(input.value.trim()); return; }
+  if (it.kind === 'radio') { closeDrop(); input.blur(); radioFromQuery(input.value); return; }
   if (it.kind === 'sugg') input.value = it.s;
   submitSearch(input.value);
 }
@@ -3697,6 +3774,10 @@ function buildShell() {
       <button class="nav-btn" data-act="nav" data-to="home">${icon('home')}Home</button>
       <button class="nav-btn" data-act="nav" data-to="search">${icon('search')}Search</button>
     </nav>
+    <section class="panel stations" aria-label="Your radio stations">
+      <div class="lib-head"><h2><button class="lib-title" data-act="nav" data-to="stations" title="Open Your radio stations">${icon('radio')}Your radio stations</button></h2><button class="icon-btn" data-act="new-station" aria-label="Create radio station" title="Create radio station">${icon('plus')}</button></div>
+      <div class="lib-list st-list" id="sideStations"></div>
+    </section>
     <section class="panel library" aria-label="Your library">
       <div class="lib-head"><h2><button class="lib-title" data-act="nav" data-to="library" title="Open Your Library to select, delete or restore items">${icon('library')}Your Library</button></h2><button class="icon-btn" data-act="new-pl" aria-label="Create playlist" title="Create playlist">${icon('plus')}</button></div>
       <div class="chips" id="libChips"></div>
@@ -3760,6 +3841,7 @@ function buildShell() {
   <nav class="bottom-nav" aria-label="Sections">
     <button data-act="nav" data-to="home">${icon('home')}Home</button>
     <button data-act="nav" data-to="search">${icon('search')}Search</button>
+    <button data-act="nav" data-to="stations">${icon('radio')}Radio</button>
     <button data-act="nav" data-to="library">${icon('library')}Your Library</button>
   </nav>`;
   $('#full').innerHTML = `<div class="full-in">
@@ -3793,6 +3875,7 @@ function render() {
   else if (v.name === 'library') el.innerHTML = viewLibrary();
   else if (v.name === 'queue') el.innerHTML = viewQueue();
   else if (v.name === 'lyrics') el.innerHTML = viewLyrics();
+  else if (v.name === 'stations') el.innerHTML = viewStations();
   else if (v.name === 'people') el.innerHTML = viewPeople();
   else if (v.name === 'member') el.innerHTML = viewMember(v.id);
   else if (v.name === 'sources') el.innerHTML = viewMySources();
@@ -3808,7 +3891,7 @@ function render() {
 function renderSidebar() {
   $('#libChips').innerHTML = chipsHTML();
   $('#sideLib').innerHTML = libEntries().map(e => libItem(e, false)).join('');
-  highlight();
+  renderStations(); highlight();
 }
 /* Each page gets its own address (#/album/…, #/search/…), so the browser's Back and Forward move between
    pages and a refresh opens the same page, scrolled to the same spot. */
@@ -3826,7 +3909,7 @@ function viewFromHash() {
   const name = p[0], rest = p.slice(1).join('/');
   let arg = ''; try { arg = decodeURIComponent(rest); } catch (e) { arg = rest; }
   if (name === 'search') return { view: { name: 'search' }, q: arg };
-  if (['library', 'queue', 'people', 'sources'].includes(name)) return { view: { name } };
+  if (['library', 'queue', 'people', 'sources', 'stations'].includes(name)) return { view: { name } };
   if (name === 'member' && arg) return { view: { name: 'member', id: arg } };
   if (name === 'mlist' && arg) return { view: { name: 'member', id: arg.split('~')[0] } };   // reopen their library after a refresh
   if (name && rest) {
@@ -4631,6 +4714,10 @@ function act(el, e) {
     case 'radio-not': radioNotThis(); break;
     case 'artist-radio': startRadio(d.id); break;
     case 'radio-song': startRadio('', d.tid); break;
+    case 'new-station': newStation(); break;
+    case 'station-artist': closeModal(); startRadio(d.id); break;
+    case 'station-play': playStation(d.id); break;
+    case 'station-del': deleteStation(d.id); break;
     case 'radio-cur': if (!state.current) { toast('Play a song first, then start a radio from it.'); break; } $('#full').hidden = true; startRadio('', state.current); break;
     case 'gp-make': makeGenrePlaylist(d.g, true); break;
     case 'gp-all': {

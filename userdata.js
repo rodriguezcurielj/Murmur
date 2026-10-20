@@ -9,7 +9,8 @@ const path = require('path');
 const KEYS = {
   liked: 'array', playlists: 'array', recent: 'array', plays: 'object',
   hidden: 'array', hiddenCols: 'array', ytTracks: 'array', ytRecent: 'array', spTracks: 'array', genres: 'object',
-  history: 'array', home: 'object'   // songs played lately; how Home is set up
+  history: 'array', home: 'object',   // songs played lately; how Home is set up
+  stations: 'array'   // saved radio stations
 };
 const MAX_BYTES = 4 * 1024 * 1024;   // per value; a very large library still fits easily
 
