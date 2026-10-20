@@ -412,6 +412,15 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .text-btn{display:inline-flex;align-items:center;gap:6px}
 .text-btn svg{width:16px;height:16px}
+.radio-cta{display:flex;align-items:center;gap:12px;width:100%;max-width:520px;margin:2px 0 18px;padding:12px 16px;border-radius:var(--r);background:var(--accent);color:var(--accent-ink);text-align:left}
+.radio-cta:hover{filter:brightness(1.08)}
+.radio-cta svg{width:30px;height:30px;flex:none}
+.radio-cta b{display:block;font-size:16px}
+.radio-cta small{display:block;font-size:13px;opacity:.8}
+.radio-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.radio-chips .chip{display:inline-flex;align-items:center;gap:6px}
+.radio-chips .chip svg{width:14px;height:14px}
+.full-radio{margin:4px auto 0}
 .lib-title{display:flex;align-items:center;gap:12px;font-weight:700;color:var(--muted)}
 .lib-title:hover{color:var(--fg)}
 .lib-title.on{color:var(--fg)}
@@ -3240,6 +3249,7 @@ const HOME_SECTIONS = [
 const HOME_ACTIONS = {
   'sp-import': ['Import from Spotify', 'plus', 'sp-import', '', () => server.on],
   'go-search': ['Search', 'search', 'go-search', '', () => true],
+  radio: ['Start radio', 'radio', 'nav', 'search', () => server.on],
   library: ['Your Library', 'library', 'nav', 'library', () => true],
   queue: ['Queue', 'queue', 'nav', 'queue', () => true],
   upload: ['Upload music', 'upload', 'upload', '', () => canEditMusic()],
@@ -3261,7 +3271,7 @@ function homePrefs() {
   return { order: [...order, ...known.filter(k => !order.includes(k))], off: p.off || [], shortcuts: Array.isArray(p.shortcuts) ? p.shortcuts : null };
 }
 const splitKey = k => { const i = k.indexOf(':'); return [k.slice(0, i), k.slice(i + 1)]; };
-const autoShortcuts = () => ['sp-import', 'go-search', 'library', 'queue', 'admin', 'settings', 'playback'].map(k => 'act:' + k).filter(scOk);
+const autoShortcuts = () => ['sp-import', 'go-search', 'radio', 'library', 'queue', 'admin', 'settings', 'playback'].map(k => 'act:' + k).filter(scOk);
 // Saved shortcuts (older ones could be playlists; those are dropped)
 function myShortcuts() {
   const p = homePrefs().shortcuts;
@@ -3381,6 +3391,27 @@ function ytResultsHTML(q) {
   return `<div class="shelf-head"><h2>From YouTube</h2>${shown.length ? `<div class="head-actions"><p>${plural(shown.length, 'song')}</p>${selBtn('ytq', key)}</div>` : ''}</div>
     ${shown.length ? trackList(shown, 'ytq', key, { head: false }) : '<p class="small">YouTube found no songs for that.</p>'}`;
 }
+// Big "Start radio" button on search results: the artist you searched, or the top song's artist.
+function radioCtaHTML(q) {
+  if (!server.on) return '';
+  const ids = (cat.results.get(q.toLowerCase()) || []).concat(searchTracks(q)).filter(id => TRACKS[id] && visible(id));
+  const top = ids[0], nq = normKey(q);
+  // An artist that matches the search, also when they're only featured on the songs (Eslabon Armado, Peso Pluma).
+  const named = ids.slice(0, 10).flatMap(id => String(TRACKS[id].artist).split(/\s*(?:,|&|\/|;|\bx\b|\bfeat\.?|\bft\.?|\bwith\b|\by\b)\s*/i))
+    .map(x => x.trim()).find(x => x && nq && (normKey(x) === nq || (nq.length > 3 && normKey(x).includes(nq))));
+  const a = named || (top ? cleanArtist(TRACKS[top].artist) : ''), na = normKey(a);
+  const isArtist = !top || !!named || !a || na.includes(nq) || nq.includes(na);
+  const btn = (attrs, title, sub) => `<button class="radio-cta" ${attrs}>${icon('radio')}<span><b>${title}</b><small>${sub}</small></span></button>`;
+  return isArtist
+    ? btn(`data-act="artist-radio" data-id="${esc(a || q)}"`, `Start ${esc(a || q)} Radio`, 'Endless songs like this artist. Likes steer it.')
+    : btn(`data-act="radio-song" data-tid="${esc(top)}"`, 'Start radio', `Endless songs like “${esc(TRACKS[top].title)}” by ${esc(a)}`);
+}
+function radioChipsHTML() {
+  if (!server.on) return '';
+  const artists = topArtists().slice(0, 10);
+  return `<div class="shelf-head"><h2>Start a radio</h2></div><p class="small" style="margin:-6px 0 10px">Endless music like an artist you love. Or search any artist or song and tap Start radio.</p>`
+    + (artists.length ? `<div class="radio-chips">${artists.map(a => `<button class="chip" data-act="artist-radio" data-id="${esc(a)}">${icon('radio')}${esc(a)}</button>`).join('')}</div>` : '');
+}
 function searchResultsHTML() {
   const q = state.search.trim();
   if (!q) {
@@ -3390,7 +3421,7 @@ function searchResultsHTML() {
       return `<div class="gt" style="background:${a.colors[1]}" data-act="open" data-type="genre" data-id="${k}" role="button" tabindex="0"><span>${g.label}</span><small>${g.blurb}</small><img src="${a.cover}" alt=""></div>`;
     }).join('');
     return `<h1 class="greet">Search</h1><p class="small" style="margin:-8px 0 8px">Use the search bar at the top to find songs in your library${yt.enabled ? ' and on YouTube' : ''}.</p>`
-      + (tiles ? `<div class="shelf-head"><h2>Browse all</h2></div><div class="genres">${tiles}</div>` : '');
+      + radioChipsHTML() + (tiles ? `<div class="shelf-head"><h2>Browse all</h2></div><div class="genres">${tiles}</div>` : '');
   }
   const ql = q.toLowerCase();
   const tracks = searchTracks(q).filter(id => !id.startsWith('yt-'));   // YouTube songs are listed in their own section
@@ -3400,6 +3431,7 @@ function searchResultsHTML() {
     ? `<div class="shelf-head"><h2>Your music</h2><div class="head-actions"><p>${plural(tracks.length, 'song')}</p>${selBtn('search', q)}</div></div>${trackList(tracks, 'search', q, { head: false })}`
     : `<div class="shelf-head"><h2>Your music</h2></div><p class="small">No songs in your library match “${esc(q)}”.</p>`;
   return `<h1 class="greet search-title">Results for “${esc(q)}”</h1>
+  ${radioCtaHTML(q)}
   ${mine}
   ${catalogResultsHTML(q)}
   ${server.on && canEditMusic() && srcs.ready ? `<div class="yt-search-row"><button class="text-btn" data-act="src-search" data-q="${esc(q)}">${icon('download')}<span>Search download sources</span></button><span class="small">Songs you’re allowed to keep, from ${esc(srcs.list.filter(x => x.ready).map(x => x.name).join(', '))}.</span></div>` : ''}
@@ -3449,6 +3481,7 @@ function renderDrop() {
   if (sugg.length) {
     html += `<div class="drop-h">Suggestions from YouTube</div>` + sugg.map(s => opt(`${icon('search')}<span class="ell">${esc(s)}</span>`, 'drop-sugg')).join('');
   }
+  if (server.on) { drop.items.splice(drop.items.length - 1, 0, { kind: 'radio' }); html += opt(`${icon('radio')}<span class="ell">Start <b>“${esc(q)}”</b> radio</span>`, 'drop-radio'); }
   html += opt(`${icon('search')}<span class="ell">Search for <b>“${esc(q)}”</b> in your music and the song catalog</span><kbd>Enter</kbd>`, 'drop-all');
   el.innerHTML = html; el.hidden = false;
   input.setAttribute('aria-expanded', 'true');
@@ -3461,6 +3494,7 @@ function closeDrop() {
 function pickDrop(k) {
   const it = drop.items[k], input = $('#tq'); if (!it) return;
   if (it.kind === 'song') { closeDrop(); input.blur(); playFrom('search', input.value.trim(), it.i); return; }
+  if (it.kind === 'radio') { closeDrop(); input.blur(); startRadio(input.value.trim()); return; }
   if (it.kind === 'sugg') input.value = it.s;
   submitSearch(input.value);
 }
@@ -3705,6 +3739,7 @@ function buildShell() {
     </div>
     <div class="p-right">
       <button class="icon-btn" data-act="pb-open" aria-label="Playback settings" title="Playback settings">${icon('eq')}</button>
+      <button class="icon-btn" data-act="radio-cur" aria-label="Start radio from this song" title="Start radio from this song">${icon('radio')}</button>
       <button class="icon-btn" data-act="nav" data-to="lyrics" id="lyBtn" aria-label="Lyrics">${icon('lyrics')}</button>
       <button class="icon-btn" data-act="nav" data-to="queue" id="qBtn" aria-label="Queue">${icon('queue')}</button>
       <button class="icon-btn" data-act="np-toggle" id="npBtn" aria-label="Now playing panel">${icon('panel')}</button>
@@ -3743,6 +3778,7 @@ function buildShell() {
       <button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
     <div class="full-seek"><input type="range" data-seek id="fSeek" min="0" max="1000" value="0" aria-label="Seek"><div class="times"><span data-pos>0:00</span><span data-dur>0:00</span></div></div>
     <div class="controls big">${ctrls()}</div>
+    <button class="text-btn full-radio" data-act="radio-cur">${icon('radio')}<span>Start radio from this song</span></button>
     <p class="small" id="fFacts"></p>
   </div>`;
 }
@@ -4594,6 +4630,8 @@ function act(el, e) {
     case 'col-play': playFrom(d.type, d.id, +d.i); break;
     case 'radio-not': radioNotThis(); break;
     case 'artist-radio': startRadio(d.id); break;
+    case 'radio-song': startRadio('', d.tid); break;
+    case 'radio-cur': if (!state.current) { toast('Play a song first, then start a radio from it.'); break; } $('#full').hidden = true; startRadio('', state.current); break;
     case 'gp-make': makeGenrePlaylist(d.g, true); break;
     case 'gp-all': {
       const made = likedGenreSuggestions().slice(0, 8).map(x => makeGenrePlaylist(x.genre, false)).filter(Boolean);
