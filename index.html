@@ -136,7 +136,7 @@ body.drag-selecting .tracks{touch-action:none}
 .gp:hover span{background:var(--hover)}
 .gp input:checked+span{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .gp input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
-.lib-list{overflow:auto;min-height:0;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin}
+.lib-list{overflow-y:auto;overflow-x:hidden;overscroll-behavior-x:none;min-height:0;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin}
 .lib-item{display:flex;align-items:center;gap:12px;padding:6px 8px;border-radius:8px;cursor:pointer;min-width:0}
 .lib-item:hover{background:var(--raise)}
 .lib-item.on{background:var(--hover)}
@@ -906,7 +906,7 @@ body.in-radio .radio-only{display:grid!important}
 @media (max-width:760px){
   .app,.app.np-on{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto auto;padding:0;gap:0}
   .sidebar{display:none}
-  .main{grid-column:1;border-radius:0;background:var(--bg)}
+  .main{grid-column:1;border-radius:0;background:var(--bg);overflow-x:hidden;overscroll-behavior-x:none}   /* pages only scroll up and down on phones */
   .topbar{padding:10px 16px;background:color-mix(in srgb,var(--bg) 82%,transparent)}
   .m-brand{display:flex}
   .view{padding:4px 16px 24px}
