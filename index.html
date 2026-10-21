@@ -1143,6 +1143,7 @@ const STROKE = {
   heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z',
   shuffle: 'M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5',
   repeat: 'M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3',
+  versions: 'M7 3 3 7l4 4M3 7h14M17 13l4 4-4 4M21 17H7',
   volume: 'M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13',
   mute: 'M11 5 6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6',
   queue: 'M4 6h16M4 12h16M4 18h10',
@@ -4290,6 +4291,7 @@ function buildShell() {
       <div class="seek-row"><span data-pos>0:00</span><input type="range" data-seek id="pSeek" min="0" max="1000" value="0" aria-label="Seek"><span data-dur>0:00</span></div>
     </div>
     <div class="p-right">
+      <button class="icon-btn" data-act="cur-ver" id="verBtn" hidden aria-label="Choose a YouTube version" title="Choose a YouTube version">${icon('versions')}</button>
       <button class="icon-btn" data-act="pb-open" aria-label="Playback settings" title="Playback settings">${icon('eq')}</button>
       <button class="icon-btn" data-act="radio-cur" aria-label="Start radio from this song" title="Start radio from this song">${icon('radio')}</button>
       <button class="icon-btn" data-act="nav" data-to="lyrics" id="lyBtn" aria-label="Lyrics">${icon('lyrics')}</button>
@@ -4542,6 +4544,7 @@ function updatePlayerUI() {
     $('#pTitle').textContent = t.title;
     $$('#pArtist,#fArtist').forEach(b => { b.textContent = t.artist; b.dataset.id = t.artist; });
     $$('.cur-like,.cur-down').forEach(b => b.dataset.tid = t.id);
+    $('#verBtn').hidden = !(t.sp && yt.enabled);   // catalog songs play a YouTube upload you can swap
     $('#fCover').src = tCover(t.id); $('#fCover').alt = t.album;
     $('#fTitle').textContent = t.title;
     $('#fCtx').textContent = state.ctx ? state.ctx.title : t.album;
@@ -5246,6 +5249,7 @@ function act(el, e) {
     case 'my-src-key-remove': setMySource(d.id, { key: '' }); break;
     case 'src-key-remove': setSource(d.id, { key: '' }); break;
     case 'm-spver': chooseVersion(d.tid); break;
+    case 'cur-ver': chooseVersion(state.current); break;
     case 'sp-key-remove':
       api('DELETE', 'api/settings/spotify').then(() => { sp.clientId = ''; sp.fullLinks = false; toast('Spotify setup removed. Imported playlists stay.'); render(); }).catch(err => toast(err.message));
       break;
@@ -7356,6 +7360,7 @@ setInterval(() => {
   if (mode === 'ok') {
     await connectServer();
     try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.keys = ys.keys || []; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
+    { const t = TRACKS[state.current], b = $('#verBtn'); if (b) b.hidden = !(t && t.sp && yt.enabled); }   // the song from before the refresh
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
     await loadSpotify();
     queueGenreGuess();
