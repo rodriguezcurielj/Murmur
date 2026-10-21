@@ -431,6 +431,41 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .radio-chips .chip{display:inline-flex;align-items:center;gap:6px}
 .radio-chips .chip svg{width:14px;height:14px}
 .full-radio{margin:4px auto 0}
+.radio-only{display:none!important}
+body.in-radio .radio-only{display:grid!important}
+.full-likes{display:flex;gap:4px;flex:none}
+.pr{max-width:980px}
+.pr-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:8px 0 18px}
+.pr-head h1{margin:2px 0 4px;font:800 clamp(30px,5vw,52px)/1.05 var(--font-display,inherit)}
+.pr-acts{display:flex;gap:8px;flex-wrap:wrap}
+.pr-now{display:flex;gap:28px;align-items:center;padding:22px;border-radius:16px;margin-bottom:26px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,var(--raise)),var(--panel) 70%)}
+.pr-cover{width:min(260px,34vw);aspect-ratio:1;object-fit:cover;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);flex:none}
+.pr-info{min-width:0;flex:1}
+.pr-title{font:800 clamp(22px,3.2vw,34px)/1.15 var(--font-display,inherit);margin:4px 0 2px;overflow-wrap:anywhere}
+.pr-artist{color:var(--muted);font-weight:600;font-size:16px;max-width:100%}
+.pr-artist:hover{color:var(--fg);text-decoration:underline}
+.pr-ctl{display:flex;align-items:center;gap:14px;margin:20px 0 12px}
+.pr-btn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);color:var(--fg);background:color-mix(in srgb,var(--bg) 40%,transparent)}
+.pr-btn:hover:not(:disabled){border-color:var(--fg)}
+.pr-btn:disabled{opacity:.35;cursor:default}
+.pr-btn svg{width:22px;height:22px}
+.pr-up.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.pr-down:hover:not(:disabled){color:var(--danger);border-color:var(--danger)}
+.pr-play{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--fg);color:var(--bg)}
+.pr-play svg{width:26px;height:26px}
+.pr-play:hover{transform:scale(1.04)}
+.pr-hint svg{width:13px;height:13px;vertical-align:-2px}
+@media (max-width:760px){
+  .pr-head{margin:0 0 12px;gap:10px}
+  .pr-head h1{font-size:30px}
+  .pr-acts .text-btn{padding:6px 12px;font-size:13px}
+  .pr-now{flex-direction:column;align-items:stretch;text-align:center;padding:14px 12px;gap:10px;margin-bottom:18px}
+  .pr-cover{width:min(170px,48vw);align-self:center}
+  .pr-title{font-size:22px}
+  .pr-ctl{justify-content:center;margin:12px 0 8px}
+  .pr-hint{display:none}
+  .pr-artist{margin:0 auto}
+}
 .stations{flex:none;display:flex;flex-direction:column;padding:12px 8px 8px;min-height:0;max-height:32vh}
 .st-list{min-height:0;overflow-x:hidden}
 .st-ic{display:grid;place-items:center;background:linear-gradient(140deg,#c2543b 0%,#ffb070 100%);color:#fff}
@@ -986,6 +1021,7 @@ const STROKE = {
   queue: 'M4 6h16M4 12h16M4 18h10',
   lyrics: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21',
   radio: 'M4.5 9.5a10 10 0 0 1 15 0M7.5 12.5a6 6 0 0 1 9 0M12 16a1 1 0 1 0 0 2 1 1 0 0 0 0-2z',
+  thumbUp: 'M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3',
   thumbDown: 'M10 15v4a3 3 0 0 0 3 3l4-9V2H5.7a2 2 0 0 0-2 1.7l-1.4 9A2 2 0 0 0 4.3 15H10zM17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3',
   chev: 'M9 6l6 6-6 6',
   camera: 'M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
@@ -2014,14 +2050,14 @@ const sleepLabel = () => sleep.endOfTrack ? 'End of this song' : sleep.until ? `
 /* ---------- Radio (like Pandora): endless songs like a song or an artist you pick ----------
    A quarter are the artist's own hits, the rest similar artists' top songs. More are added as it plays.
    Like a song and the station leans toward that artist; "Not this artist" stops playing them on this station. */
-const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [], stationId: '' };
+const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [], stationId: '', down: new Set(), shownTid: null };
 const radioKey = t => cleanArtist(t.artist) + '|' + t.title;
 async function fetchRadio() {
-  const exclude = radio.ids.map(id => TRACKS[id]).filter(Boolean).map(radioKey);
+  const exclude = [...radio.ids.map(id => TRACKS[id]).filter(Boolean).map(radioKey), ...radio.down];
   const r = await api('POST', 'api/radio', { artist: radio.seed.artist, exclude, also: radio.more.slice(-3) });
   if (r.picture && !radio.seed.cover) radio.seed.cover = r.picture;
   radio.seed.artist = r.artist || radio.seed.artist;
-  return (r.items || []).filter(x => !radio.banned.has(normKey(cleanArtist(x.artist))))
+  return (r.items || []).filter(x => !radio.banned.has(normKey(cleanArtist(x.artist))) && !radio.down.has(radioKey(x)))
     .map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
 }
 async function startRadio(artist, tid, saved) {
@@ -2031,7 +2067,9 @@ async function startRadio(artist, tid, saved) {
   if (!artist || /^(unknown artist|youtube)$/i.test(artist)) { toast('Murmur doesn’t know who sings this, so it can’t make a radio for it.'); return; }
   const t = tid && TRACKS[tid];
   radio.seed = { artist, title: t ? t.title : (saved && saved.title) || '', cover: t ? tCover(tid) : (saved && saved.cover) || '' };
-  radio.ids = t ? [tid] : []; radio.banned = new Set(); radio.more = []; radio.loading = true;
+  const learned = (saved && saved.id && stations().find(x => x.id === saved.id)) || stations().find(x => x.id === stationId(artist, radio.seed.title)) || {};
+  radio.ids = t ? [tid] : []; radio.banned = new Set(learned.banned || []); radio.more = [...(learned.seeds || []), ...(learned.upArtists || [])].slice(-6);
+  radio.down = new Set(learned.down || []); radio.loading = true;
   toast(`Starting ${artist} Radio…`);
   try {
     const ids = await fetchRadio();
@@ -2050,9 +2088,87 @@ const stationId = (artist, title) => 'st-' + normKey(artist) + (title ? '~' + no
 function saveStation(seed, tid) {
   const id = stationId(seed.artist, seed.title), old = stations().find(x => x.id === id) || {};
   radio.stationId = id;
-  store.set('stations', [{ id, artist: seed.artist, title: seed.title || '', tid: tid || old.tid || '', cover: seed.cover || old.cover || '', at: Date.now() },
+  store.set('stations', [{ ...old, id, artist: seed.artist, title: seed.title || '', tid: tid || old.tid || '', cover: seed.cover || old.cover || '', at: Date.now() },
     ...stations().filter(x => x.id !== id)].slice(0, 50));
   renderStations();
+}
+// What the playing station learns: thumbs up (artists), thumbs down (songs), added variety, banned artists.
+function updateStation(fn) {
+  const list = stations(), st = list.find(x => x.id === radio.stationId); if (!st) return;
+  fn(st); store.set('stations', list);
+}
+const inRadio = () => !!(state.ctx && state.ctx.type === 'radio');
+function radioThumbUp(tid) {
+  const t = TRACKS[tid]; if (!t) return;
+  if (state.liked.has(tid)) { setLiked([tid], false); toast('Thumbs up taken back (removed from Liked Songs)'); refreshRadioView(); return; }
+  setLiked([tid], true);
+  const a = cleanArtist(t.artist);
+  if (inRadio() && a) {
+    if (!radio.more.includes(a)) radio.more.push(a);
+    updateStation(st => { st.upArtists = [...new Set([...(st.upArtists || []), a])].slice(-12); st.ups = (st.ups || 0) + 1; });
+  }
+  toast(inRadio() ? `Thumbs up: saved to Liked Songs, more like ${a} on this station` : 'Added to Liked Songs');
+  refreshRadioView();
+}
+function radioThumbDown(tid) {
+  const t = TRACKS[tid]; if (!t || !inRadio()) return;
+  const k = radioKey(t);
+  radio.down.add(k);
+  updateStation(st => { st.down = [...new Set([...(st.down || []), k])].slice(-300); });
+  if (state.liked.has(tid)) setLiked([tid], false);
+  // Take it out of what's coming up, then skip it.
+  radio.ids = radio.ids.filter(id => id === state.current || radioKey(TRACKS[id] || {}) !== k);
+  toast('Got it. That song won’t play on this station again.');
+  if (tid === state.current) next(false);
+  extendRadio();
+}
+function radioAddVariety() {
+  if (!inRadio()) return;
+  openModal({ title: 'Add variety', confirm: 'Add to station', html: `
+    <p class="small">Mix another artist into ${esc(radio.seed.artist)} Radio. Their songs and ones like them start playing in a few songs.</p>
+    <div class="field"><label for="varQ">Artist</label><input id="varQ" name="a" maxlength="80" autocomplete="off" placeholder="For example Fuerza Regida" required></div>`,
+    onSubmit: fd => {
+      const a = String(fd.get('a') || '').trim(); if (!a) return;
+      radio.more = [...radio.more.filter(x => normKey(x) !== normKey(a)), a, a];   // counted twice so it's in the next batch
+      updateStation(st => { st.seeds = [...new Set([...(st.seeds || []), a])].slice(-8); });
+      toast(`Adding ${a} to this station…`);
+      extendRadio(true);
+    } });
+}
+function refreshRadioView() { if (state.view.name === 'collection' && state.view.type === 'radio') render(); }
+// Pandora-style station page: the song playing now, big, with thumbs down / play / skip / thumbs up.
+function viewRadio(col) {
+  const cur = inRadio() && TRACKS[state.current] ? state.current : col.tracks[0];
+  radio.shownTid = cur;
+  const t = TRACKS[cur], st = stations().find(x => x.id === radio.stationId) || {};
+  const liked = !!t && state.liked.has(cur);
+  const ups = col.tracks.filter(id => state.liked.has(id));
+  const seeds = [radio.seed.artist, ...(st.seeds || [])];
+  const now = t ? `<div class="pr-now">
+      <img class="pr-cover" src="${esc(tCover(cur))}" alt="">
+      <div class="pr-info">
+        <div class="eyebrow">${inRadio() ? 'Now playing' : 'First up'}</div>
+        <div class="pr-title">${esc(t.title)}</div>
+        <button class="pr-artist ell" data-act="open" data-type="artist" data-id="${esc(cleanArtist(t.artist))}">${esc(t.artist)}</button>
+        <div class="pr-ctl">
+          <button class="pr-btn pr-down" data-act="radio-down" data-tid="${cur}" ${inRadio() ? '' : 'disabled'} aria-label="Thumbs down: skip it and never play it on this station" title="Thumbs down">${icon('thumbDown')}</button>
+          ${inRadio() ? `<button class="pr-play" data-act="toggle" data-play-icon aria-label="Play">${icon(Engine.playing ? 'pause' : 'play')}</button>`
+            : `<button class="pr-play" data-act="col-play" data-type="radio" data-id="station" data-i="0" aria-label="Play station">${icon('play')}</button>`}
+          <button class="pr-btn" data-act="next" ${inRadio() ? '' : 'disabled'} aria-label="Skip" title="Skip">${icon('next')}</button>
+          <button class="pr-btn pr-up${liked ? ' on' : ''}" data-act="radio-up" data-tid="${cur}" aria-pressed="${liked}" aria-label="Thumbs up: save to Liked Songs and play more like it" title="Thumbs up">${icon('thumbUp')}</button>
+        </div>
+        <p class="small pr-hint">${icon('thumbUp')} saves the song to <b>Liked Songs</b> and plays more like it. ${icon('thumbDown')} skips it for good on this station.</p>
+      </div></div>` : '';
+  return `<div class="pr">
+    <div class="pr-head"><div><div class="eyebrow">Radio station</div><h1>${esc(radio.seed.artist)} Radio</h1>
+      <p class="small">Based on ${seeds.map(a => `<b>${esc(a)}</b>`).join(', ')}${ups.length ? ` · ${ups.length} thumbs up` : ''}</p></div>
+      <div class="pr-acts"><button class="text-btn" data-act="radio-variety" ${inRadio() ? '' : 'disabled'}>${icon('plus')}<span>Add variety</span></button>
+      <button class="text-btn" data-act="radio-not" ${inRadio() ? '' : 'disabled'}>${icon('close')}<span>Not this artist</span></button></div></div>
+    ${now}
+    ${shelf('Thumbs up on this station', ups.map(id => songCard(id, 'liked', 'liked', getCollection('liked', 'liked').tracks.indexOf(id))), 'Saved in Liked Songs')}
+    <div class="shelf-head"><h2>Station songs</h2><p>Keeps going as you listen</p></div>
+    ${trackList(col.tracks, 'radio', 'station')}
+  </div>`;
 }
 function playStation(id) {
   const st = stations().find(x => x.id === id); if (!st) return;
@@ -2094,14 +2210,19 @@ function viewStations() {
     ${radioChipsHTML()}`;
 }
 // Near the end of the station: more songs, so it never stops.
-async function extendRadio() {
+async function extendRadio(force) {
   if (radio.loading || !radio.seed || !(state.ctx && state.ctx.type === 'radio')) return;
-  if (state.pos < state.order.length - 4) return;
+  if (!force && state.pos < state.order.length - 4) return;
   radio.loading = true;
   try {
     const fresh = (await fetchRadio()).filter(id => !radio.ids.includes(id));
     radio.ids.push(...fresh);
-    if (state.ctx && state.ctx.type === 'radio') fresh.forEach(id => { state.list.push(id); state.order.push(state.list.length - 1); });
+    if (state.ctx && state.ctx.type === 'radio') {
+      fresh.forEach(id => state.list.push(id));
+      const idx = fresh.map((id, i) => state.list.length - fresh.length + i);
+      // Added variety plays soon (after the next 2 songs); otherwise new songs go at the end.
+      if (force) state.order.splice(Math.min(state.pos + 3, state.order.length), 0, ...idx); else state.order.push(...idx);
+    }
     refreshQueueView();
     if (state.view.name === 'collection' && state.view.type === 'radio') render();
   } catch (e) {}
@@ -2111,6 +2232,7 @@ function radioNotThis() {
   const t = TRACKS[state.current]; if (!t || !(state.ctx && state.ctx.type === 'radio')) return;
   const a = cleanArtist(t.artist), k = normKey(a);
   radio.banned.add(k);
+  updateStation(st => { st.banned = [...new Set([...(st.banned || []), k])]; });
   // Take their other songs out of what's coming up.
   const keep = (id, i) => i <= state.pos || normKey(cleanArtist((TRACKS[id] || {}).artist)) !== k;
   const order = state.order.filter((oi, i) => keep(state.list[oi], i));
@@ -3598,6 +3720,7 @@ function viewCollection(type, id) {
   // Artist and catalog album pages fill in from the music catalog (only fetched when the page is opened).
   if (type === 'artist') catArtist(cleanArtist(id)); else if (type === 'calbum') catAlbum(id);
   const col = getCollection(type, id);
+  if (col && type === 'radio') return viewRadio(col);
   if (!col) return `<div class="empty"><h2>This is gone</h2>It was deleted or removed. Pick something from your library instead.</div>`;
   const total = col.tracks.reduce((s, t) => s + TRACKS[t].duration, 0);
   const n = col.tracks.length;
@@ -3822,6 +3945,7 @@ function buildShell() {
     <div class="p-left" data-act="expand-m">
       <img class="cover p-cover" id="pCover" alt="" data-act="expand">
       <div class="p-meta"><div class="p-title ell" id="pTitle">Nothing playing</div><button class="p-artist ell" id="pArtist" data-act="open" data-type="artist"></button></div>
+      <button class="icon-btn radio-only cur-down" data-act="radio-down" aria-label="Thumbs down" title="Thumbs down: never play this on this station">${icon('thumbDown')}</button>
       <button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button>
     </div>
     <div class="p-center">
@@ -3867,7 +3991,7 @@ function buildShell() {
     </div>
     <canvas id="viz" aria-hidden="true"></canvas>
     <div class="full-meta"><div><div class="full-title" id="fTitle"></div><button class="full-artist ell" id="fArtist" data-act="open" data-type="artist"></button></div>
-      <button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
+      <span class="full-likes"><button class="icon-btn radio-only cur-down" data-act="radio-down" aria-label="Thumbs down">${icon('thumbDown')}</button><button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></span></div>
     <div class="full-seek"><input type="range" data-seek id="fSeek" min="0" max="1000" value="0" aria-label="Seek"><div class="times"><span data-pos>0:00</span><span data-dur>0:00</span></div></div>
     <div class="controls big">${ctrls()}</div>
     <button class="text-btn full-radio" data-act="radio-cur">${icon('radio')}<span>Start radio from this song</span></button>
@@ -4070,13 +4194,15 @@ function updateLikes() {
 }
 function updatePlayerUI() {
   const t = TRACKS[state.current];
+  document.body.classList.toggle('in-radio', inRadio());
+  if (state.view.name === 'collection' && state.view.type === 'radio' && radio.shownTid !== state.current && inRadio()) render();   // station page shows the new song
   if (state.view.name === 'lyrics' && t && ly.key !== lyKey(t)) render();   // a new song: its lyrics
   if (t) {
     const a = ALBUM_MAP[t.albumId] || UPLOADS;
     $('#pCover').src = tCover(t.id); $('#pCover').alt = t.album;
     $('#pTitle').textContent = t.title;
     $$('#pArtist,#fArtist').forEach(b => { b.textContent = t.artist; b.dataset.id = t.artist; });
-    $$('.cur-like').forEach(b => b.dataset.tid = t.id);
+    $$('.cur-like,.cur-down').forEach(b => b.dataset.tid = t.id);
     $('#fCover').src = tCover(t.id); $('#fCover').alt = t.album;
     $('#fTitle').textContent = t.title;
     $('#fCtx').textContent = state.ctx ? state.ctx.title : t.album;
@@ -4397,7 +4523,7 @@ function setLiked(ids, on) {
 function toggleLike(tid) {
   if (!tid) return;
   const on = !state.liked.has(tid);
-  if (on && state.ctx && state.ctx.type === 'radio' && TRACKS[tid]) { const a = cleanArtist(TRACKS[tid].artist); if (a && !radio.more.includes(a)) radio.more.push(a); }
+  if (on && inRadio() && TRACKS[tid]) { radioThumbUp(tid); return; }
   setLiked([tid], on);
   toast(on ? 'Added to Liked Songs' : 'Removed from Liked Songs');
 }
@@ -4725,6 +4851,9 @@ function act(el, e) {
     case 'artist-radio': startRadio(d.id); break;
     case 'radio-song': startRadio('', d.tid); break;
     case 'new-station': newStation(); break;
+    case 'radio-up': radioThumbUp(d.tid || state.current); break;
+    case 'radio-down': radioThumbDown(d.tid || state.current); break;
+    case 'radio-variety': radioAddVariety(); break;
     case 'station-artist': closeModal(); startRadio(d.id); break;
     case 'station-play': playStation(d.id); break;
     case 'station-del': deleteStation(d.id); break;
