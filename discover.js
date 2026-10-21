@@ -169,8 +169,22 @@ module.exports = function createDiscover(dataDir) {
         const found = await dz('search/artist?limit=1&q=' + encodeURIComponent(artist));
         const a = found.data && found.data[0];
         if (!a) return res.status(404).json({ error: `Couldn’t find ${artist} in the music catalog.` });
-        const own = shuffle(((await dz(`artist/${a.id}/top?limit=25`)).data || []).map(x => toTrack(x, a.name)).filter(x => !exclude.has(keyOf(x)))).slice(0, 6);
-        const similar = await freshSuggestions([a.name, ...more], exclude, 24, []);
+        const own = shuffle(((await dz(`artist/${a.id}/top?limit=50`)).data || []).map(x => toTrack(x, a.name)).filter(x => !exclude.has(keyOf(x)))).slice(0, 6);
+        let similar = await freshSuggestions([a.name, ...more], exclude, 24, []);
+        // A long station runs out of the close artists' hits: reach out to artists similar to those,
+        // then to the charts, so it keeps finding new songs instead of running dry (and looping).
+        if (similar.length < 15) {
+          const skip = new Set([...exclude, ...similar.map(keyOf)]);
+          const near = shuffle(((await dz(`artist/${a.id}/related?limit=20`).catch(() => ({ data: [] }))).data || []).map(r => r.name)).slice(0, 4);
+          similar.push(...await freshSuggestions(near, skip, 24 - similar.length, []));
+        }
+        if (similar.length < 10) {
+          const skip = new Set([...exclude, ...similar.map(keyOf)]);
+          const hit = ((await dz(`artist/${a.id}/top?limit=50`).catch(() => ({ data: [] }))).data || []).find(t => t.album && t.album.id);
+          const album = hit ? await dz('album/' + hit.album.id).catch(() => null) : null;
+          const gid = album && album.genre_id > 0 ? album.genre_id : 0;   // the artist's genre chart, or the overall one
+          similar.push(...await freshSuggestions([], skip, 24 - similar.length, [`chart/${gid}/tracks?limit=100`, 'chart/0/tracks?limit=100']));
+        }
         const items = [], s = similar.slice();
         // One of theirs, then about three similar, so the station sounds like them without repeating them.
         while (own.length || s.length) { if (own.length) items.push(own.shift()); items.push(...s.splice(0, 3)); }

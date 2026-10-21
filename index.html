@@ -1500,7 +1500,7 @@ function renderUploadStatus() {
    and the error people see says what's going on. */
 const NET_ERR = /failed to fetch|networkerror|load failed|network ?error|network connection was lost|err_internet|err_network/i;
 const netError = () => Object.assign(new Error('Can’t reach the Murmur server right now. It may be restarting or your connection dropped. Try again in a moment.'), { network: true });
-const safeToRepeat = (method, url) => method !== 'POST' || /^api\/(genres|discover|catalog|spotify\/(link|profile))/.test(url);
+const safeToRepeat = (method, url) => method !== 'POST' || /^api\/(genres|discover|radio|catalog|spotify\/(link|profile))/.test(url);
 async function api(method, url, body) {
   let r;
   for (let attempt = 1; ; attempt++) {
@@ -2016,6 +2016,12 @@ function restoreResume() {
   const sameList = state.list.length === (r.list || []).length && Array.isArray(r.order) && r.order.length === state.list.length;
   if (sameList) { state.order = r.order.slice(); state.pos = Math.max(0, state.order.indexOf(state.list.indexOf(r.current))); }
   else buildOrder(state.list.indexOf(r.current));
+  state.passPlayed = new Set(state.order.slice(0, state.pos).map(i => state.list[i]));
+  // A radio that was playing: load its station so it keeps adding songs (and never loops back).
+  if (state.ctx && state.ctx.type === 'radio') {
+    getCollection('radio', 'station');
+    if (radio.seed && !radio.ids.length) radio.ids = state.list.slice();
+  }
   state.manual = (r.manual || []).filter(id => TRACKS[id] && visible(id));
   if (TRACKS[r.current].sp) state.resumeAt = r.at > 2 ? r.at : 0;   // its audio source is found after loading
   loadAndPlay(r.current, false);
@@ -2069,7 +2075,7 @@ function resetPlayback() {
   for (const [t, i] of opts) {
     const c = getCollection(t, i);
     if (c && c.tracks.length) {
-      state.ctx = { type: t, id: i, title: c.title }; state.list = c.tracks.slice(); buildOrder(0);
+      state.ctx = { type: t, id: i, title: c.title }; state.list = c.tracks.slice(); state.passPlayed.clear(); buildOrder(0);
       loadAndPlay(curId(), false); return;
     }
   }
@@ -2091,6 +2097,7 @@ const state = {
   npOpen: store.get('npOpen', true), libFilter: 'all', search: '',
   gf: {},         // genre filter per song list: 'type:id' -> genre
   ctx: null, list: [], order: [], pos: 0, manual: [], current: null,
+  passPlayed: new Set(),   // songs that really played since the list started or last came back around
   sel: null,      // { type, id, idx: Set<number>, last } while selecting songs in a list
   libSel: null    // Set of 'type:id' while selecting items in Your Library
 };
@@ -2167,34 +2174,46 @@ const sleepLabel = () => sleep.endOfTrack ? 'End of this song' : sleep.until ? `
    Like a song and the station leans toward that artist; "Not this artist" stops playing them on this station. */
 const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [], stationId: '', down: new Set(), shownTid: null, show: {} };
 const radioKey = t => cleanArtist(t.artist) + '|' + t.title;
-async function fetchRadio() {
-  const exclude = [...radio.ids.map(id => TRACKS[id]).filter(Boolean).map(radioKey), ...radio.down];
-  const r = await api('POST', 'api/radio', { artist: radio.seed.artist, exclude, also: radio.more.slice(-3) });
+// Never asks for a song the station already has, played before (its history, kept across devices),
+// or you played lately anywhere, so it doesn't come back around to the same few songs.
+// "fallback" (when nothing new is left): only skips what's coming up and the last 40 it played.
+async function fetchRadio(fallback) {
+  const st = stations().find(x => x.id === radio.stationId) || {};
+  const hist = (st.hist || []).filter(x => x && x.title).map(x => cleanArtist(x.artist) + '|' + x.title);
+  const keys = ids => ids.map(id => TRACKS[id]).filter(Boolean).map(radioKey);
+  const exclude = fallback
+    ? [...keys(state.order.slice(state.pos).map(i => state.list[i])), ...hist.slice(0, 40), ...radio.down]
+    : [...radio.down, ...hist, ...keys(store.get('history', [])), ...keys(radio.ids.slice().reverse())];   // newest first: the server reads the first 5000
+  const r = await api('POST', 'api/radio', { artist: radio.seed.artist, exclude: [...new Set(exclude)], also: radio.more.slice(-3) });
   if (r.picture && !radio.seed.cover) radio.seed.cover = r.picture;
   radio.seed.artist = r.artist || radio.seed.artist;
   return (r.items || []).filter(x => !radio.banned.has(normKey(cleanArtist(x.artist))) && !radio.down.has(radioKey(x)))
     .map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover'));
 }
-async function startRadio(artist, tid, saved) {
-  if (!server.on) { toast('Radio needs a connection to your Murmur server.'); return; }
-  if (radio.loading) return;
+// auto: started by Autoplay when your music ran out (stays on the page you're on).
+async function startRadio(artist, tid, saved, auto) {
+  if (!server.on) { if (!auto) toast('Radio needs a connection to your Murmur server.'); return false; }
+  if (radio.loading) return false;
   artist = cleanArtist(artist || (TRACKS[tid] && TRACKS[tid].artist) || '');
   if (!artist || /^(unknown artist|youtube)$/i.test(artist)) { toast('Murmur doesn’t know who sings this, so it can’t make a radio for it.'); return; }
   const t = tid && TRACKS[tid];
   radio.seed = { artist, title: t ? t.title : (saved && saved.title) || '', cover: t ? tCover(tid) : (saved && saved.cover) || '' };
   const learned = (saved && saved.id && stations().find(x => x.id === saved.id)) || stations().find(x => x.id === stationId(artist, radio.seed.title)) || {};
   radio.ids = t ? [tid] : []; radio.banned = new Set(learned.banned || []); radio.more = [...(learned.seeds || []), ...(learned.upArtists || [])].slice(-6);
-  radio.down = new Set(learned.down || []); radio.loading = true;
-  toast(`Starting ${artist} Radio…`);
+  radio.down = new Set(learned.down || []); radio.loading = true; radio.waitNext = false;
+  radio.stationId = stationId(artist, radio.seed.title);   // so its history is skipped from the first batch
+  toast(auto ? `Autoplay: ${artist} Radio` : `Starting ${artist} Radio…`);
   try {
-    const ids = await fetchRadio();
+    let ids = await fetchRadio();
+    if (!ids.length && !t) ids = await fetchRadio(true);
     radio.ids = [...new Set([...radio.ids, ...ids])];
     radio.loading = false;
-    if (!radio.ids.length) { toast('Couldn’t find songs for that radio. Try another song or artist.'); return; }
+    if (!radio.ids.length) { if (!auto) toast('Couldn’t find songs for that radio. Try another song or artist.'); return false; }
     saveStation(radio.seed, t ? tid : (saved && saved.tid) || '');
     playFrom('radio', 'station', 0);
-    navigate({ name: 'collection', type: 'radio', id: 'station' });
-  } catch (e) { radio.loading = false; toast(e.message); }
+    if (!auto) navigate({ name: 'collection', type: 'radio', id: 'station' });
+    return true;
+  } catch (e) { radio.loading = false; if (!auto) toast(e.message); return false; }
 }
 /* Your radio stations: every radio you start is kept (newest first) so you can play it again.
    Synced like the rest of your library: { id, artist, title, tid, cover, at } */
@@ -2424,10 +2443,15 @@ function viewStations() {
 // Near the end of the station: more songs, so it never stops.
 async function extendRadio(force) {
   if (radio.loading || !radio.seed || !(state.ctx && state.ctx.type === 'radio')) return;
-  if (!force && state.pos < state.order.length - 4) return;
+  if (!force && state.pos < state.order.length - 8) return;
   radio.loading = true;
   try {
-    const fresh = (await fetchRadio()).filter(id => !radio.ids.includes(id));
+    let fresh = (await fetchRadio()).filter(id => !radio.ids.includes(id));
+    // Nothing new left anywhere: bring back songs from long ago on this station rather than stop or loop.
+    if (!fresh.length) {
+      const soon = new Set(state.order.slice(state.pos).map(i => state.list[i]));
+      fresh = [...new Set(await fetchRadio(true))].filter(id => !soon.has(id));
+    }
     radio.ids.push(...fresh);
     if (state.ctx && state.ctx.type === 'radio') {
       fresh.forEach(id => state.list.push(id));
@@ -2435,10 +2459,14 @@ async function extendRadio(force) {
       // Added variety plays soon (after the next 2 songs); otherwise new songs go at the end.
       if (force) state.order.splice(Math.min(state.pos + 3, state.order.length), 0, ...idx); else state.order.push(...idx);
     }
+    radio.loading = false;
+    // The station had reached its last song and was waiting for these.
+    if (radio.waitNext && inRadio() && state.pos < state.order.length - 1) { radio.waitNext = false; state.pos++; loadAndPlay(curId(), true); }
     refreshQueueView();
     if (state.view.name === 'collection' && state.view.type === 'radio') render();
   } catch (e) {}
   radio.loading = false;
+  if (radio.waitNext && inRadio() && state.pos >= state.order.length - 1) { radio.waitNext = false; Engine.pause(); updatePlayIcons(); highlight(); toast('Couldn’t find more songs for this radio right now. Try again in a moment.'); }
 }
 function radioNotThis() {
   const t = TRACKS[state.current]; if (!t || !(state.ctx && state.ctx.type === 'radio')) return;
@@ -2452,12 +2480,24 @@ function radioNotThis() {
   toast(`OK, no more ${a} on this station`);
   next(false); extendRadio();
 }
+// Autoplay: a radio like the song that just ended. It never runs out and skips what you played lately,
+// so autoplay can't fall into bouncing between the same few songs. Without the server (or a known
+// artist), Discover songs you haven't heard lately, then your Liked Songs.
 function autoplayNext() {
   if (!pbState().autoplay) return false;
-  const played = new Set(state.list);
-  if (server.on && disc.ids.some(id => visible(id) && !played.has(id))) { playFrom('discover', 'mix', disc.ids.findIndex(id => visible(id) && !played.has(id))); toast('Autoplay: similar songs from Discover'); return true; }
+  const t = TRACKS[state.current], a = t && cleanArtist(t.artist);
+  if (server.on && a && !/^(unknown artist|youtube)$/i.test(a)) {
+    startRadio(a, '', null, true).then(ok => { if (!ok) autoplayLocal(); });
+    return true;
+  }
+  return autoplayLocal();
+}
+function autoplayLocal() {
+  const played = new Set([...state.list, ...store.get('history', [])]);
+  const di = disc.ids.findIndex(id => visible(id) && !played.has(id));
+  if (server.on && di >= 0 && !(state.ctx && state.ctx.type === 'discover')) { playFrom('discover', 'mix', di); toast('Autoplay: similar songs from Discover'); return true; }
   const liked = getCollection('liked', 'liked');
-  if (liked && liked.tracks.length && !(state.ctx && state.ctx.type === 'liked')) { playFrom('liked', 'liked', Math.floor(Math.random() * liked.tracks.length)); toast('Autoplay: your Liked Songs'); return true; }
+  if (liked && liked.tracks.length > 3 && !(state.ctx && state.ctx.type === 'liked')) { playFrom('liked', 'liked', Math.floor(Math.random() * liked.tracks.length)); toast('Autoplay: your Liked Songs'); return true; }
   return false;
 }
 function openPlayback() {
@@ -3289,7 +3329,7 @@ const curId = () => state.list[state.order[state.pos]];
 function playFrom(type, id, start) {
   const col = getCollection(type, id); if (!col || !col.tracks.length) return;
   state.ctx = { type, id, title: col.title };
-  state.list = col.tracks.slice();
+  state.list = col.tracks.slice(); state.passPlayed.clear();
   if (start == null) start = state.shuffle ? Math.floor(Math.random() * state.list.length) : 0;
   buildOrder(clamp(start, 0, state.list.length - 1));
   pushRecent(type, id);
@@ -3345,6 +3385,7 @@ function loadAndPlay(tid, autoplay = true) {
     Engine.pause(); state.current = tid; updatePlayerUI(); return;
   }
   state.current = tid;
+  extendRadio();   // radio songs are catalog songs (the branch below), so top the station up here for both
   const st = TRACKS[tid];
   if (st && st.sp) {
     // Imported Spotify song: play your uploaded copy, or its YouTube match.
@@ -3366,7 +3407,6 @@ function loadAndPlay(tid, autoplay = true) {
   updatePlayerUI();
   saveResume();
   prepAhead();
-  extendRadio();
 }
 
 /* ================= taste & YouTube suggestions ================= */
@@ -3374,6 +3414,7 @@ function notePlay(id) {
   const plays = store.get('plays', {});
   plays[id] = (plays[id] || 0) + 1;
   store.set('plays', plays);
+  state.passPlayed.add(id);
   // Songs played lately (Home → Recently played songs)
   store.set('history', [id, ...store.get('history', []).filter(x => x !== id)].slice(0, 50));
   noteYtPlay(id);
@@ -3566,9 +3607,19 @@ function next(auto) {
   if (state.manual.length) { loadAndPlay(state.manual.shift(), true); refreshQueueView(); return; }
   if (!state.order.length) return;
   if (state.pos < state.order.length - 1) { state.pos++; loadAndPlay(curId(), true); }
+  // Radio never goes back to its first songs: it waits for the next batch instead.
+  else if (inRadio() && radio.seed) { radio.waitNext = true; extendRadio(); }
   else {
-    if (auto && state.repeat === 'off' && autoplayNext()) { refreshQueueView(); return; }
-    state.pos = 0; loadAndPlay(curId(), !(auto && state.repeat === 'off'));
+    // Repeat all only loops a list whose songs really play: if just a couple of a bigger list played
+    // (the rest couldn't be found), it doesn't spin on those few. It moves on like the list ended.
+    const loop = state.repeat !== 'off' && (!auto || state.passPlayed.size >= Math.min(4, new Set(state.list).size));
+    if (auto && !loop && autoplayNext()) { refreshQueueView(); return; }
+    state.passPlayed.clear();
+    if (loop && state.shuffle && state.order.length > 2) {   // a new shuffle each time around, not the same order again
+      const last = state.order[state.pos];
+      state.order = [...shuffleArr(state.order.filter(i => i !== last)), last];
+    }
+    state.pos = 0; loadAndPlay(curId(), !auto || loop);
   }
   refreshQueueView();
 }
