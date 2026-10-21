@@ -434,14 +434,14 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .radio-only{display:none!important}
 body.in-radio .radio-only{display:grid!important}
 .full-likes{display:flex;gap:4px;flex:none}
-.pr{max-width:1280px;container-type:inline-size}
+.pr{container-type:inline-size}
 .pr-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:8px 0 18px}
 .pr-head h1{margin:2px 0 4px;font:800 clamp(30px,5vw,52px)/1.05 var(--font-display,inherit)}
 .pr-acts{display:flex;gap:8px;flex-wrap:wrap}
 .pr-now{position:relative;overflow:hidden;isolation:isolate;display:flex;gap:36px;align-items:center;padding:28px 32px;border-radius:20px;margin-bottom:22px;background:var(--raise)}
 .pr-now::before{content:'';position:absolute;inset:-60px;z-index:-2;background:var(--pr-art) center/cover;filter:blur(50px) saturate(1.6) brightness(1.15);opacity:.9}
 .pr-now::after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,color-mix(in srgb,var(--bg) 20%,transparent) 0%,color-mix(in srgb,var(--bg) 70%,transparent) 80%)}
-.pr-cover{width:clamp(200px,24vw,300px);aspect-ratio:1;object-fit:cover;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);flex:none}
+.pr-cover{width:clamp(200px,22vw,340px);aspect-ratio:1;object-fit:cover;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);flex:none}
 .pr-info{min-width:0;flex:1}
 .pr-title{font:800 clamp(22px,3.2vw,34px)/1.15 var(--font-display,inherit);margin:4px 0 2px;overflow-wrap:anywhere}
 .pr-artist{color:var(--muted);font-weight:600;font-size:16px;max-width:100%}
@@ -458,6 +458,36 @@ body.in-radio .radio-only{display:grid!important}
 .pr-play:hover{transform:scale(1.04)}
 .pr-hint svg{width:13px;height:13px;vertical-align:-2px}
 .pr-fold{margin-bottom:10px}
+.pr-extra{display:none;flex:0 1 300px;min-width:220px;align-self:stretch;flex-direction:column;justify-content:center;gap:4px;padding:6px 0 6px 28px;border-left:1px solid color-mix(in srgb,var(--fg) 14%,transparent)}
+.pr-extra .eyebrow{margin-top:10px}
+.pr-extra .eyebrow:first-child{margin-top:0}
+.pr-extra p{margin:0;font-size:14px;color:color-mix(in srgb,var(--fg) 85%,transparent)}
+.pr-coming{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.pr-coming div{display:grid;grid-template-columns:40px minmax(0,1fr);grid-template-rows:auto auto;column-gap:10px;align-items:center}
+.pr-coming img{grid-row:1/3;width:40px;height:40px;border-radius:6px;object-fit:cover}
+.pr-coming b{font-size:13px}
+.pr-coming span{font-size:12px;color:var(--muted)}
+@container (min-width:1150px){.pr-extra{display:flex}}
+.pr-seek{display:flex;align-items:center;gap:10px;max-width:520px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pr-seek input{flex:1}
+.pr-h{margin-top:22px}
+.pr-artists{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:14px}
+.pr-art{display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 6px;border-radius:12px;min-width:0;font-size:13px}
+.pr-art:hover{background:var(--raise)}
+.pr-art b{max-width:100%}
+.pr-art-img{position:relative;width:100%;max-width:120px;aspect-ratio:1;border-radius:50%;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.pr-art-img img{width:100%;height:100%;object-fit:cover}
+.pr-art-img i{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);opacity:0;transition:opacity .15s;color:#fff}
+.pr-art-img i svg{width:30%;height:30%}
+.pr-art:hover .pr-art-img i,.pr-art:focus-visible .pr-art-img i{opacity:1}
+.pr-others{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.pr-other{display:flex;align-items:center;gap:12px;padding:8px;padding-right:12px;border-radius:12px;background:var(--raise);text-align:left;min-width:0}
+.pr-other:hover{background:var(--hover)}
+.pr-other img,.pr-other .st-ic{width:56px;height:56px;border-radius:8px;object-fit:cover;flex:none}
+.pr-other-play{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--accent-ink);flex:none;opacity:0;transition:opacity .15s}
+.pr-other-play svg{width:16px;height:16px}
+.pr-other:hover .pr-other-play{opacity:1}
+@media (hover:none){.pr-other-play{opacity:1}}
 .pr-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,340px);gap:22px;align-items:start}
 .pr-side{display:flex;flex-direction:column;gap:12px}
 .pr-card{background:var(--raise);border-radius:14px;padding:16px}
@@ -2203,6 +2233,14 @@ function radioAddVariety() {
       extendRadio(true);
     } });
 }
+// Pandora's "why this song": the reason the station picked it.
+function whyThis(t, st) {
+  const a = cleanArtist(t.artist || ''), k = normKey(a), has = list => (list || []).some(x => normKey(x) === k);
+  if (k === normKey(radio.seed.artist)) return `It’s by ${a}, the artist this station is built on.`;
+  if (has(st.upArtists)) return `You gave ${a} a thumbs up on this station.`;
+  if (has(st.seeds)) return `You added ${a} with Add variety.`;
+  return `Fans of ${radio.seed.artist} also listen to ${a}.`;
+}
 function refreshRadioView() { if (state.view.name === 'collection' && state.view.type === 'radio') render(); }
 // Pandora-style station page: the song playing now, big, with thumbs down / play / skip / thumbs up.
 function viewRadio(col) {
@@ -2215,6 +2253,12 @@ function viewRadio(col) {
   const ups = [...new Set([...past, ...col.tracks])].filter(id => state.liked.has(id));
   const downs = (st.downList || []).filter(x => radio.down.has(x.k));
   const nextId = inRadio() ? state.list[state.order[state.pos + 1]] : null;
+  const coming = inRadio() ? state.order.slice(state.pos + 1, state.pos + 4).map(i => state.list[i]).filter(id => TRACKS[id]) : [];
+  // Every artist the station has played or lined up (not the one it's built on), with one of their songs' covers.
+  const artistsOn = [], seenA = new Set([normKey(radio.seed.artist)]);
+  [...past, ...col.tracks].forEach(id => { const a = cleanArtist((TRACKS[id] || {}).artist || ''); const k = normKey(a); if (a && !seenA.has(k)) { seenA.add(k); artistsOn.push([a, id]); } });
+  artistsOn.splice(12);
+  const others = stations().filter(x => x.id !== radio.stationId).slice(0, 6);
   const seeds = [radio.seed.artist, ...(st.seeds || [])];
   const now = t ? `<div class="pr-now" style="--pr-art:url('${esc(tCover(cur)).replace(/'/g, '%27')}')">
       <img class="pr-cover" src="${esc(tCover(cur))}" alt="">
@@ -2229,6 +2273,12 @@ function viewRadio(col) {
           <button class="pr-btn" data-act="next" ${inRadio() ? '' : 'disabled'} aria-label="Skip" title="Skip">${icon('next')}</button>
           <button class="pr-btn pr-up${liked ? ' on' : ''}" data-act="radio-up" data-tid="${cur}" aria-pressed="${liked}" aria-label="Thumbs up: save to Liked Songs and play more like it" title="Thumbs up">${icon('thumbUp')}</button>
         </div>
+        ${inRadio() ? `<div class="pr-seek"><span data-pos>${fmt(Engine.position ? Engine.position() || 0 : 0)}</span><input type="range" data-seek min="0" max="1000" value="0" aria-label="Seek"><span data-dur>${fmt(t.duration || 0)}</span></div>` : ''}
+      </div>
+      <div class="pr-extra">
+        <div class="eyebrow">Why this song</div><p>${esc(whyThis(t, st))}</p>
+        ${t.album ? `<div class="eyebrow">Album</div><p class="ell">${esc(t.album)}</p>` : ''}
+        ${coming.length ? `<div class="eyebrow">Coming up</div><div class="pr-coming">${coming.map(id => `<div title="${esc(TRACKS[id].title)} · ${esc(TRACKS[id].artist)}"><img src="${esc(tCover(id))}" alt="" loading="lazy"><b class="ell">${esc(TRACKS[id].title)}</b><span class="ell">${esc(TRACKS[id].artist)}</span></div>`).join('')}</div>` : ''}
       </div></div>` : '';
   return `<div class="pr">
     <div class="pr-head"><div><div class="eyebrow">Radio station</div><h1>${esc(radio.seed.artist)} Radio</h1>
@@ -2242,6 +2292,10 @@ function viewRadio(col) {
     ${prFold('downs', 'thumbs down', downs.length, downs.map(x => `<div class="pr-row"><img src="${esc(x.cover || '')}" alt="" loading="lazy">
       <div class="pr-row-tx"><b class="ell">${esc(x.title)}</b><span class="ell">${esc(x.artist)}</span></div>
       <button class="text-btn" data-act="radio-undown" data-k="${esc(x.k)}">Take back</button></div>`).join(''))}
+    ${artistsOn.length ? `<div class="shelf-head pr-h"><h2>Artists on this station</h2><p>Tap one to start their radio</p></div>
+      <div class="pr-artists">${artistsOn.map(([a, id]) => `<button class="pr-art" data-act="artist-radio" data-id="${esc(a)}" title="Start ${esc(a)} Radio"><span class="pr-art-img"><img src="${esc(tCover(id))}" alt="" loading="lazy"><i>${icon('radio')}</i></span><b class="ell">${esc(a)}</b></button>`).join('')}</div>` : ''}
+    ${others.length ? `<div class="shelf-head pr-h"><h2>Your other stations</h2><button class="text-btn" data-act="nav" data-to="stations">See all</button></div>
+      <div class="pr-others">${others.map(o => `<button class="pr-other" data-act="station-play" data-id="${esc(o.id)}">${o.cover ? `<img src="${esc(o.cover)}" alt="" loading="lazy">` : `<span class="st-ic">${icon('radio')}</span>`}<span class="pr-row-tx"><b class="ell">${esc(o.artist)} Radio</b><span class="ell">${o.title ? `From “${esc(o.title)}”` : 'Radio station'}</span></span><i class="pr-other-play">${icon('play')}</i></button>`).join('')}</div>` : ''}
     </div>
     <aside class="pr-side">
       ${nextId ? `<div class="pr-card"><div class="eyebrow">Up next</div><div class="pr-next"><img src="${esc(tCover(nextId))}" alt="" loading="lazy"><div class="pr-row-tx"><b class="ell">${esc(TRACKS[nextId].title)}</b><span class="ell">${esc(TRACKS[nextId].artist)}</span></div>
