@@ -41,6 +41,8 @@ window.murmurApplyTheme = function (id) {
   var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t.c[0]);
   // Murmur for Windows draws its own title bar: the window buttons take the theme's colours.
   var d = window.MurmurDesktop; if (d && d.setFrame) { document.documentElement.classList.add('desktop-frame'); d.setFrame(t.c[0], t.c[6]); }
+  // The Android app colours the phone's status bar and navigation bar to match.
+  var an = window.MurmurAndroid; if (an && an.setBars) try { an.setBars(t.c[0], !!t.light); } catch (e) {}
   return t.id;
 };
 try { window.murmurApplyTheme(JSON.parse(localStorage.getItem('murmur:theme') || '"murmur"')); } catch (e) {}
@@ -528,16 +530,48 @@ body.in-radio .radio-only{display:grid!important}
 .pr-mini svg{width:17px;height:17px}
 .pr-mini.on-up{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .pr-mini.on-down{background:var(--danger);border-color:var(--danger);color:#fff}
+.pr-fs{display:none}
 @media (max-width:760px){
-  .pr-head{margin:0 0 12px;gap:10px}
-  .pr-head h1{font-size:30px}
-  .pr-acts .text-btn{padding:6px 12px;font-size:13px}
-  .pr-now{flex-direction:column;align-items:stretch;text-align:center;padding:14px 12px;gap:10px;margin-bottom:18px}
-  .pr-cover{width:min(170px,48vw);align-self:center}
-  .pr-title{font-size:22px}
-  .pr-ctl{justify-content:center;margin:12px 0 8px}
-  .pr-hint{display:none}
-  .pr-artist{margin:0 auto}
+  .pr .pr-head{margin:0 0 10px;gap:8px;align-items:center}
+  .pr .pr-head h1{font-size:26px}
+  .pr .pr-head .eyebrow{display:none}
+  .pr .pr-acts{gap:6px}
+  .pr .pr-acts .text-btn{padding:5px 10px;font-size:12px}
+  .pr .pr-now{flex-direction:row;align-items:center;text-align:left;padding:12px;gap:14px;margin-bottom:12px;border-radius:16px}
+  .pr .pr-cover{width:104px;align-self:flex-start;border-radius:10px}
+  .pr .pr-info .eyebrow{display:none}
+  .pr .pr-title{font-size:18px;margin:0}
+  .pr .pr-artist{font-size:14px}
+  .pr .pr-ctl{justify-content:flex-start;gap:8px;margin:10px 0 6px}
+  .pr .pr-btn{width:42px;height:42px}
+  .pr .pr-btn svg{width:18px;height:18px}
+  .pr .pr-play{width:50px;height:50px}
+  .pr .pr-play svg{width:22px;height:22px}
+  .pr .pr-seek{gap:6px;font-size:11px}
+  .pr .pr-cols{gap:12px}
+  .pr .pr-folds{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:6px}
+  .pr .pr-fold{display:contents}
+  .pr .pr-fold-btn{grid-row:1;justify-content:center;gap:6px;padding:10px 8px;border-radius:999px;font-size:13px}
+  .pr .pr-fold-btn>svg:first-child{display:none}
+  .pr .pr-fold.open .pr-fold-btn{background:var(--fg);color:var(--bg)}
+  .pr .pr-fold.open .pr-n{background:color-mix(in srgb,var(--bg) 20%,transparent);color:inherit}
+  .pr .pr-fl{display:none}
+  .pr .pr-fs{display:inline-flex;flex:none!important}
+  .pr .pr-fs svg{width:17px;height:17px}
+  .pr .pr-list{grid-column:1/-1;grid-row:2}
+  .pr .pr-h{margin-top:16px}
+  .pr .pr-h h2{font-size:18px}
+  .pr .pr-artists{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:86px;overflow-x:auto;gap:6px;margin:0 -16px;padding:0 16px;scrollbar-width:none}
+  .pr .pr-art{padding:4px;font-size:12px}
+  .pr .pr-others{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:minmax(220px,78%);overflow-x:auto;margin:0 -16px;padding:0 16px;scrollbar-width:none}
+  .pr .pr-side{display:flex;flex-direction:column;gap:10px}
+  .pr .pr-upnext{display:none}
+  .pr .pr-card{padding:12px 14px}
+  .pr .pr-stats{margin-bottom:10px}
+  .pr .pr-stats div{padding:6px 4px}
+  .pr .pr-stats b{font-size:18px}
+  .pr .pr-tips{display:none}
+}
 }
 .stations{flex:none;display:flex;flex-direction:column;padding:12px 8px 8px;min-height:0;max-height:32vh}
 .st-list{min-height:0;overflow-x:hidden}
@@ -2171,10 +2205,31 @@ function updateStation(fn) {
   fn(st); store.set('stations', list);
 }
 const inRadio = () => !!(state.ctx && state.ctx.type === 'radio');
+// A song as saved with a station (enough to show it, and to play or like it again on any device).
+const trackRec = id => { const t = TRACKS[id]; return t && { id, key: t.key || '', title: t.title, artist: t.artist, album: t.album || '', cover: tCover(id), duration: t.duration || 0, isrc: t.isrc || '' }; };
+function recTrack(r) {
+  if (!r) return null;
+  if (TRACKS[r.id]) return r.id;
+  if (!r.key) return null;
+  return addSpTrack({ key: r.key, title: r.title, artist: r.artist, album: r.album, cover: r.cover, duration: r.duration, isrc: r.isrc }, 'discover');
+}
+// Each song a station plays is added to its history (newest first).
+function noteRadioPlay(id) {
+  if (!inRadio() || !TRACKS[id] || radio.lastNoted === id) return;
+  radio.lastNoted = id;
+  const r = trackRec(id); if (!r) return;
+  updateStation(st => { st.hist = [r, ...(st.hist || []).filter(x => x.id !== id)].slice(0, 80); });
+}
 function radioThumbUp(tid) {
   const t = TRACKS[tid]; if (!t) return;
-  if (state.liked.has(tid)) { setLiked([tid], false); toast('Thumbs up taken back (removed from Liked Songs)'); refreshRadioView(); return; }
+  if (state.liked.has(tid)) {
+    setLiked([tid], false);
+    updateStation(st => { st.upList = (st.upList || []).filter(x => x.id !== tid); });
+    toast('Thumbs up taken back (removed from Liked Songs)'); refreshRadioView(); return;
+  }
   setLiked([tid], true);
+  const rec = trackRec(tid);
+  if (rec) updateStation(st => { st.upList = [rec, ...(st.upList || []).filter(x => x.id !== tid)].slice(0, 200); });
   const a = cleanArtist(t.artist);
   if (inRadio() && a) {
     if (!radio.more.includes(a)) radio.more.push(a);
@@ -2184,7 +2239,7 @@ function radioThumbUp(tid) {
   refreshRadioView();
 }
 function radioThumbDown(tid) {
-  const t = TRACKS[tid]; if (!t || !inRadio()) return;
+  const t = TRACKS[tid]; if (!t || !radio.stationId) return;
   const k = radioKey(t);
   if (radio.down.has(k)) { radioUndoDown(k); return; }
   radio.down.add(k);
@@ -2192,11 +2247,11 @@ function radioThumbDown(tid) {
     st.down = [...new Set([...(st.down || []), k])].slice(-300);
     st.downList = [{ k, title: t.title, artist: t.artist, cover: tCover(tid) }, ...(st.downList || []).filter(x => x.k !== k)].slice(0, 100);
   });
-  if (state.liked.has(tid)) setLiked([tid], false);
+  if (state.liked.has(tid)) { setLiked([tid], false); updateStation(st => { st.upList = (st.upList || []).filter(x => x.id !== tid); }); }
   // Take it out of what's coming up, then skip it.
   radio.ids = radio.ids.filter(id => id === state.current || radioKey(TRACKS[id] || {}) !== k);
   toast('Got it. That song won’t play on this station again.');
-  if (tid === state.current) next(false); else refreshRadioView();
+  if (tid === state.current && inRadio()) next(false); else refreshRadioView();
   extendRadio();
 }
 function radioUndoDown(k) {
@@ -2217,7 +2272,8 @@ function prRow(id) {
 // A section that stays hidden until it's opened; it's hidden again next time the station page opens.
 function prFold(k, label, n, inner) {
   const open = !!radio.show[k];
-  return `<div class="pr-fold"><button class="pr-fold-btn" data-act="radio-show" data-k="${k}" aria-expanded="${open}">${icon('down')}<span>${open ? 'Hide' : 'Show'} ${label}</span><span class="pr-n">${n}</span></button>
+  const short = { past: 'Past songs', ups: icon('thumbUp'), downs: icon('thumbDown') }[k];
+  return `<div class="pr-fold${open ? ' open' : ''}"><button class="pr-fold-btn" data-act="radio-show" data-k="${k}" aria-expanded="${open}" aria-label="${open ? 'Hide' : 'Show'} ${label}">${icon('down')}<span class="pr-fl">${open ? 'Hide' : 'Show'} ${label}</span><span class="pr-fs">${short}</span><span class="pr-n">${n}</span></button>
     ${open ? `<div class="pr-list">${inner || '<p class="small">Nothing here yet.</p>'}</div>` : ''}</div>`;
 }
 function radioAddVariety() {
@@ -2244,13 +2300,15 @@ function whyThis(t, st) {
 function refreshRadioView() { if (state.view.name === 'collection' && state.view.type === 'radio') render(); }
 // Pandora-style station page: the song playing now, big, with thumbs down / play / skip / thumbs up.
 function viewRadio(col) {
-  const cur = inRadio() && TRACKS[state.current] ? state.current : col.tracks[0];
+  const stSaved = stations().find(x => x.id === radio.stationId) || {};
+  const cur = inRadio() && TRACKS[state.current] ? state.current : col.tracks[0] || recTrack((stSaved.hist || [])[0]);
   radio.shownTid = cur;
   const t = TRACKS[cur], st = stations().find(x => x.id === radio.stationId) || {};
   const liked = !!t && state.liked.has(cur);
   // Songs already played on this station (newest first), and the ones given thumbs up / down.
-  const past = inRadio() ? [...new Set(state.order.slice(0, state.pos).map(i => state.list[i]).filter(id => TRACKS[id]).reverse())] : [];
-  const ups = [...new Set([...past, ...col.tracks])].filter(id => state.liked.has(id));
+  const sessionPast = inRadio() ? state.order.slice(0, state.pos).map(i => state.list[i]).filter(id => TRACKS[id]).reverse() : [];
+  const past = [...new Set([...sessionPast, ...(st.hist || []).map(recTrack)])].filter(id => id && TRACKS[id] && id !== (inRadio() ? state.current : null));
+  const ups = [...new Set([...(st.upList || []).map(recTrack), ...past, ...col.tracks])].filter(id => id && TRACKS[id] && state.liked.has(id));
   const downs = (st.downList || []).filter(x => radio.down.has(x.k));
   const nextId = inRadio() ? state.list[state.order[state.pos + 1]] : null;
   const coming = inRadio() ? state.order.slice(state.pos + 1, state.pos + 4).map(i => state.list[i]).filter(id => TRACKS[id]) : [];
@@ -2269,7 +2327,7 @@ function viewRadio(col) {
         <div class="pr-ctl">
           <button class="pr-btn pr-down" data-act="radio-down" data-tid="${cur}" ${inRadio() ? '' : 'disabled'} aria-label="Thumbs down: skip it and never play it on this station" title="Thumbs down">${icon('thumbDown')}</button>
           ${inRadio() ? `<button class="pr-play" data-act="toggle" data-play-icon aria-label="Play">${icon(Engine.playing ? 'pause' : 'play')}</button>`
-            : `<button class="pr-play" data-act="col-play" data-type="radio" data-id="station" data-i="0" aria-label="Play station">${icon('play')}</button>`}
+            : `<button class="pr-play" data-act="station-play" data-id="${esc(radio.stationId)}" aria-label="Play station">${icon('play')}</button>`}
           <button class="pr-btn" data-act="next" ${inRadio() ? '' : 'disabled'} aria-label="Skip" title="Skip">${icon('next')}</button>
           <button class="pr-btn pr-up${liked ? ' on' : ''}" data-act="radio-up" data-tid="${cur}" aria-pressed="${liked}" aria-label="Thumbs up: save to Liked Songs and play more like it" title="Thumbs up">${icon('thumbUp')}</button>
         </div>
@@ -2286,19 +2344,20 @@ function viewRadio(col) {
       <div class="pr-acts"><button class="text-btn" data-act="radio-variety" ${inRadio() ? '' : 'disabled'}>${icon('plus')}<span>Add variety</span></button>
       <button class="text-btn" data-act="radio-not" ${inRadio() ? '' : 'disabled'}>${icon('close')}<span>Not this artist</span></button></div></div>
     ${now}
-    <div class="pr-cols"><div class="pr-main">
+    <div class="pr-cols"><div class="pr-main"><div class="pr-folds">
     ${prFold('past', 'past songs', past.length, past.map(prRow).join(''))}
     ${prFold('ups', 'thumbs up', ups.length, ups.map(prRow).join(''))}
     ${prFold('downs', 'thumbs down', downs.length, downs.map(x => `<div class="pr-row"><img src="${esc(x.cover || '')}" alt="" loading="lazy">
       <div class="pr-row-tx"><b class="ell">${esc(x.title)}</b><span class="ell">${esc(x.artist)}</span></div>
       <button class="text-btn" data-act="radio-undown" data-k="${esc(x.k)}">Take back</button></div>`).join(''))}
+    </div>
     ${artistsOn.length ? `<div class="shelf-head pr-h"><h2>Artists on this station</h2><p>Tap one to start their radio</p></div>
       <div class="pr-artists">${artistsOn.map(([a, id]) => `<button class="pr-art" data-act="artist-radio" data-id="${esc(a)}" title="Start ${esc(a)} Radio"><span class="pr-art-img"><img src="${esc(tCover(id))}" alt="" loading="lazy"><i>${icon('radio')}</i></span><b class="ell">${esc(a)}</b></button>`).join('')}</div>` : ''}
     ${others.length ? `<div class="shelf-head pr-h"><h2>Your other stations</h2><button class="text-btn" data-act="nav" data-to="stations">See all</button></div>
       <div class="pr-others">${others.map(o => `<button class="pr-other" data-act="station-play" data-id="${esc(o.id)}">${o.cover ? `<img src="${esc(o.cover)}" alt="" loading="lazy">` : `<span class="st-ic">${icon('radio')}</span>`}<span class="pr-row-tx"><b class="ell">${esc(o.artist)} Radio</b><span class="ell">${o.title ? `From “${esc(o.title)}”` : 'Radio station'}</span></span><i class="pr-other-play">${icon('play')}</i></button>`).join('')}</div>` : ''}
     </div>
     <aside class="pr-side">
-      ${nextId ? `<div class="pr-card"><div class="eyebrow">Up next</div><div class="pr-next"><img src="${esc(tCover(nextId))}" alt="" loading="lazy"><div class="pr-row-tx"><b class="ell">${esc(TRACKS[nextId].title)}</b><span class="ell">${esc(TRACKS[nextId].artist)}</span></div>
+      ${nextId ? `<div class="pr-card pr-upnext"><div class="eyebrow">Up next</div><div class="pr-next"><img src="${esc(tCover(nextId))}" alt="" loading="lazy"><div class="pr-row-tx"><b class="ell">${esc(TRACKS[nextId].title)}</b><span class="ell">${esc(TRACKS[nextId].artist)}</span></div>
         <button class="pr-mini" data-act="next" aria-label="Skip to it" title="Skip to it">${icon('next')}</button></div></div>` : ''}
       <div class="pr-card"><div class="eyebrow">This station</div>
         <div class="pr-stats"><div><b>${past.length + (inRadio() ? 1 : 0)}</b><span>played</span></div><div><b>${ups.length}</b><span>thumbs up</span></div><div><b>${downs.length}</b><span>thumbs down</span></div></div>
@@ -3160,7 +3219,11 @@ function collectionOf(type, id) {
   }
   if (type === 'mlist') return memberCollection(id);
   if (type === 'radio') {
-    if (!radio.seed) return null;
+    if (!radio.seed) {
+      const last = stations()[0]; if (!last) return null;
+      radio.seed = { artist: last.artist, title: last.title || '', cover: last.cover || '' };
+      radio.stationId = last.id; radio.down = new Set(last.down || []); radio.banned = new Set(last.banned || []);
+    }
     const tracks = radio.ids.filter(visible);
     return { type, id, kind: 'Radio', title: `${radio.seed.artist} Radio`, sub: '<b>Murmur Radio</b> · keeps going',
       desc: `Endless songs like ${radio.seed.title ? `“${radio.seed.title}” by ` : ''}${radio.seed.artist}. Like songs to hear more like them, or skip what you don’t want.`,
@@ -4341,6 +4404,7 @@ function updateLikes() {
 function updatePlayerUI() {
   const t = TRACKS[state.current];
   document.body.classList.toggle('in-radio', inRadio());
+  if (inRadio() && state.current) noteRadioPlay(state.current);
   if (state.view.name === 'collection' && state.view.type === 'radio' && radio.shownTid !== state.current && inRadio()) render();   // station page shows the new song
   if (state.view.name === 'lyrics' && t && ly.key !== lyKey(t)) render();   // a new song: its lyrics
   if (t) {
@@ -5000,7 +5064,7 @@ function act(el, e) {
     case 'radio-up': radioThumbUp(d.tid || state.current); break;
     case 'radio-down': radioThumbDown(d.tid || state.current); break;
     case 'radio-variety': radioAddVariety(); break;
-    case 'radio-show': radio.show[d.k] = !radio.show[d.k]; render(); break;
+    case 'radio-show': { const o = !radio.show[d.k]; if (matchMedia('(max-width:760px)').matches) radio.show = {}; radio.show[d.k] = o; render(); break; }   // phones: one tab open at a time
     case 'radio-undown': radioUndoDown(d.k); break;
     case 'station-artist': closeModal(); startRadio(d.id); break;
     case 'station-play': playStation(d.id); break;
@@ -6697,8 +6761,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.0';
-const ANDROID_NEW = 'A cleaner music notification: pinned, with the song picture and previous, play, next and like.';
+const ANDROID_LATEST = '3.1';
+const ANDROID_NEW = 'The phone’s top bar (time, battery) and bottom bar now match your Murmur theme.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;

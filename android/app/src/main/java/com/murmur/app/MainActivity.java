@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
     private static final int PICK_FILES = 1;
     private static final String HOME = BuildConfig.START_URL;
     private static final int BG = Color.parseColor("#120e17");
+    private FrameLayout rootView;
 
     /*
      * The WebView outlives the screen it's on. Flipping the Razr (or any screen change Android handles by
@@ -93,8 +94,12 @@ public class MainActivity extends Activity {
         super.onCreate(saved);
         current = this;
         Window w = getWindow();
-        w.setStatusBarColor(BG);
-        w.setNavigationBarColor(BG);
+        // The theme's colours from last time, so the bars don't flash purple before the page loads.
+        android.content.SharedPreferences bp = getSharedPreferences("murmur", Context.MODE_PRIVATE);
+        int barBg = bp.getInt("barBg", BG);
+        boolean barLight = bp.getBoolean("barLight", false);
+        w.setStatusBarColor(barBg);
+        w.setNavigationBarColor(barBg);
         // Use the whole screen, including around camera cutouts (the Razr's cover screen has its cameras in it).
         // The page is padded away from the cutouts below, so nothing ends up under a camera.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -104,7 +109,8 @@ public class MainActivity extends Activity {
         }
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(BG);
+        rootView = root;
+        root.setBackgroundColor(barBg);
         // Android 15 draws apps under the status and navigation bars; pad the page so nothing hides behind them.
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -130,6 +136,7 @@ public class MainActivity extends Activity {
         web = keptWeb;
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
+        applyBars(barBg, barLight);
 
         // Android 13+ (and always on Android 16) delivers the back gesture only to a registered callback;
         // without this, back closes the app instead of going to Murmur's Home.
@@ -354,6 +361,31 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    /**
+     * The status bar (time, battery) and the navigation bar take the page's theme colour. On Android 15+ the app
+     * draws behind both bars, so the colour there is the root view's background; older Androids colour the bars.
+     * Light themes get dark icons.
+     */
+    void applyBars(int color, boolean light) {
+        Window w = getWindow();
+        w.setStatusBarColor(color);
+        w.setNavigationBarColor(color);
+        if (rootView != null) rootView.setBackgroundColor(color);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.view.WindowInsetsController c = w.getInsetsController();
+            if (c != null) {
+                int both = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                c.setSystemBarsAppearance(light ? both : 0, both);
+            }
+        } else {
+            View d = w.getDecorView();
+            int f = d.getSystemUiVisibility();
+            f = light ? (f | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR) : (f & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) f = light ? (f | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR) : (f & ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+            d.setSystemUiVisibility(f);
+        }
+    }
+
     /** Called from the page as window.MurmurAndroid. Uses the app context, so it survives screen changes. */
     private static class Bridge {
         private final Context app;
@@ -387,7 +419,17 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "3.0"; }
+        public String version() { return "3.1"; }
+
+        /** The page's theme: background colour (#rrggbb) and whether it's a light theme. */
+        @JavascriptInterface
+        public void setBars(String hex, boolean light) {
+            int color;
+            try { color = Color.parseColor(hex); } catch (Exception e) { return; }
+            app.getSharedPreferences("murmur", Context.MODE_PRIVATE).edit().putInt("barBg", color).putBoolean("barLight", light).apply();
+            MainActivity a = current;
+            if (a != null) a.runOnUiThread(() -> a.applyBars(color, light));
+        }
 
         /** Whether Android shows Murmur's "now playing" notification (it can be turned off in the phone's settings). */
         @JavascriptInterface
