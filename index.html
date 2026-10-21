@@ -84,6 +84,14 @@ html.desktop-frame .topbar{-webkit-app-region:drag;app-region:drag}
 html.desktop-frame .topbar>*{-webkit-app-region:no-drag;app-region:no-drag}
 html.desktop-frame .full,html.desktop-frame .modal-back{top:var(--tb-h)}
 html.desktop-frame .menu,html.desktop-frame .toast{-webkit-app-region:no-drag;app-region:no-drag}
+.upd-pill{position:fixed;top:4px;right:154px;z-index:96;height:28px;display:flex;align-items:center;gap:10px;padding:0 6px 0 12px;border-radius:999px;background:var(--raise);border:1px solid var(--line);font-size:12px;font-weight:600;-webkit-app-region:no-drag;app-region:no-drag;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.upd-pill[hidden]{display:none}
+.upd-bar{width:120px;height:5px;border-radius:9px;background:var(--hover);overflow:hidden}
+.upd-bar i{display:block;height:100%;background:var(--accent);border-radius:9px;transition:width .25s}
+.upd-pill .upd-go{height:22px;padding:0 12px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:12px}
+.upd-pill .upd-go:hover{filter:brightness(1.08)}
+.upd-pill svg{width:14px;height:14px;color:var(--accent)}
+html:not(.desktop-frame) .upd-pill{top:auto;bottom:96px;right:16px;height:34px}
 .app{height:100%;display:grid;grid-template-columns:280px minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;gap:8px;padding:8px}
 .app.np-on{grid-template-columns:280px minmax(0,1fr) 310px}
 .sidebar{grid-column:1;grid-row:1;display:flex;flex-direction:column;gap:8px;min-height:0}
@@ -5064,6 +5072,7 @@ function act(el, e) {
     case 'radio-up': radioThumbUp(d.tid || state.current); break;
     case 'radio-down': radioThumbDown(d.tid || state.current); break;
     case 'radio-variety': radioAddVariety(); break;
+    case 'desktop-update': if (window.MurmurDesktop && MurmurDesktop.installUpdate) MurmurDesktop.installUpdate(); break;
     case 'radio-show': { const o = !radio.show[d.k]; if (matchMedia('(max-width:760px)').matches) radio.show = {}; radio.show[d.k] = o; render(); break; }   // phones: one tab open at a time
     case 'radio-undown': radioUndoDown(d.k); break;
     case 'station-artist': closeModal(); startRadio(d.id); break;
@@ -6779,6 +6788,24 @@ function checkAppUpdate() {
   // Closing it without updating counts as "Later".
   store.set('appUpdSnooze', { v: ANDROID_LATEST, at: Date.now() });
 }
+/* Murmur for Windows: the app downloads its own updates; show the progress, then an Update now button. */
+function initDesktopUpdates() {
+  const d = window.MurmurDesktop; if (!d || !d.onUpdate || document.querySelector('.upd-pill')) return;
+  const el = document.createElement('div'); el.className = 'upd-pill'; el.hidden = true; el.setAttribute('role', 'status');
+  document.body.appendChild(el);
+  d.onUpdate(u => {
+    if (!u || u.state === 'none' || u.state === 'error') { el.hidden = true; return; }
+    el.hidden = false;
+    if (u.state === 'downloading') {
+      const pct = Math.round((u.pct || 0) * 100);
+      el.innerHTML = `${icon('download')}<span>Downloading Murmur ${esc(u.version || '')}</span><span class="upd-bar"><i style="width:${pct}%"></i></span><span>${pct}%</span>`;
+      el.title = u.notes || '';
+    } else if (u.state === 'ready') {
+      el.innerHTML = `${icon('download')}<span>Murmur ${esc(u.version || '')} is ready</span><button class="upd-go" data-act="desktop-update">Update now</button>`;
+      el.title = u.notes || '';
+    }
+  });
+}
 function appsSectionHTML(bare) {
   const ua = navigator.userAgent;
   const inApp = window.MurmurAndroid && typeof window.MurmurAndroid.version === 'function' ? String(window.MurmurAndroid.version()) : '';
@@ -7272,6 +7299,7 @@ setInterval(() => {
   loadSuggestions();
   if (mode === 'ok') { spFinishLogin(); loadDiscover(); }   // coming back from the Spotify sign-in page
   setTimeout(() => { if ($('#modal').hidden) checkAppUpdate(); }, 4000);
+  initDesktopUpdates();
   // Notice when the sign-in ends (90 days up, PIN changed, or removed by the owner).
   if (mode === 'ok') {
     document.addEventListener('visibilitychange', async () => {

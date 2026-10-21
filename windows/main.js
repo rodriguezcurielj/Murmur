@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 
 const HOME = process.env.MURMUR_URL || 'https://rodriguezcurielj.github.io/Murmur/';   // MURMUR_URL: try the app against a test server
-const UPDATE_INFO = 'https://rodriguezcurielj.github.io/Murmur/apps/windows.json';
+const UPDATE_INFO = process.env.MURMUR_UPDATE_INFO || 'https://rodriguezcurielj.github.io/Murmur/apps/windows.json';
 const VERSION = app.getVersion();
 
 app.setAppUserModelId('com.murmur.desktop');
@@ -64,6 +64,7 @@ function createWindow() {
     win.once('ready-to-show', () => win.show());
     win.webContents.once('did-finish-load', () => { if (!win.isVisible()) win.show(); });   // ready-to-show doesn't always come with the hidden title bar
     win.loadURL(HOME);
+    win.webContents.on('did-finish-load', tellPage);   // the page shows a download that's already going
 
     win.webContents.setWindowOpenHandler(({ url }) => {
         if (staysInApp(url)) { win.loadURL(url); return { action: 'deny' }; }
@@ -120,26 +121,55 @@ function thumbButtons() {
     } catch {}
 }
 
-// A newer Murmur for Windows: say so once a day, and open the download.
+// A newer Murmur for Windows downloads by itself in the background. The page shows the progress (and so does
+// the taskbar button), then an "Update now" button that runs the installer and closes Murmur.
+let upd = { state: 'none' };
+const tellPage = () => { if (win && !win.isDestroyed()) win.webContents.send('murmur-update', upd); };
+function setUpd(u) {
+    upd = u; tellPage();
+    if (!win || win.isDestroyed()) return;
+    if (u.state === 'downloading') win.setProgressBar(u.pct || 0);
+    else if (u.state === 'ready') win.setProgressBar(1, { mode: 'paused' });
+    else win.setProgressBar(-1);
+}
 async function checkUpdate() {
+    if (upd.state === 'downloading' || upd.state === 'ready') return;
     try {
         const r = await net.fetch(UPDATE_INFO + '?t=' + Date.now());
         if (!r.ok) return;
         const info = await r.json();
         const num = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
-        if (!info.version || num(info.version) <= num(VERSION)) return;
-        const st = readState();
-        if (st.askedUpdate === info.version && Date.now() - (st.askedAt || 0) < 86400e3) return;
-        try { fs.writeFileSync(stateFile(), JSON.stringify({ ...st, askedUpdate: info.version, askedAt: Date.now() })); } catch {}
-        const { response } = await dialog.showMessageBox(win, {
-            type: 'info', buttons: ['Update now', 'Later'], defaultId: 0, cancelId: 1,
-            title: 'New Murmur update available',
-            message: `Murmur ${info.version} for Windows is out.`,
-            detail: (info.notes ? info.notes + '\n\n' : '') + 'Update now downloads the installer. Run it and Murmur updates itself; your music and sign-in stay.'
-        });
-        if (response === 0 && info.url) shell.openExternal(info.url);
-    } catch {}
+        if (!info.version || !info.url || num(info.version) <= num(VERSION)) return;
+        const file = path.join(app.getPath('temp'), `Murmur-Setup-${info.version}.exe`);
+        const base = { version: info.version, notes: info.notes || '' };
+        setUpd({ ...base, state: 'downloading', pct: 0 });
+        const res = await net.fetch(info.url + '?v=' + encodeURIComponent(info.version));
+        if (!res.ok || !res.body) throw new Error('download failed');
+        const total = +res.headers.get('content-length') || 0;
+        const out = fs.createWriteStream(file + '.part');
+        const reader = res.body.getReader();
+        let got = 0, last = 0;
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            got += value.length;
+            if (!out.write(Buffer.from(value))) await new Promise(ok => out.once('drain', ok));
+            if (total && Date.now() - last > 250) { last = Date.now(); setUpd({ ...base, state: 'downloading', pct: got / total, got, total }); }
+        }
+        await new Promise((ok, bad) => out.end(err => err ? bad(err) : ok()));
+        if (total && got !== total) throw new Error('incomplete download');
+        fs.renameSync(file + '.part', file);
+        setUpd({ ...base, state: 'ready', file });
+    } catch (e) {
+        setUpd({ state: 'error', url: UPDATE_INFO });
+    }
 }
+ipcMain.handle('murmur-update-state', () => upd);
+ipcMain.on('murmur-update-install', () => {
+    if (upd.state !== 'ready' || !upd.file) return;
+    shell.openPath(upd.file).then(err => { if (!err) { quitting = true; app.quit(); } });
+});
+ipcMain.on('murmur-update-check', () => { checkUpdate(); });
 
 // The page sends its theme colours (background, icon colour) for the window buttons.
 ipcMain.on('murmur-frame', (e, c) => {
@@ -158,5 +188,6 @@ app.whenReady().then(() => {
     createTray();
     win.once('show', thumbButtons);
     setTimeout(checkUpdate, 8000);
+    setInterval(checkUpdate, 6 * 3600e3);   // and every few hours while it stays open
 });
 app.on('window-all-closed', () => app.quit());
