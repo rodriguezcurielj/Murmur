@@ -109,7 +109,7 @@ html:not(.desktop-frame) .upd-pill{top:auto;bottom:96px;right:16px;height:34px}
 .nav-btn{display:flex;align-items:center;gap:14px;padding:10px 12px;border-radius:8px;font-weight:700;color:var(--muted)}
 .nav-btn:hover,.nav-btn.on{color:var(--fg)}
 .nav-btn svg{width:22px;height:22px}
-.library{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 8px 8px}
+.library{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 8px 8px;overflow:hidden}
 .lib-head{display:flex;align-items:center;justify-content:space-between;padding:2px 8px 10px}
 .lib-head h2{margin:0;font:700 15px var(--font-body);color:var(--muted);display:flex;gap:12px;align-items:center}
 .icon-btn{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:var(--muted);flex:none;position:relative}
@@ -580,7 +580,6 @@ body.in-radio .radio-only{display:grid!important}
   .pr .pr-stats b{font-size:18px}
   .pr .pr-tips{display:none}
 }
-}
 .stations{flex:none;display:flex;flex-direction:column;padding:12px 8px 8px;min-height:0;max-height:32vh}
 .st-list{min-height:0;overflow-x:hidden}
 .st-ic{display:grid;place-items:center;background:linear-gradient(140deg,#c2543b 0%,#ffb070 100%);color:#fff}
@@ -902,6 +901,18 @@ body.in-radio .radio-only{display:grid!important}
   .app,.app.np-on{grid-template-columns:240px minmax(0,1fr)}
   .np-panel{display:none!important}
   #npBtn{display:none}
+  /* Narrower windows: the buttons on the right get the room they need instead of spilling over the controls. */
+  .player{grid-template-columns:minmax(0,1fr) minmax(250px,1.2fr) max-content;gap:12px}
+  .vol{width:80px!important}
+}
+@media (max-width:900px) and (min-width:761px){ .vol{display:none} }   /* the mute button stays; the song title gets the room */
+/* Short windows (a small or zoomed-in Murmur for Windows): a tighter sidebar, so stations and Your Library both fit. */
+@media (max-height:700px) and (min-width:761px){
+  .nav{padding:12px 10px 6px}
+  .brand{padding-bottom:8px}
+  .stations{max-height:26vh;padding-top:8px}
+  .library{padding-top:8px}
+  .library .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
 }
 @media (max-width:760px){
   .app,.app.np-on{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto auto;padding:0;gap:0}
