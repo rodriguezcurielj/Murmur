@@ -131,6 +131,47 @@ module.exports = function createDiscover(dataDir) {
       } catch (e) { res.status(502).json({ error: 'Couldn’t reach the song catalog. Try again in a moment.' }); }
     });
 
+    // Songs pasted from somewhere else (like Pandora's thumbs): find each in the catalog.
+    // POST { songs: [{ a, b }] } where a and b are a title and an artist in either order, or b is empty
+    // when the line couldn't be split. Answers { items: [track or null, ...] } in the same order.
+    app.post('/api/catalog/match', async (req, res) => {
+      const songs = (Array.isArray((req.body || {}).songs) ? req.body.songs : []).slice(0, 500)
+        .map(s => ({ a: String((s && s.a) || '').trim().slice(0, 150), b: String((s && s.b) || '').trim().slice(0, 150) }));
+      const simple = s => norm(String(s).replace(/\s*[([].*?[)\]]/g, '').replace(/\s+(feat|ft|with)\.?\s.*$/i, ''));
+      const near = (x, y) => !!x && !!y && (x === y || (Math.min(x.length, y.length) > 3 && (x.includes(y) || y.includes(x))));
+      // How alike two names are (0 to 1), so small typos still match.
+      const alike = (x, y) => {
+        if (!x || !y) return 0;
+        const pairs = s => { const m = new Map(); for (let i = 0; i < s.length - 1; i++) { const k = s.slice(i, i + 2); m.set(k, (m.get(k) || 0) + 1); } return m; };
+        const px = pairs(x), py = pairs(y); let same = 0;
+        px.forEach((n, k) => { same += Math.min(n, py.get(k) || 0); });
+        return (2 * same) / Math.max(1, x.length + y.length - 2);
+      };
+      async function find({ a, b }) {
+        if (!a) return null;
+        const hits = ((await dz('search?limit=10&q=' + encodeURIComponent(`${a} ${b}`.toLowerCase())).catch(() => ({ data: [] }))).data || [])
+          .filter(t => t.type === 'track' || !t.type);
+        if (!hits.length) return null;
+        const A = simple(a), B = simple(b);
+        const score = t => {
+          const ti = simple(t.title_short || t.title), ar = simple(t.artist && t.artist.name);
+          if (!B) return near(A, ti + ar) || near(A, ar + ti) ? 2 : 0;
+          if ((near(ti, A) && near(ar, B)) || (near(ti, B) && near(ar, A))) return 3;
+          if ((near(ar, B) && alike(ti, A) >= 0.6) || (near(ar, A) && alike(ti, B) >= 0.6)) return 2;
+          return near(ti, A) || near(ti, B) ? 1 : 0;
+        };
+        const best = hits.map(t => [score(t), t]).sort((x, y) => y[0] - x[0])[0];
+        return best[0] >= (B ? 1 : 2) ? toTrack(best[1], '') : null;
+      }
+      try {
+        const items = new Array(songs.length).fill(null);
+        let next = 0;
+        // A few at a time, to stay inside the catalog's rate limit.
+        await Promise.all([0, 1, 2, 3].map(async () => { while (next < songs.length) { const i = next++; items[i] = await find(songs[i]).catch(() => null); } }));
+        res.json({ items });
+      } catch (e) { res.status(502).json({ error: 'Couldn’t reach the song catalog. Try again in a moment.' }); }
+    });
+
     // Popular songs for a genre name (for the "Because you like …" shelves on Home).
     app.get('/api/catalog/genre', async (req, res) => {
       const name = String(req.query.name || '').trim().toLowerCase().slice(0, 60);

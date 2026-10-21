@@ -890,6 +890,7 @@ body.in-radio .radio-only{display:grid!important}
 .m-body b{color:var(--fg)}
 .field label{display:block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
 .field textarea{resize:vertical;min-height:4.5em;line-height:1.4}
+.pd-miss{max-height:40vh;overflow:auto;margin:6px 0 0;padding-left:4px;list-style:none;display:grid;gap:4px}
 .field input,.field textarea{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:inherit;font-size:15px;padding:10px 12px}
 .field input:focus,.field textarea:focus{border-color:var(--accent);outline:none}
 .m-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
@@ -2433,10 +2434,68 @@ function newStation() {
     ${artists.length ? `<p class="small">Or one of your artists:</p><div class="radio-chips">${artists.map(a => `<button type="button" class="chip" data-act="station-artist" data-id="${esc(a)}">${icon('radio')}${esc(a)}</button>`).join('')}</div>` : ''}`,
     onSubmit: fd => { radioFromQuery(String(fd.get('q') || '')); } });
 }
+/* ---------- Import from Pandora: a station's thumbs up and thumbs down, pasted ----------
+   Takes "Title - Artist", "Artist – Title", "Title by Artist", tab-separated lines, or the title on one
+   line and the artist on the next (how a copied pandora.com thumbs list looks). Words like "Thumbs up",
+   times and dates around them are skipped. The server finds each song in the catalog, in either order. */
+function parseSongList(text) {
+  const junk = /^(thumbs?\s*(up|down)|play|pause|more|share|add to playlist|explicit|e|\d+(:\d+)*(\s*\/\s*\d+:\d+)?|.*\b(ago|today|yesterday)|(added|thumbed)\b.*|[•·…⋯\-–—|]+)$/i;
+  const lines = String(text || '').split(/\r?\n/).map(l => l.replace(/^\s*\d+[.)]\s+/, '').trim()).filter(l => l && !junk.test(l));
+  const sep = l => { const p = l.split(/\t+|\s+[-–—|]\s+/); return p.length >= 2 ? p : l.split(/\s+by\s+/i); };
+  const splittable = lines.filter(l => sep(l).length >= 2).length;
+  const songs = [];
+  if (splittable >= lines.length / 2) lines.forEach(l => { const p = sep(l); songs.push({ a: p[0].trim(), b: p.slice(1).join(' ').trim() }); });
+  else for (let i = 0; i < lines.length; i += 2) songs.push({ a: lines[i], b: lines[i + 1] || '' });
+  return songs.filter(s => s.a).slice(0, 500);
+}
+function pandoraImport() {
+  if (!server.on) { toast('Importing needs a connection to your Murmur server.'); return; }
+  openModal({ title: 'Import from Pandora', confirm: 'Import', html: `
+    <p class="small">On pandora.com, open a station, then its thumbs. Select the songs, copy, and paste them here. One song per line (“Title - Artist”) works too.</p>
+    <div class="field"><label for="pdName">Station</label><input id="pdName" name="name" maxlength="100" autocomplete="off" placeholder="For example Fuerza Regida Radio" required></div>
+    <div class="field"><label for="pdUp">Thumbs up</label><textarea id="pdUp" name="up" rows="5" autocomplete="off" spellcheck="false" placeholder="Bebe Dame - Fuerza Regida"></textarea></div>
+    <div class="field"><label for="pdDown">Thumbs down (optional)</label><textarea id="pdDown" name="down" rows="3" autocomplete="off" spellcheck="false"></textarea></div>`,
+    onSubmit: fd => importPandora(String(fd.get('name') || ''), String(fd.get('up') || ''), String(fd.get('down') || '')) });
+}
+async function importPandora(name, upText, downText) {
+  const ups = parseSongList(upText), downs = parseSongList(downText);
+  if (!ups.length && !downs.length) { toast('Paste some songs to import.'); return; }
+  toast(`Finding ${plural(ups.length + downs.length, 'song')} in the music catalog…`);
+  let items;
+  try { items = (await api('POST', 'api/catalog/match', { songs: [...ups, ...downs] })).items || []; } catch (e) { toast(e.message); return; }
+  const upHits = items.slice(0, ups.length), downHits = items.slice(ups.length);
+  const missed = [...ups.filter((s, i) => !upHits[i]).map(s => ['up', s]), ...downs.filter((s, i) => !downHits[i]).map(s => ['down', s])];
+  const upIds = [...new Set(upHits.filter(Boolean).map(x => addSpTrack({ ...x, key: matchKey({ isrc: x.isrc, artist: cleanArtist(x.artist), title: x.title }) }, 'discover')))];
+  const downs2 = downHits.filter(Boolean).map(x => ({ k: cleanArtist(x.artist) + '|' + x.title, title: x.title, artist: x.artist, cover: x.cover || '' }));
+  // The artists thumbed up most steer the station (the most liked last: those are the ones it uses first).
+  const count = new Map();
+  upIds.forEach(id => { const a = cleanArtist(TRACKS[id].artist); if (a) count.set(a, (count.get(a) || 0) + 1); });
+  const byLikes = [...count.entries()].sort((x, y) => x[1] - y[1]).map(x => x[0]);
+  const artist = name.replace(/\s+radio$/i, '').trim() || byLikes[byLikes.length - 1] || '';
+  if (!artist) { toast('Couldn’t find those songs, so there’s nothing to import.'); return; }
+  if (upIds.length) setLiked(upIds, true);
+  const id = stationId(artist, ''), old = stations().find(x => x.id === id) || {};
+  const recs = upIds.map(trackRec).filter(Boolean), downKeys = new Set(downs2.map(d => d.k));
+  const st = { ...old, id, artist, title: old.title || '', tid: old.tid || '', cover: old.cover || (recs[0] && recs[0].cover) || '', at: Date.now(),
+    upList: [...recs, ...(old.upList || []).filter(x => !upIds.includes(x.id))].slice(0, 200),
+    upArtists: [...(old.upArtists || []).filter(a => !count.has(a) && normKey(a) !== normKey(artist)), ...byLikes.filter(a => normKey(a) !== normKey(artist))].slice(-12),
+    ups: (old.ups || 0) + upIds.length,
+    down: [...new Set([...(old.down || []), ...downKeys])].slice(-300),
+    downList: [...downs2, ...(old.downList || []).filter(x => !downKeys.has(x.k))].slice(0, 100) };
+  store.set('stations', [st, ...stations().filter(x => x.id !== id)].slice(0, 50));
+  if (radio.stationId === id) { downKeys.forEach(k => radio.down.add(k)); radio.more = [...(st.seeds || []), ...st.upArtists].slice(-6); }
+  renderStations(); if (state.view.name === 'stations') render();
+  const row = ([kind, s]) => `<li>${kind === 'down' ? '👎' : '👍'} ${esc(s.a)}${s.b ? ' · ' + esc(s.b) : ''}</li>`;
+  openModal({ title: `${esc(artist)} Radio imported`, confirm: 'Play station', cancel: 'Done', html: `
+    <p>${upIds.length} thumbs up (saved to Liked Songs) and ${downs2.length} thumbs down.</p>
+    ${missed.length ? `<p class="small">Couldn’t find ${plural(missed.length, 'song')} in the music catalog:</p><ul class="small pd-miss">${missed.slice(0, 100).map(row).join('')}</ul>` : ''}`,
+    onSubmit: () => playStation(id) });
+}
 function viewStations() {
   const list = stations();
   return `<h1 class="greet">Your radio stations</h1>
     <button class="radio-cta" data-act="new-station">${icon('plus')}<span><b>Create a radio station</b><small>Pick an artist or song. Murmur keeps playing music like it, and your likes steer it.</small></span></button>
+    ${server.on ? `<button class="radio-cta" data-act="pandora-import">${icon('thumbUp')}<span><b>Import from Pandora</b><small>Paste a station’s thumbs up and thumbs down. They become a Murmur station that already knows what you like.</small></span></button>` : ''}
     ${list.length ? `<div class="lib-list st-page">${list.map(stationItem).join('')}</div>` : '<p class="small">No stations yet. Every radio you start shows up here.</p>'}
     ${radioChipsHTML()}`;
 }
@@ -5120,6 +5179,7 @@ function act(el, e) {
     case 'artist-radio': startRadio(d.id); break;
     case 'radio-song': startRadio('', d.tid); break;
     case 'new-station': newStation(); break;
+    case 'pandora-import': pandoraImport(); break;
     case 'radio-up': radioThumbUp(d.tid || state.current); break;
     case 'radio-down': radioThumbDown(d.tid || state.current); break;
     case 'radio-variety': radioAddVariety(); break;
