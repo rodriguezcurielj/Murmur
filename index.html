@@ -434,12 +434,14 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .radio-only{display:none!important}
 body.in-radio .radio-only{display:grid!important}
 .full-likes{display:flex;gap:4px;flex:none}
-.pr{max-width:980px}
+.pr{max-width:1280px;container-type:inline-size}
 .pr-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:8px 0 18px}
 .pr-head h1{margin:2px 0 4px;font:800 clamp(30px,5vw,52px)/1.05 var(--font-display,inherit)}
 .pr-acts{display:flex;gap:8px;flex-wrap:wrap}
-.pr-now{display:flex;gap:28px;align-items:center;padding:22px;border-radius:16px;margin-bottom:26px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,var(--raise)),var(--panel) 70%)}
-.pr-cover{width:min(260px,34vw);aspect-ratio:1;object-fit:cover;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);flex:none}
+.pr-now{position:relative;overflow:hidden;isolation:isolate;display:flex;gap:36px;align-items:center;padding:28px 32px;border-radius:20px;margin-bottom:22px;background:var(--raise)}
+.pr-now::before{content:'';position:absolute;inset:-60px;z-index:-2;background:var(--pr-art) center/cover;filter:blur(50px) saturate(1.6) brightness(1.15);opacity:.9}
+.pr-now::after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,color-mix(in srgb,var(--bg) 20%,transparent) 0%,color-mix(in srgb,var(--bg) 70%,transparent) 80%)}
+.pr-cover{width:clamp(200px,24vw,300px);aspect-ratio:1;object-fit:cover;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);flex:none}
 .pr-info{min-width:0;flex:1}
 .pr-title{font:800 clamp(22px,3.2vw,34px)/1.15 var(--font-display,inherit);margin:4px 0 2px;overflow-wrap:anywhere}
 .pr-artist{color:var(--muted);font-weight:600;font-size:16px;max-width:100%}
@@ -455,7 +457,29 @@ body.in-radio .radio-only{display:grid!important}
 .pr-play svg{width:26px;height:26px}
 .pr-play:hover{transform:scale(1.04)}
 .pr-hint svg{width:13px;height:13px;vertical-align:-2px}
-.pr-fold{margin-bottom:10px;max-width:640px}
+.pr-fold{margin-bottom:10px}
+.pr-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,340px);gap:22px;align-items:start}
+.pr-side{display:flex;flex-direction:column;gap:12px}
+.pr-card{background:var(--raise);border-radius:14px;padding:16px}
+.pr-card .eyebrow{margin-bottom:10px}
+.pr-next{display:flex;align-items:center;gap:12px;min-width:0}
+.pr-next img{width:52px;height:52px;border-radius:8px;object-fit:cover;flex:none}
+.pr-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.pr-stats div{background:var(--bg);border-radius:10px;padding:10px 6px;text-align:center;display:flex;flex-direction:column}
+.pr-stats b{font:800 22px/1.1 var(--font-display)}
+.pr-stats span{font-size:12px;color:var(--muted)}
+.pr-sub{font-size:12px;font-weight:700;color:var(--muted);margin:4px 0 8px}
+.pr-seeds{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.pr-seed{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:var(--bg);font-size:13px;font-weight:600}
+.pr-seed:hover:not(:disabled){background:var(--hover)}
+.pr-seed svg{width:14px;height:14px;color:var(--accent)}
+.pr-seed.add{border:1px dashed var(--line);background:none;color:var(--muted)}
+.pr-seed:disabled{opacity:.4;cursor:default}
+.pr-tips p{display:flex;gap:10px;align-items:flex-start;margin:0 0 10px;font-size:13px;color:var(--muted)}
+.pr-tips p:last-child{margin-bottom:0}
+.pr-tips b{color:var(--fg)}
+.pr-tips svg{width:16px;height:16px;flex:none;margin-top:1px;color:var(--accent)}
+@container (max-width:860px){.pr-cols{grid-template-columns:minmax(0,1fr)}.pr-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}}
 .pr-fold-btn{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border-radius:12px;background:var(--raise);font-weight:700;text-align:left}
 .pr-fold-btn:hover{background:var(--hover)}
 .pr-fold-btn svg{width:18px;height:18px;flex:none;transition:transform .2s}
@@ -2190,8 +2214,9 @@ function viewRadio(col) {
   const past = inRadio() ? [...new Set(state.order.slice(0, state.pos).map(i => state.list[i]).filter(id => TRACKS[id]).reverse())] : [];
   const ups = [...new Set([...past, ...col.tracks])].filter(id => state.liked.has(id));
   const downs = (st.downList || []).filter(x => radio.down.has(x.k));
+  const nextId = inRadio() ? state.list[state.order[state.pos + 1]] : null;
   const seeds = [radio.seed.artist, ...(st.seeds || [])];
-  const now = t ? `<div class="pr-now">
+  const now = t ? `<div class="pr-now" style="--pr-art:url('${esc(tCover(cur)).replace(/'/g, '%27')}')">
       <img class="pr-cover" src="${esc(tCover(cur))}" alt="">
       <div class="pr-info">
         <div class="eyebrow">${inRadio() ? 'Now playing' : 'First up'}</div>
@@ -2204,7 +2229,6 @@ function viewRadio(col) {
           <button class="pr-btn" data-act="next" ${inRadio() ? '' : 'disabled'} aria-label="Skip" title="Skip">${icon('next')}</button>
           <button class="pr-btn pr-up${liked ? ' on' : ''}" data-act="radio-up" data-tid="${cur}" aria-pressed="${liked}" aria-label="Thumbs up: save to Liked Songs and play more like it" title="Thumbs up">${icon('thumbUp')}</button>
         </div>
-        <p class="small pr-hint">${icon('thumbUp')} saves the song to <b>Liked Songs</b> and plays more like it. ${icon('thumbDown')} skips it for good on this station.</p>
       </div></div>` : '';
   return `<div class="pr">
     <div class="pr-head"><div><div class="eyebrow">Radio station</div><h1>${esc(radio.seed.artist)} Radio</h1>
@@ -2212,11 +2236,29 @@ function viewRadio(col) {
       <div class="pr-acts"><button class="text-btn" data-act="radio-variety" ${inRadio() ? '' : 'disabled'}>${icon('plus')}<span>Add variety</span></button>
       <button class="text-btn" data-act="radio-not" ${inRadio() ? '' : 'disabled'}>${icon('close')}<span>Not this artist</span></button></div></div>
     ${now}
+    <div class="pr-cols"><div class="pr-main">
     ${prFold('past', 'past songs', past.length, past.map(prRow).join(''))}
     ${prFold('ups', 'thumbs up', ups.length, ups.map(prRow).join(''))}
     ${prFold('downs', 'thumbs down', downs.length, downs.map(x => `<div class="pr-row"><img src="${esc(x.cover || '')}" alt="" loading="lazy">
       <div class="pr-row-tx"><b class="ell">${esc(x.title)}</b><span class="ell">${esc(x.artist)}</span></div>
       <button class="text-btn" data-act="radio-undown" data-k="${esc(x.k)}">Take back</button></div>`).join(''))}
+    </div>
+    <aside class="pr-side">
+      ${nextId ? `<div class="pr-card"><div class="eyebrow">Up next</div><div class="pr-next"><img src="${esc(tCover(nextId))}" alt="" loading="lazy"><div class="pr-row-tx"><b class="ell">${esc(TRACKS[nextId].title)}</b><span class="ell">${esc(TRACKS[nextId].artist)}</span></div>
+        <button class="pr-mini" data-act="next" aria-label="Skip to it" title="Skip to it">${icon('next')}</button></div></div>` : ''}
+      <div class="pr-card"><div class="eyebrow">This station</div>
+        <div class="pr-stats"><div><b>${past.length + (inRadio() ? 1 : 0)}</b><span>played</span></div><div><b>${ups.length}</b><span>thumbs up</span></div><div><b>${downs.length}</b><span>thumbs down</span></div></div>
+        <div class="pr-sub">Built from</div>
+        <div class="pr-seeds">${seeds.map(a => `<button class="pr-seed" data-act="open" data-type="artist" data-id="${esc(a)}">${icon('radio')}${esc(a)}</button>`).join('')}
+          <button class="pr-seed add" data-act="radio-variety" ${inRadio() ? '' : 'disabled'}>${icon('plus')}Add variety</button></div>
+        ${(st.banned || []).length ? `<div class="pr-sub">Not playing</div><p class="small">${plural(st.banned.length, 'artist')} left out with Not this artist</p>` : ''}
+      </div>
+      <div class="pr-card pr-tips"><div class="eyebrow">How it learns</div>
+        <p>${icon('thumbUp')}<span><b>Thumbs up</b> saves the song to Liked Songs and plays more like it.</span></p>
+        <p>${icon('thumbDown')}<span><b>Thumbs down</b> skips it, and it never plays here again.</span></p>
+        <p>${icon('plus')}<span><b>Add variety</b> mixes another artist into this station.</span></p>
+      </div>
+    </aside></div>
   </div>`;
 }
 function playStation(id) {
