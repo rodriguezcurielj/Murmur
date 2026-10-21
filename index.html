@@ -455,6 +455,25 @@ body.in-radio .radio-only{display:grid!important}
 .pr-play svg{width:26px;height:26px}
 .pr-play:hover{transform:scale(1.04)}
 .pr-hint svg{width:13px;height:13px;vertical-align:-2px}
+.pr-fold{margin-bottom:10px;max-width:640px}
+.pr-fold-btn{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border-radius:12px;background:var(--raise);font-weight:700;text-align:left}
+.pr-fold-btn:hover{background:var(--hover)}
+.pr-fold-btn svg{width:18px;height:18px;flex:none;transition:transform .2s}
+.pr-fold-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.pr-fold-btn span:first-of-type{flex:1}
+.pr-n{font-size:13px;font-weight:600;color:var(--muted);background:var(--bg);border-radius:999px;padding:1px 9px}
+.pr-list{display:flex;flex-direction:column;gap:2px;padding:6px 0 4px}
+.pr-row{display:flex;align-items:center;gap:12px;padding:6px 8px;border-radius:8px;min-width:0}
+.pr-row:hover{background:var(--raise)}
+.pr-row.cur b{color:var(--accent)}
+.pr-row img{width:44px;height:44px;border-radius:6px;object-fit:cover;flex:none;background:var(--raise)}
+.pr-row-tx{min-width:0;flex:1;display:flex;flex-direction:column}
+.pr-row-tx span{font-size:13px;color:var(--muted)}
+.pr-mini{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);color:var(--muted);flex:none}
+.pr-mini:hover{color:var(--fg);border-color:var(--fg)}
+.pr-mini svg{width:17px;height:17px}
+.pr-mini.on-up{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.pr-mini.on-down{background:var(--danger);border-color:var(--danger);color:#fff}
 @media (max-width:760px){
   .pr-head{margin:0 0 12px;gap:10px}
   .pr-head h1{font-size:30px}
@@ -2050,7 +2069,7 @@ const sleepLabel = () => sleep.endOfTrack ? 'End of this song' : sleep.until ? `
 /* ---------- Radio (like Pandora): endless songs like a song or an artist you pick ----------
    A quarter are the artist's own hits, the rest similar artists' top songs. More are added as it plays.
    Like a song and the station leans toward that artist; "Not this artist" stops playing them on this station. */
-const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [], stationId: '', down: new Set(), shownTid: null };
+const radio = { seed: null, ids: [], loading: false, banned: new Set(), more: [], stationId: '', down: new Set(), shownTid: null, show: {} };
 const radioKey = t => cleanArtist(t.artist) + '|' + t.title;
 async function fetchRadio() {
   const exclude = [...radio.ids.map(id => TRACKS[id]).filter(Boolean).map(radioKey), ...radio.down];
@@ -2113,14 +2132,39 @@ function radioThumbUp(tid) {
 function radioThumbDown(tid) {
   const t = TRACKS[tid]; if (!t || !inRadio()) return;
   const k = radioKey(t);
+  if (radio.down.has(k)) { radioUndoDown(k); return; }
   radio.down.add(k);
-  updateStation(st => { st.down = [...new Set([...(st.down || []), k])].slice(-300); });
+  updateStation(st => {
+    st.down = [...new Set([...(st.down || []), k])].slice(-300);
+    st.downList = [{ k, title: t.title, artist: t.artist, cover: tCover(tid) }, ...(st.downList || []).filter(x => x.k !== k)].slice(0, 100);
+  });
   if (state.liked.has(tid)) setLiked([tid], false);
   // Take it out of what's coming up, then skip it.
   radio.ids = radio.ids.filter(id => id === state.current || radioKey(TRACKS[id] || {}) !== k);
   toast('Got it. That song won’t play on this station again.');
-  if (tid === state.current) next(false);
+  if (tid === state.current) next(false); else refreshRadioView();
   extendRadio();
+}
+function radioUndoDown(k) {
+  radio.down.delete(k);
+  updateStation(st => { st.down = (st.down || []).filter(x => x !== k); st.downList = (st.downList || []).filter(x => x.k !== k); });
+  toast('Thumbs down taken back. It can play on this station again.');
+  refreshRadioView();
+}
+// One song on the station page's hidden lists, with its thumbs to change.
+function prRow(id) {
+  const t = TRACKS[id]; if (!t) return '';
+  const up = state.liked.has(id), down = radio.down.has(radioKey(t));
+  return `<div class="pr-row${id === state.current ? ' cur' : ''}"><img src="${esc(tCover(id))}" alt="" loading="lazy">
+    <div class="pr-row-tx"><b class="ell">${esc(t.title)}</b><span class="ell">${esc(t.artist)}</span></div>
+    <button class="pr-mini${down ? ' on-down' : ''}" data-act="radio-down" data-tid="${id}" aria-pressed="${down}" aria-label="Thumbs down" title="${down ? 'Take back thumbs down' : 'Thumbs down'}">${icon('thumbDown')}</button>
+    <button class="pr-mini${up ? ' on-up' : ''}" data-act="radio-up" data-tid="${id}" aria-pressed="${up}" aria-label="Thumbs up" title="${up ? 'Take back thumbs up (removes from Liked Songs)' : 'Thumbs up (saves to Liked Songs)'}">${icon('thumbUp')}</button></div>`;
+}
+// A section that stays hidden until it's opened; it's hidden again next time the station page opens.
+function prFold(k, label, n, inner) {
+  const open = !!radio.show[k];
+  return `<div class="pr-fold"><button class="pr-fold-btn" data-act="radio-show" data-k="${k}" aria-expanded="${open}">${icon('down')}<span>${open ? 'Hide' : 'Show'} ${label}</span><span class="pr-n">${n}</span></button>
+    ${open ? `<div class="pr-list">${inner || '<p class="small">Nothing here yet.</p>'}</div>` : ''}</div>`;
 }
 function radioAddVariety() {
   if (!inRadio()) return;
@@ -2142,7 +2186,10 @@ function viewRadio(col) {
   radio.shownTid = cur;
   const t = TRACKS[cur], st = stations().find(x => x.id === radio.stationId) || {};
   const liked = !!t && state.liked.has(cur);
-  const ups = col.tracks.filter(id => state.liked.has(id));
+  // Songs already played on this station (newest first), and the ones given thumbs up / down.
+  const past = inRadio() ? [...new Set(state.order.slice(0, state.pos).map(i => state.list[i]).filter(id => TRACKS[id]).reverse())] : [];
+  const ups = [...new Set([...past, ...col.tracks])].filter(id => state.liked.has(id));
+  const downs = (st.downList || []).filter(x => radio.down.has(x.k));
   const seeds = [radio.seed.artist, ...(st.seeds || [])];
   const now = t ? `<div class="pr-now">
       <img class="pr-cover" src="${esc(tCover(cur))}" alt="">
@@ -2165,9 +2212,11 @@ function viewRadio(col) {
       <div class="pr-acts"><button class="text-btn" data-act="radio-variety" ${inRadio() ? '' : 'disabled'}>${icon('plus')}<span>Add variety</span></button>
       <button class="text-btn" data-act="radio-not" ${inRadio() ? '' : 'disabled'}>${icon('close')}<span>Not this artist</span></button></div></div>
     ${now}
-    ${shelf('Thumbs up on this station', ups.map(id => songCard(id, 'liked', 'liked', getCollection('liked', 'liked').tracks.indexOf(id))), 'Saved in Liked Songs')}
-    <div class="shelf-head"><h2>Station songs</h2><p>Keeps going as you listen</p></div>
-    ${trackList(col.tracks, 'radio', 'station')}
+    ${prFold('past', 'past songs', past.length, past.map(prRow).join(''))}
+    ${prFold('ups', 'thumbs up', ups.length, ups.map(prRow).join(''))}
+    ${prFold('downs', 'thumbs down', downs.length, downs.map(x => `<div class="pr-row"><img src="${esc(x.cover || '')}" alt="" loading="lazy">
+      <div class="pr-row-tx"><b class="ell">${esc(x.title)}</b><span class="ell">${esc(x.artist)}</span></div>
+      <button class="text-btn" data-act="radio-undown" data-k="${esc(x.k)}">Take back</button></div>`).join(''))}
   </div>`;
 }
 function playStation(id) {
@@ -4061,6 +4110,7 @@ function navigate(view, push = true) {
   closeMenu(); $('#full').hidden = true;
   state.sel = null; state.libSel = null;
   if (push) histSave({ scroll: $('#main').scrollTop });   // remember where you were on the page you're leaving
+  if (view.name === 'collection' && view.type === 'radio') radio.show = {};
   state.view = view;
   if (push) {
     hist.i++; setHistTop(hist.i);
@@ -4854,6 +4904,8 @@ function act(el, e) {
     case 'radio-up': radioThumbUp(d.tid || state.current); break;
     case 'radio-down': radioThumbDown(d.tid || state.current); break;
     case 'radio-variety': radioAddVariety(); break;
+    case 'radio-show': radio.show[d.k] = !radio.show[d.k]; render(); break;
+    case 'radio-undown': radioUndoDown(d.k); break;
     case 'station-artist': closeModal(); startRadio(d.id); break;
     case 'station-play': playStation(d.id); break;
     case 'station-del': deleteStation(d.id); break;
