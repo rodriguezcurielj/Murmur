@@ -2,13 +2,13 @@
 // Downloaded songs are stored separately in IndexedDB by the page, so audio
 // (/media) and the library API (/api) are never cached here: when the server
 // is unreachable the page falls back to what's saved on the device.
-const SHELL_CACHE = 'murmur-shell-v43';
+const SHELL_CACHE = 'murmur-shell-v44';
 const RUNTIME_CACHE = 'murmur-runtime-v1';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const BASE = new URL(self.registration.scope).pathname;
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'no-cache' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
@@ -24,7 +24,8 @@ self.addEventListener('activate', event => {
 async function networkFirst(request) {
   const cache = await caches.open(SHELL_CACHE);
   const saved = () => cache.match(request, { ignoreSearch: true }).then(r => r || cache.match('index.html'));
-  const net = fetch(request).then(res => { if (res.ok) cache.put(request, res.clone()); return res; });
+  // no-cache: always ask the site whether there's a newer copy (the browser would otherwise reuse one for 10 minutes).
+  const net = fetch(request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => { if (res.ok) cache.put(request, res.clone()); return res; });
   const slow = new Promise(ok => setTimeout(ok, 4000)).then(saved).then(r => r || net);
   try { return await Promise.race([net, slow]); }
   catch (err) { return (await saved()) || Response.error(); }
