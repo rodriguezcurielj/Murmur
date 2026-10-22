@@ -1941,17 +1941,40 @@ async function loadOffline() {
   return recs;
 }
 async function fetchWithProgress(url, onProg) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`The server answered ${res.status}.`);
-  const total = Number(res.headers.get('content-length')) || 0;
-  if (!res.body || !total) return res.blob();
-  const reader = res.body.getReader(), parts = []; let got = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value); got += value.length; onProg(Math.min(100, Math.round(got / total * 100)));
+  const parts = []; let got = 0, total = 0, type = 'audio/mpeg';
+  // A connection that drops partway (phone switching networks, a server restarting) carries on from where it
+  // stopped, up to 4 times, instead of starting the song over.
+  for (let tries = 0; ; tries++) {
+    try {
+      const res = await fetch(url, got ? { headers: { Range: `bytes=${got}-` } } : undefined);
+      if (!res.ok) throw Object.assign(new Error(`The server answered ${res.status}.`), { status: res.status });
+      if (got && res.status !== 206) { parts.length = 0; got = 0; }   // the server started over: so do we
+      type = res.headers.get('content-type') || type;
+      const len = Number(res.headers.get('content-length')) || 0;
+      if (!total) total = len;
+      if (!res.body || !total) return res.blob();
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value); got += value.length; onProg(Math.min(100, Math.round(got / total * 100)));
+      }
+      if (got < total) throw new Error('The connection dropped.');
+      return new Blob(parts, { type });
+    } catch (e) {
+      if (e.status || tries >= 4 || !got) throw e;   // nothing came at all, or the server said no: try another server
+      await new Promise(r => setTimeout(r, 1500 * (tries + 1)));
+    }
   }
-  return new Blob(parts, { type: res.headers.get('content-type') || 'audio/mpeg' });
+}
+/* The same song from the other servers (each has the same files, and every server can get YouTube audio
+   except ones YouTube is blocking, which go last). */
+function dlSources(t, src) {
+  if (t.yt && !t.src) return [...new Set([src, ...ytAudioBases(t).map(b => ytAudioUrl(b, t))])];
+  const here = normalizeServer(remote.base || location.origin), m = src.indexOf('/media/');
+  if (m < 0) return [src];
+  const path = src.slice(m);
+  return [...new Set([src, ...SERVERS.map(x => normalizeServer(x.url)).filter(b => b && b !== here && !(ytAudio.status[b] && ytAudio.status[b].down)).map(b => b.replace(/\/+$/, '') + path)])];
 }
 /* Files in Murmur download as they are. YouTube songs (and imported Spotify songs, through their YouTube match)
    download as the audio a Murmur server gets for them (ytaudio.js), so they play with no signal too. */
@@ -2008,14 +2031,19 @@ async function pumpDownloads() {
       }
       const src = t.src || ytAudioSrc(t);
       if (!src) throw new Error('No Murmur server can get it right now.');
+      // This server first, then the others: a server that's restarting or that YouTube blocks doesn't stop it.
+      const sources = dlSources(t, src), order = [sources[0], ...sources];   // a quick second try here before moving on
       let blob;
       for (let attempt = 1; ; attempt++) {
-        try { blob = await fetchWithProgress(src, p => { dlq.cur.pct = p; dlq.cur.retry = false; renderUploadStatus(); }); break; }
-        catch (e) {
-          // A dropped connection (phone switching networks, server busy): wait and try again, up to 4 times.
-          if (attempt >= 4 || /quota|answered 4/i.test(`${e && e.name} ${e && e.message}`)) throw e;
+        const from = order[(attempt - 1) % order.length];
+        try {
+          blob = await fetchWithProgress(from, p => { dlq.cur.pct = p; dlq.cur.retry = false; renderUploadStatus(); });
+          if (blob.size < 50e3) throw new Error('The server couldn’t get this song from YouTube.');
+          break;
+        } catch (e) {
+          if (/quota/i.test(`${e && e.name} ${e && e.message}`) || attempt >= Math.max(6, order.length * 2)) throw e;
           dlq.cur.retry = true; renderUploadStatus();
-          await new Promise(r => setTimeout(r, attempt * 3000));
+          await new Promise(r => setTimeout(r, Math.min(attempt, 4) * 1500));
         }
       }
       let cover = null;
@@ -3498,13 +3526,13 @@ async function checkYtServers() {
   }));
   try { localStorage.setItem('murmur:ytStatus', JSON.stringify(ytAudio.status)); } catch (e) {}
 }
-setInterval(() => { if (server.on && ytAudioOn()) checkYtServers(); }, 5 * 60e3);
+setInterval(() => { if (server.on) checkYtServers(); }, 5 * 60e3);
 /* Liked songs the server keeps on disk (ytaudio.js): these play from the file in every app and browser, since
    that's instant and has no ads. Refreshed now and then while Murmur is open. */
 let ytKept = new Set();
 async function loadYtKept() {
   if (!server.on) return;
-  if (ytAudioOn()) checkYtServers();
+  checkYtServers();   // which servers YouTube lets in: playback (iPhone) and downloads to the device go there
   try { ytKept = new Set((await api('GET', 'api/ytcache')).ids || []); } catch (e) {}
   // The song left in the player (and the ones after it): ready before play is pressed.
   const cur = state.list && state.order && state.list[state.order[state.pos]];
