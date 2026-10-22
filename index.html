@@ -203,9 +203,11 @@ body.tq-focus .mfy{display:none}
 .top-search>svg{color:var(--muted);width:18px;height:18px}
 .top-search input{flex:1;min-width:0;background:none;border:0;color:var(--fg);font:inherit;font-size:15px;padding:9px 0;outline:none}
 .top-search input::-webkit-search-cancel-button{display:none}
-.tq-clear{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;color:var(--muted)}
-.tq-clear:hover{color:var(--fg);background:var(--hover)}
-.tq-clear svg{width:16px;height:16px}
+/* Clear search: a small filled circle with an x (big enough to tap, quiet to look at). */
+.tq-clear{width:32px;height:32px;display:grid;place-items:center;border-radius:50%;flex:none;transition:transform .12s}
+.tq-clear svg{width:20px;height:20px;padding:5px;box-sizing:border-box;border-radius:50%;background:color-mix(in srgb,var(--fg) 45%,transparent);color:var(--bg);stroke-width:3.2;transition:background .15s}
+.tq-clear:hover svg,.tq-clear:focus-visible svg{background:var(--fg)}
+.tq-clear:active{transform:scale(.88)}
 .search-title{font-size:clamp(22px,3vw,28px);overflow-wrap:anywhere}
 .top-search{position:relative}
 .tq-drop{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:30;background:var(--raise);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.55);padding:6px;max-height:min(70vh,520px);overflow:auto}
