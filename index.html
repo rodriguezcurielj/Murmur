@@ -138,6 +138,7 @@ body.drag-selecting .tracks{touch-action:none}
 .genre-chips::-webkit-scrollbar{display:none}
 .st-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .st-head .greet{margin-right:auto}
+.st-btns{display:inline-flex;gap:6px;flex:none}
 .st-btn{padding:3px 9px;font-size:12px;gap:4px;display:inline-flex;align-items:center}
 .st-btn svg{width:13px;height:13px}
 body:not([data-view="search"]) .top-search{display:none}
@@ -2651,8 +2652,8 @@ async function importPandora(name, upText, downText) {
 function viewStations() {
   const list = stations();
   return `<div class="st-head"><h1 class="greet">Your radio stations</h1>
-    <button class="chip st-btn" data-act="new-station" title="Pick an artist or song. Murmur keeps playing music like it, and your likes steer it.">${icon('plus')}Create</button>
-    ${server.on ? `<button class="chip st-btn" data-act="pandora-import" title="Paste a Pandora station’s thumbs up and thumbs down. They become a Murmur station that already knows what you like.">${icon('thumbUp')}Pandora</button>` : ''}</div>
+    <span class="st-btns"><button class="chip st-btn" data-act="new-station" title="Pick an artist or song. Murmur keeps playing music like it, and your likes steer it.">${icon('plus')}Create</button>
+    ${server.on ? `<button class="chip st-btn" data-act="pandora-import" title="Paste a Pandora station’s thumbs up and thumbs down. They become a Murmur station that already knows what you like.">${icon('thumbUp')}Pandora</button>` : ''}</span></div>
     ${list.length ? `<div class="lib-list st-page">${list.map(stationItem).join('')}</div>` : '<p class="small">No stations yet. Every radio you start shows up here.</p>'}
     ${radioChipsHTML()}`;
 }
