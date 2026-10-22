@@ -89,8 +89,8 @@ html.desktop-frame .app{padding-top:var(--tb-h)}
 html.desktop-frame{--tb-h:36px}
 html.desktop-frame body::before{content:'';position:fixed;top:0;left:0;right:0;height:var(--tb-h);background:var(--bg);-webkit-app-region:drag;app-region:drag;z-index:95}
 html.desktop-frame .topbar{-webkit-app-region:drag;app-region:drag}
-.soft-refresh{display:none}
-html.desktop-frame .soft-refresh{display:inline-grid;-webkit-app-region:no-drag;app-region:no-drag}
+#softRefresh{display:none!important}
+html.desktop-frame #softRefresh{display:inline-grid!important;-webkit-app-region:no-drag;app-region:no-drag}
 .soft-refresh.spinning svg{animation:spin .8s linear infinite}
 html.desktop-frame .topbar>*{-webkit-app-region:no-drag;app-region:no-drag}
 html.desktop-frame .full,html.desktop-frame .modal-back{top:var(--tb-h)}
@@ -605,7 +605,8 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
   box-shadow:0 6px 18px -10px color-mix(in srgb,var(--c) 70%,transparent),inset 0 1px 0 color-mix(in srgb,#fff 10%,transparent);transition:transform .15s}
 .top-status:active{transform:scale(.97)}
 .top-status.warn{--c:#f5a623}
-.top-status::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,#fff 9%,transparent) 50%,transparent 70%);transform:translateX(-100%);animation:tsShine 6s ease-in-out infinite}
+.top-status::after{content:"";display:none;position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,#fff 9%,transparent) 50%,transparent 70%);transform:translateX(-100%);animation:tsShine 6s ease-in-out infinite}
+.top-status.moving::after{display:block;animation-duration:2.4s}   /* the light sweeping across: only while something downloads/uploads */
 @keyframes tsShine{0%,70%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 .top-status .ts-fill{position:absolute;inset:0 auto 0 0;z-index:-1;width:var(--p,0%);background:linear-gradient(90deg,color-mix(in srgb,var(--c) 22%,transparent),color-mix(in srgb,var(--c) 42%,transparent));transition:width .4s}
 .top-status .ts-ic{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:11px;background:color-mix(in srgb,var(--c) 24%,transparent);color:var(--c)}
@@ -626,6 +627,14 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
   body:not([data-view="search"]) .topbar .top-status:not([hidden])~.top-right{margin-left:0}}
 
 .job-card{position:relative}
+.nf-btn{color:#f5a623;border-color:color-mix(in srgb,#f5a623 40%,transparent)!important}
+.nf-list{display:flex;flex-direction:column;gap:4px;margin-top:10px;max-height:min(60vh,520px);overflow:auto}
+.nf-row{display:flex;align-items:center;gap:10px;padding:6px;border-radius:10px}
+.nf-row:hover{background:var(--hover)}
+.nf-row img,.nf-ph{flex:none;width:42px;height:42px;border-radius:6px;object-fit:cover;background:var(--raise);display:grid;place-items:center;color:var(--muted)}
+.nf-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.ver-search{display:flex;gap:8px;margin:10px 0}
+.ver-search input{flex:1;min-width:0;height:36px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--fg);font:500 14px var(--font-body)}
 .rs-clear-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 10px;border:1px solid var(--line);border-radius:999px;background:var(--raise);color:var(--fg);font:600 12.5px var(--font-body);cursor:pointer;transition:background .15s,border-color .15s}
 .rs-clear-btn svg{width:13px;height:13px;opacity:.8}
 .rs-clear-btn:hover{background:var(--hover);border-color:color-mix(in srgb,var(--danger) 45%,var(--line));color:var(--danger)}
@@ -991,7 +1000,11 @@ body.in-radio .radio-only{display:grid!important}
 .avatar img,.acct-btn img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
 .avatar-lg{width:72px;height:72px;font-size:30px}
 .acct-photo{display:flex;align-items:center;gap:16px}
-.acct-head{display:flex;align-items:center;gap:14px;padding:2px 0 6px}
+.acct-head{display:flex;align-items:flex-start;gap:14px;padding:10px 0 6px}
+.acct-who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding-top:6px}
+.acct-who>b{font:800 20px/1.15 var(--font-display)}
+.acct-head .acct-photo-btns{flex-wrap:nowrap;gap:6px;margin-top:10px}
+.acct-head .photo-btn{padding:6px 11px;font-size:12.5px;white-space:nowrap}
 .acct-av{position:relative;flex:none;cursor:pointer;border-radius:50%}
 .acct-av .avatar-lg{width:64px;height:64px;font-size:26px}
 .acct-cam{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--fg);color:var(--bg);border:2px solid var(--panel)}
@@ -1136,8 +1149,9 @@ body.in-radio .radio-only{display:grid!important}
 .modal-back{position:fixed;inset:0;z-index:90;background:rgba(8,5,12,.62);display:grid;place-items:center;padding:16px}
 .modal-back.m-drawer{padding:0;place-items:stretch;justify-items:end}
 .m-drawer .modal{width:min(380px,92vw);max-height:none;height:100%;border:0;border-left:1px solid var(--line);border-radius:0;box-shadow:-20px 0 50px rgba(0,0,0,.5);animation:drawerR .2s ease-out;padding:16px 18px calc(16px + env(safe-area-inset-bottom))}
-.m-drawer .m-back{display:inline-grid;margin:0 6px 4px -8px}
-.m-drawer #mTitle{display:inline;vertical-align:middle}
+.m-drawer .m-back{display:inline-grid;place-items:center;width:36px;height:36px;margin:0 4px 0 -8px;vertical-align:middle}
+.m-drawer .m-back svg{width:26px;height:26px}
+.m-drawer #mTitle{display:inline;vertical-align:middle;font-size:26px;line-height:36px}
 .m-drawer .m-actions{display:none}
 @keyframes drawerR{from{transform:translateX(40px);opacity:.4}}
 @keyframes drawerL{from{transform:translateX(-40px);opacity:.4}}
@@ -1899,7 +1913,7 @@ function renderTopStatus() {
     label = `Connected to ${name}. Tap to see all servers.`;
   }
   el.hidden = !html; if (!html) return;
-  el.classList.toggle('warn', warn); el.classList.toggle('busy', busy);
+  el.classList.toggle('warn', warn); el.classList.toggle('busy', busy); el.classList.toggle('moving', !!(w && w.kind !== topHidden));
   if (el.innerHTML !== html) el.innerHTML = html;
   el.title = label; el.setAttribute('aria-label', label);
 }
@@ -4814,7 +4828,7 @@ function viewCollection(type, id) {
   <div class="actions">
     ${n ? playFab(type, id, 'big-play') : ''}
     <button class="icon-btn out-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}" title="Shuffle">${icon('shuffle')}</button>
-    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) + sortSelHTML(type, id, col) : ''}${ytBatchBtn(type, id, col)}
+    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) + sortSelHTML(type, id, col) : ''}${ytBatchBtn(type, id, col)}${notFoundBtn(type, id, col)}
     ${col.gpreview ? `<button class="text-btn gp-create" data-act="gp-make" data-g="${esc(id)}">${icon('plus')}<span>Create playlist</span></button><button class="text-btn" data-act="gp-skip" data-g="${esc(id)}" data-back="1">${icon('close')}<span>Don’t suggest</span></button>` : ''}
     ${col.radio ? `<button class="text-btn" data-act="radio-not" ${sameCtx('radio', 'station') ? '' : 'disabled'}>${icon('thumbDown')}<span>Not this artist</span></button>` : ''}
     ${extras ? `<button class="icon-btn out-btn" data-act="col-more" aria-label="More options" title="More options">${icon('more')}</button><template id="colExtras">${extras}</template>` : ''}
@@ -6161,6 +6175,9 @@ function act(el, e) {
     case 'src-key-remove': setSource(d.id, { key: '' }); break;
     case 'm-spver': chooseVersion(d.tid); break;
     case 'cur-ver': chooseVersion(state.current); break;
+    case 'nf-open': openNotFound(d.type, d.id); break;
+    case 'nf-find': chooseVersion(d.tid, { after: () => openNotFound(d.type, d.id) }); break;   // back to the list after picking
+    case 'ver-research': { const q = ($('#verQ') || {}).value; if (q && q.trim()) chooseVersion(d.tid, { q: q.trim() }); break; }
     case 'sp-key-remove':
       api('DELETE', 'api/settings/spotify').then(() => { sp.clientId = ''; sp.fullLinks = false; toast('Spotify setup removed. Imported playlists stay.'); render(); }).catch(err => toast(err.message));
       break;
@@ -6544,16 +6561,35 @@ async function bringUpload(file) {
 }
 // Pick which YouTube upload plays for a song. Catalog songs: the choice is saved for everyone.
 // YouTube songs: the one you pick takes its place everywhere it is (Liked Songs, playlists, the queue).
-async function chooseVersion(id) {
+/* Spotify songs YouTube found nothing for: a button on the list opens them all, and each can be matched by hand. */
+const notFoundIn = col => (col.allTracks || col.tracks || []).filter(id => spStatus(id) === 'none');
+function notFoundBtn(type, id, col) {
+  if (!server.on || !yt.enabled || type === 'discover') return '';
+  const n = notFoundIn(col).length; if (!n) return '';
+  return `<button class="text-btn nf-btn" data-act="nf-open" data-type="${type}" data-id="${esc(id)}" title="${plural(n, 'song')} couldn’t be found on YouTube. Tap to pick the right one yourself.">${icon('search')}<span>${n} not found</span></button>`;
+}
+function openNotFound(type, id) {
+  const col = getCollection(type, id); if (!col) return;
+  const ids = notFoundIn(col);
+  if (!ids.length) { toast('Every song here has a match now.'); return; }
+  openModal({ title: 'Songs that couldn’t be found', confirm: false, cancel: 'Done', html: `<p class="small">YouTube didn’t find these automatically. Tap <b>Find it</b>, listen to the choices, and pick the exact song. It then plays (and can be added to Murmur) like the rest.</p>
+    <div class="nf-list">${ids.map(tid => { const t = TRACKS[tid];
+      return `<div class="nf-row">${t.cover ? `<img src="${esc(t.cover)}" alt="">` : `<span class="nf-ph">♪</span>`}<span class="nf-txt"><b class="ell">${esc(t.title)}</b><span class="small ell">${esc(t.artist)}</span></span>
+        <button type="button" class="photo-btn" data-act="nf-find" data-tid="${esc(tid)}" data-type="${type}" data-id="${esc(id)}">${icon('search')}<span>Find it</span></button></div>`; }).join('')}</div>` });
+}
+async function chooseVersion(id, opts = {}) {
   const t = TRACKS[id]; if (!t || !(t.sp || t.yt || t.src)) { toast('Play a song first.'); return; }
   if (!server.on) { toast('Picking a version needs a connection to your Murmur server.'); return; }
   let ids;
-  try { ids = await ytSearch(t.yt ? t.title : `${cleanArtist(t.artist)} - ${t.title}`, ''); } catch (e) { toast(e.message); return; }
+  const q = opts.q || (t.yt ? t.title : `${cleanArtist(t.artist)} - ${t.title}`);
+  try { ids = await ytSearch(q, ''); } catch (e) { toast(e.message); return; }
   if (t.yt) ids = [id, ...ids.filter(x => x !== id)];
   ids = ids.filter(x => TRACKS[x]).slice(0, 10);
-  if (!ids.length) { toast('YouTube found nothing for this song.'); return; }
+  if (!ids.length && !opts.q) { toast('YouTube found nothing for this song.'); return; }
   const cur = t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : t.ytId;
   openModal({ title: `Pick a version of “${esc(t.title)}”`, confirm: 'Use this version', html: `<p class="small">${t.duration ? `This one is <b>${fmt(t.duration)}</b> long. ` : ''}Tap ▶ to listen before you pick. ${t.sp ? 'Your choice is saved for everyone.' : 'The one you pick takes this song’s place in Liked Songs, your playlists and the queue.'}</p>
+    <div class="ver-search"><input type="search" id="verQ" value="${esc(q)}" aria-label="Search YouTube" enterkeyhint="search"><button type="button" class="photo-btn" data-act="ver-research" data-tid="${esc(id)}">${icon('search')}<span>Search</span></button></div>
+    ${ids.length ? '' : '<p class="small">Nothing found for that. Try other words, like just the song name.</p>'}
     <div class="ytp-frame" id="ytpFrame" hidden></div>
     <div class="ver-list">${ids.map((v, i) => { const y = TRACKS[v];
       return `<label class="ver ytp-ver"><input type="radio" name="v" value="${esc(y.ytId)}" ${(cur ? cur === y.ytId : i === 0) ? 'checked' : ''}>
@@ -6578,6 +6614,7 @@ async function chooseVersion(id) {
           toast('Saved. This version plays from now on, and Murmur is getting it for the library.');
         } else toast('Saved. This version plays from now on.');
         syncSpChips(); render(); if (state.current === id) loadAndPlay(id, true);
+        if (opts.after) setTimeout(opts.after, 300);
         return;
       }
       swapTrack(id, 'yt-' + v);
