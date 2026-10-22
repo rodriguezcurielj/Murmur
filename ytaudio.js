@@ -24,6 +24,10 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
     fs.promises.writeFile(cacheFile, JSON.stringify(keep)).catch(() => {});
   }, 3000); };
   let failsInARow = 0;   // this server keeps failing (YouTube blocking it): don't look songs up ahead of time
+  // YouTube treating this server as a bot: for a while, say so at once instead of trying (each try costs ~2 s),
+  // so the player goes straight to a server that works. Songs kept on disk still play from here.
+  let blockedUntil = 0;
+  const BOT = /not a bot|sign in to confirm|429|too many requests/i;
 
   /* A yt-dlp that stays running (ytworker.py): about 1 second per song instead of 3-4, since yt-dlp doesn't start
      up again for each one. If Python or its yt_dlp module isn't there, each lookup starts yt-dlp as before. */
@@ -105,8 +109,8 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
   async function stream(id, fresh) {
     const hit = found.get(id);
     if (!fresh && hit && Date.now() - hit.at < (hit.failed ? 10 * 60e3 : KEEP_MS)) { if (hit.failed) throw new Error(hit.failed); return hit; }
-    if (!busy.has(id)) busy.set(id, lookUp(id).then(r => { found.set(id, r); failsInARow = 0; saveCache(); return r; },
-      e => { found.set(id, { failed: e.message, at: Date.now() }); failsInARow++; throw e; }).finally(() => busy.delete(id)));
+    if (!busy.has(id)) busy.set(id, lookUp(id).then(r => { found.set(id, r); failsInARow = 0; blockedUntil = 0; saveCache(); return r; },
+      e => { found.set(id, { failed: e.message, at: Date.now() }); failsInARow++; if (BOT.test(e.message)) blockedUntil = Date.now() + 20 * 60e3; throw e; }).finally(() => busy.delete(id)));
     if (found.size > 500) found.delete(found.keys().next().value);
     return busy.get(id);
   }
@@ -119,6 +123,11 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
     if (fs.existsSync(cached(id))) {
       if (req.query.prep) return res.status(204).end();
       return res.sendFile(cached(id), { headers: { 'Content-Type': 'audio/mp4', 'Cache-Control': 'private, max-age=86400' } });
+    }
+    const known = found.get(id);
+    if (blockedUntil > Date.now() && !(known && known.url && Date.now() - known.at < KEEP_MS)) {
+      res.setHeader('X-Murmur-Yt', 'blocked');
+      return res.status(503).type('text').send('YouTube is blocking this server right now.');
     }
     try {
       let s = await stream(id);
@@ -220,6 +229,18 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
   }
   setTimeout(fillCache, 30e3);
   setInterval(fillCache, 5 * 60e3).unref();
+
+  // Check now and then (in the background, with a well-known video) whether YouTube lets this server in, so a
+  // blocked server says so before anyone's song waits on it.
+  async function selfTest() {
+    try { await lookUp('dQw4w9WgXcQ'); blockedUntil = 0; }
+    catch (e) { if (BOT.test(e.message)) blockedUntil = Date.now() + 20 * 60e3; }
+  }
+  setTimeout(selfTest, 20e3);
+  setInterval(selfTest, 15 * 60e3).unref();
+
+  // Can this server get YouTube audio right now? The player asks every server and uses the ones that can first.
+  app.get('/ytaudio-status', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ ok: !(blockedUntil > Date.now()) }); });
 
   // Which songs are on disk here, so the player plays them from the file even where it would use YouTube's player.
   app.get('/api/ytcache', (req, res) => res.json({ ids: Object.keys(recs).filter(id => fs.existsSync(cached(id))) }));

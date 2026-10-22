@@ -3349,12 +3349,28 @@ window.addEventListener('resize', placeYtBox);
    Ad Blocker extension): the song plays as plain audio that a Murmur server gets from YouTube (ytaudio.js), instead
    of in YouTube's player. No ads, and it keeps playing with the screen locked. If this server can't get it (YouTube
    blocks some cloud servers), the other servers are tried, then YouTube's own player. */
-const ytAudio = { fails: {}, until: {} };
+const ytAudio = { fails: {}, until: {}, status: (() => { try { return JSON.parse(localStorage.getItem('murmur:ytStatus') || '{}'); } catch (e) { return {}; } })() };
+/* Which servers can get YouTube audio right now, and how fast they answer. YouTube blocks some (the cloud one);
+   asking one of those first cost ~2 s per song before another server was tried. Checked at start and every 5 min. */
+async function checkYtServers() {
+  const bases = [remote.base || location.origin, ...SERVERS.map(x => normalizeServer(x.url))].filter((b, i, a) => b && a.indexOf(b) === i);
+  await Promise.all(bases.map(async b => {
+    const t0 = performance.now();
+    try {
+      const r = await fetch(joinUrl(b, 'ytaudio-status'), { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+      const j = r.ok ? await r.json() : null;
+      ytAudio.status[b] = { ok: !!(j && j.ok), ms: Math.round(performance.now() - t0), at: Date.now() };
+    } catch (e) { ytAudio.status[b] = { ok: false, ms: 9999, at: Date.now(), down: true }; }
+  }));
+  try { localStorage.setItem('murmur:ytStatus', JSON.stringify(ytAudio.status)); } catch (e) {}
+}
+setInterval(() => { if (server.on && ytAudioOn()) checkYtServers(); }, 5 * 60e3);
 /* Liked songs the server keeps on disk (ytaudio.js): these play from the file in every app and browser, since
    that's instant and has no ads. Refreshed now and then while Murmur is open. */
 let ytKept = new Set();
 async function loadYtKept() {
   if (!server.on) return;
+  if (ytAudioOn()) checkYtServers();
   try { ytKept = new Set((await api('GET', 'api/ytcache')).ids || []); } catch (e) {}
 }
 setInterval(() => { if (document.visibilityState === 'visible') loadYtKept(); }, 5 * 60e3);
@@ -3381,10 +3397,17 @@ async function matchLikesInBackground() {
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(matchLikesInBackground, 5000); });
 const ytAudioOn = () => (IOS_DEVICE || (!window.MurmurAndroid && !document.documentElement.dataset.murmurAdblock)) && server.on && !store.get('ytPlayerOnly', false);
-const ytAudioBases = () => [remote.base || location.origin, ...SERVERS.map(x => normalizeServer(x.url))]
-  .filter((b, i, a) => b && a.indexOf(b) === i && !((ytAudio.until[b] || 0) > Date.now()));
+// Servers to get a song's audio from, best first: songs kept on disk come from this server (every server has the
+// file); others from servers YouTube isn't blocking, this one first, then the quickest to answer.
+const ytAudioBases = t => {
+  const here = remote.base || location.origin;
+  const list = [here, ...SERVERS.map(x => normalizeServer(x.url))].filter((b, i, a) => b && a.indexOf(b) === i && !((ytAudio.until[b] || 0) > Date.now()));
+  if (t && ytKept.has(t.ytId)) return list;
+  const st = b => ytAudio.status[b] || {};
+  return list.sort((a, b) => (st(a).ok === false) - (st(b).ok === false) || (a === here ? -1 : b === here ? 1 : 0) || (st(a).ms || 9999) - (st(b).ms || 9999));
+};
 const ytAudioUrl = (base, t, extra = '') => joinUrl(base, 'ytaudio/' + encodeURIComponent(t.ytId)) + '?' + (remote.mediaKey ? 'k=' + encodeURIComponent(remote.mediaKey) + '&' : '') + extra;
-function ytAudioSrc(t, skip = []) { const b = ytAudioBases().find(x => !skip.includes(x)); return b ? ytAudioUrl(b, t) : null; }
+function ytAudioSrc(t, skip = []) { const b = ytAudioBases(t).find(x => !skip.includes(x)); return b ? ytAudioUrl(b, t) : null; }
 function ytAudioFailed(t, wasPlaying) {
   const src = FileEng.audio && FileEng.audio.getAttribute('src') || '';
   const tried = t.ytTried = t.ytTried || [];
@@ -3439,6 +3462,16 @@ async function prepTrack(id) {
     }
     if (t && t.yt && !t.src && ytAudioOn()) { const u = ytAudioSrc(t); if (u) fetch(u + 'prep=1', { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); }
   } catch (e) { prepped.delete(id); }
+}
+// A list just opened: have the server look up its first songs, so the one you tap is usually ready already.
+let prepVisTimer = null;
+function prepVisible(type, id) {
+  clearTimeout(prepVisTimer);
+  prepVisTimer = setTimeout(() => {
+    const col = getCollection(type, id); if (!col || !server.on) return;
+    const ready = tid => { const t = TRACKS[tid]; if (!t || t.src) return false; if (t.yt) return !ytKept.has(t.ytId); const m = t.sp && sp.matches[t.key]; return !!(m && m.yt && !m.file && !ytKept.has(m.yt.id)); };
+    col.tracks.filter(ready).slice(0, 4).forEach(prepTrack);
+  }, 600);
 }
 // A finger (or mouse button) going down on a song: start getting it ready before the tap even finishes.
 document.addEventListener('pointerdown', e => {
@@ -4678,7 +4711,8 @@ function render() {
   syncDownloads();
   $$('[data-act="nav"]').forEach(b => b.classList.toggle('on', b.dataset.to === v.name));
   document.body.classList.toggle('page-only', v.name === 'people');
-  document.body.dataset.view = v.name;   // the search bar only shows on the Search page   // phones: Admin is a page of its own
+  document.body.dataset.view = v.name;   // the search bar only shows on the Search page
+  if (v.name === 'collection' && ytAudioOn()) prepVisible(v.type, v.id);   // phones: Admin is a page of its own
   $('#backBtn').disabled = hist.i <= 0; $('#fwdBtn').disabled = hist.i >= hist.top;
   renderSidebar(); highlight(); updateToggles(); syncSel();
 }
