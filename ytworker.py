@@ -22,6 +22,8 @@ def ydl_for(cookies):
             'format': 'bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio',
             'remote_components': ['ejs:github'],
             'js_runtimes': {'deno': {}, 'node': {}},
+            # Only the plain audio formats are used: skipping YouTube's DASH/HLS lists saves ~30% per lookup.
+            'extractor_args': {'youtube': {'skip': ['dash', 'hls', 'translated_subs']}},
         }
         if cookies:
             opts['cookiefile'] = cookies

@@ -3372,6 +3372,10 @@ async function loadYtKept() {
   if (!server.on) return;
   if (ytAudioOn()) checkYtServers();
   try { ytKept = new Set((await api('GET', 'api/ytcache')).ids || []); } catch (e) {}
+  // The song left in the player (and the ones after it): ready before play is pressed.
+  const cur = state.list && state.order && state.list[state.order[state.pos]];
+  if (cur && !ytKept.has((TRACKS[cur] || {}).ytId)) prepTrack(cur);
+  prepAhead();
 }
 setInterval(() => { if (document.visibilityState === 'visible') loadYtKept(); }, 5 * 60e3);
 /* Liked Spotify songs without a YouTube match yet get one in the background (a few seconds apart), so the
@@ -3431,16 +3435,16 @@ function ytAudioPlaying(t) {
   Object.keys(ytAudio.fails).forEach(b => { if (src.startsWith(b)) ytAudio.fails[b] = 0; });
   t.ytTried = null;
 }
-/* While a song plays, get the next two ready: find the YouTube video for imported Spotify songs (saved, so it's
+/* While a song plays, get the next three ready: find the YouTube video for imported Spotify songs (saved, so it's
    only looked up once) and have the server look up the ad-free audio. Then they start without the wait. */
 let prepTimer = null;
 function prepAhead() {
   clearTimeout(prepTimer);
   prepTimer = setTimeout(async () => {
     if (!server.on) return;
-    const ids = [...state.manual.slice(0, 2), ...[1, 2].map(k => state.list[state.order[state.pos + k]])].filter(Boolean).slice(0, 2);
+    const ids = [...state.manual.slice(0, 3), ...[1, 2, 3].map(k => state.list[state.order[state.pos + k]])].filter(Boolean).slice(0, 3);
     for (const id of ids) await prepTrack(id);
-  }, 2000);
+  }, 300);
 }
 const prepped = new Map();   // track id -> when it was last prepared (don't repeat within 30 minutes)
 async function prepTrack(id) {
@@ -3470,8 +3474,8 @@ function prepVisible(type, id) {
   prepVisTimer = setTimeout(() => {
     const col = getCollection(type, id); if (!col || !server.on) return;
     const ready = tid => { const t = TRACKS[tid]; if (!t || t.src) return false; if (t.yt) return !ytKept.has(t.ytId); const m = t.sp && sp.matches[t.key]; return !!(m && m.yt && !m.file && !ytKept.has(m.yt.id)); };
-    col.tracks.filter(ready).slice(0, 4).forEach(prepTrack);
-  }, 600);
+    col.tracks.filter(ready).slice(0, 8).forEach(prepTrack);
+  }, 250);
 }
 // A finger (or mouse button) going down on a song: start getting it ready before the tap even finishes.
 document.addEventListener('pointerdown', e => {

@@ -85,7 +85,8 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
   function lookUpSpawn(id) {
     const args = ['-j', '--no-warnings', '--no-playlist', '-f', 'bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio',
       // yt-dlp's default YouTube clients: their stream addresses can be fetched directly (web_safari's answer 403).
-      '--remote-components', 'ejs:github', '--js-runtimes', 'deno', '--js-runtimes', 'node'];
+      '--remote-components', 'ejs:github', '--js-runtimes', 'deno', '--js-runtimes', 'node',
+      '--extractor-args', 'youtube:skip=dash,hls,translated_subs'];
     const cookies = path.join(dataDir, 'cookies.txt');
     if (fs.existsSync(cookies)) args.push('--cookies', cookies);
     args.push('--', 'https://www.youtube.com/watch?v=' + id);
@@ -124,6 +125,12 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
       if (req.query.prep) return res.status(204).end();
       return res.sendFile(cached(id), { headers: { 'Content-Type': 'audio/mp4', 'Cache-Control': 'private, max-age=86400' } });
     }
+    // Played or got ready lately: also kept on disk for a while, so it starts instantly (and seeks/replays too).
+    if (fs.existsSync(recent(id))) {
+      if (req.query.prep) return res.status(204).end();
+      const now = new Date(); fs.utimes(recent(id), now, now, () => {});
+      return res.sendFile(recent(id), { headers: { 'Content-Type': 'audio/mp4', 'Cache-Control': 'private, max-age=86400' } });
+    }
     const known = found.get(id);
     if (blockedUntil > Date.now() && !(known && known.url && Date.now() - known.at < KEEP_MS)) {
       res.setHeader('X-Murmur-Yt', 'blocked');
@@ -131,6 +138,7 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
     }
     try {
       let s = await stream(id);
+      warm(id);
       if (req.query.prep) return res.status(204).end();
       for (let attempt = 0; attempt < 2; attempt++) {
         const ctl = new AbortController();
@@ -189,21 +197,64 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
     }
     return out;
   }
-  async function download(id) {
+  async function download(id, dest = cached(id)) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const s = await stream(id, attempt > 0);
       const r = await fetch(s.url, { headers: { ...s.headers, Range: 'bytes=0-' }, signal: AbortSignal.timeout(180e3) });
       if ((r.status === 403 || r.status === 410) && attempt === 0) continue;
       if (!r.ok || !r.body) throw new Error('YouTube answered ' + r.status);
-      const tmp = cached(id) + '.part';
+      const tmp = dest + '.part';
       await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(tmp));
       const size = fs.statSync(tmp).size;
       if (size < 100e3) { fs.rmSync(tmp, { force: true }); throw new Error('file too small'); }
-      fs.renameSync(tmp, cached(id));
+      fs.renameSync(tmp, dest);
       return size;
     }
     throw new Error('stream address expired');
   }
+  /* Songs played or got ready lately (the next ones in the queue, the top of a list you opened, search results)
+     are downloaded whole in the background, a couple at a time: a few MB each, about a second on a server's
+     connection. Playing one is then just reading a file here, instant, with no wait on YouTube. Kept up to
+     1 GB, the least recently played go first. These stay on this server (only liked songs are synced). */
+  const RECENT_DIR = path.join(CACHE_DIR, 'recent');
+  fs.mkdirSync(RECENT_DIR, { recursive: true });
+  const MAX_RECENT = 1024 ** 3;
+  const recent = id => path.join(RECENT_DIR, id + '.m4a');
+  const warming = new Set(), warmQueue = [];
+  function warm(id) {
+    if (!ID.test(id) || warming.has(id) || warmQueue.includes(id) || failsInARow >= 3) return;
+    if (fs.existsSync(cached(id)) || fs.existsSync(recent(id))) return;
+    warmQueue.push(id);
+    if (warmQueue.length > 30) warmQueue.shift();
+    pumpWarm();
+  }
+  function pumpWarm() {
+    while (warming.size < 2 && warmQueue.length) {
+      const id = warmQueue.shift();
+      warming.add(id);
+      download(id, recent(id)).catch(() => fs.rm(recent(id) + '.part', { force: true }, () => {}))
+        .finally(() => { warming.delete(id); trimRecent(); pumpWarm(); });
+    }
+  }
+  let trimming = false;
+  async function trimRecent() {
+    if (trimming) return; trimming = true;
+    try {
+      const files = [];
+      for (const f of await fs.promises.readdir(RECENT_DIR)) {
+        if (!f.endsWith('.m4a')) continue;
+        try { const st = await fs.promises.stat(path.join(RECENT_DIR, f)); files.push({ f, size: st.size, t: st.mtimeMs }); } catch { /* gone */ }
+      }
+      let total = files.reduce((a, x) => a + x.size, 0);
+      for (const x of files.sort((a, b) => a.t - b.t)) {
+        if (total <= MAX_RECENT) break;
+        await fs.promises.rm(path.join(RECENT_DIR, x.f), { force: true }); total -= x.size;
+      }
+    } catch { /* tried again next time */ } finally { trimming = false; }
+  }
+  // Left over from a restart in the middle of a download
+  for (const f of fs.readdirSync(RECENT_DIR)) if (f.endsWith('.part')) fs.rm(path.join(RECENT_DIR, f), { force: true }, () => {});
+
   let filling = false;
   async function fillCache() {
     if (filling) return;
@@ -221,6 +272,9 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
       for (const id of want) {
         if (failsInARow >= 3) break;   // YouTube is blocking this server: the files come from the others by sync
         if (recs[id] || total > MAX_CACHE) continue;
+        if (fs.existsSync(recent(id))) {   // already here from playing it: keep that file
+          try { fs.renameSync(recent(id), cached(id)); recs[id] = { at: Date.now(), size: fs.statSync(cached(id)).size }; total += recs[id].size; saveRecs(); continue; } catch { /* download it */ }
+        }
         try { const size = await download(id); recs[id] = { at: Date.now(), size }; total += size; saveRecs(); }
         catch { /* tried again next round */ }
         await new Promise(r => setTimeout(r, 1500));
@@ -246,7 +300,7 @@ module.exports = function ytAudio(app, auth, dataDir, opts = {}) {
   app.get('/api/ytcache', (req, res) => res.json({ ids: Object.keys(recs).filter(id => fs.existsSync(cached(id))) }));
 
   return {
-    prep(ids) { if (failsInARow >= 3) return; for (const id of ids) if (ID.test(id) && !fs.existsSync(cached(id))) stream(id).catch(() => {}); },
+    prep(ids) { if (failsInARow >= 3) return; for (const id of ids) if (ID.test(id) && !fs.existsSync(cached(id)) && !fs.existsSync(recent(id))) stream(id).then(() => warm(id), () => {}); },
     // For server-to-server sync: the list of kept songs, and their files.
     files: () => Object.keys(recs).map(id => 'ytcache/' + id + '.m4a'),
     syncCollection: {
