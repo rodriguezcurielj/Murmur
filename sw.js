@@ -31,6 +31,18 @@ async function networkFirst(request) {
   catch (err) { return (await saved()) || Response.error(); }
 }
 
+// The app page opens from the saved copy right away (no waiting on the network every launch), and a fresh copy is
+// saved in the background for next time. The page checks for a newer version a few seconds after opening and
+// reloads into it when nothing is playing. Asking with cache: 'no-store' (that check) always goes to the network.
+async function savedFirst(request) {
+  if (request.cache === 'no-store' || request.cache === 'reload') return networkFirst(request);
+  const cache = await caches.open(SHELL_CACHE);
+  const hit = await cache.match(request, { ignoreSearch: true }) || (request.mode === 'navigate' ? await cache.match('index.html') : null);
+  if (!hit) return networkFirst(request);
+  fetch(request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => { if (res.ok) return cache.put(request, res); }).catch(() => {});
+  return hit;
+}
+
 async function cacheFirst(request) {
   const cache = await caches.open(RUNTIME_CACHE);
   const hit = await cache.match(request);
@@ -50,7 +62,7 @@ self.addEventListener('fetch', event => {
     if (path.startsWith(BASE + 'api/') || path.startsWith(BASE + 'media/')) return;
     // config.js holds the server list, so keep a copy for when this site itself can't be reached.
     if (req.mode === 'navigate' || path === BASE || path.endsWith('.html') || path.endsWith('.webmanifest') || path === BASE + 'config.js') {
-      event.respondWith(networkFirst(req));
+      event.respondWith(savedFirst(req));
     } else if (path.startsWith(BASE + 'covers/') || path.startsWith(BASE + 'icons/')) {
       event.respondWith(cacheFirst(req));
     }

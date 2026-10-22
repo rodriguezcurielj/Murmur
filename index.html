@@ -1714,9 +1714,22 @@ function renderUploadStatus() {
 const NET_ERR = /failed to fetch|networkerror|load failed|network ?error|network connection was lost|err_internet|err_network/i;
 const netError = () => Object.assign(new Error('Can’t reach the Murmur server right now. It may be restarting or your connection dropped. Try again in a moment.'), { network: true });
 const safeToRepeat = (method, url) => method !== 'POST' || /^api\/(genres|discover|radio|catalog|spotify\/(link|profile))/.test(url);
+/* Opening Murmur: what the start-up asks the server for is all asked at once (not one after another), and each
+   step just picks up its answer when it gets there. */
+const bootPrefetch = new Map();
+function prefetchGets(urls) {
+  for (const u of urls) {
+    const p = fetch(apiUrl(u), { headers: authHeaders({ 'Content-Type': 'application/json' }) });
+    p.catch(() => {});
+    bootPrefetch.set(u, p);
+  }
+  setTimeout(() => bootPrefetch.clear(), 30e3);
+}
 async function api(method, url, body) {
   let r;
-  for (let attempt = 1; ; attempt++) {
+  const pre = method === 'GET' && !body && bootPrefetch.get(url);
+  if (pre) { bootPrefetch.delete(url); try { r = await pre; } catch (e) { r = null; } }
+  if (!r) for (let attempt = 1; ; attempt++) {
     try { r = await fetch(apiUrl(url), { method, headers: authHeaders({ 'Content-Type': 'application/json' }), body: body ? JSON.stringify(body) : undefined }); break; }
     catch (e) {
       if (!NET_ERR.test(String(e && e.message)) && !(e instanceof TypeError)) throw e;
@@ -2301,7 +2314,7 @@ function applyUpdateIfIdle() {
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
 setInterval(checkForUpdate, 10 * 60e3);
-setTimeout(checkForUpdate, 20e3);   // soon after opening, in case this copy came from the saved one
+setTimeout(checkForUpdate, 5e3);   // soon after opening: the page opens from the copy saved on the device (fast), so check it's the newest
 function resetPlayback() {
   const opts = [['playlist', 'deep-focus'], ['album', 'uploads'], ...ALBUMS.map(a => ['album', a.id])];
   for (const [t, i] of opts) {
@@ -7252,7 +7265,8 @@ async function firstServer(bases) {
 }
 async function checkAuth() {
   let st = null;
-  try { st = await getStatus(''); } catch (e) {}   // is this page served by the Murmur server itself?
+  // Is this page served by the Murmur server itself? (GitHub Pages, where the Android app opens, never is: skip asking.)
+  if (!/\.github\.io$/.test(location.hostname)) { try { st = await getStatus(''); } catch (e) {} }
   remote.hosted = !!st;
   if (!st) {
     const base = savedServer();
@@ -8176,6 +8190,7 @@ setInterval(() => {
   $('#adminBtn').hidden = !(me && me.role === 'owner' && mode === 'ok');   // the owner manages accounts from here
   renderAcctBtn();
   if (mode === 'ok') {
+    if (me) prefetchGets(['api/youtube/status', 'api/settings/public', 'api/imports', 'api/matches', 'api/me/data']);
     await connectServer();
     try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.keys = ys.keys || []; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
     { const t = TRACKS[state.current]; $$('.ver-btn').forEach(b => b.hidden = !(t && (t.sp || t.yt || t.src))); }   // the song from before the refresh
