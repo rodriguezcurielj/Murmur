@@ -4324,7 +4324,7 @@ function buildShell() {
       <div class="seek-row"><span data-pos>0:00</span><input type="range" data-seek id="pSeek" min="0" max="1000" value="0" aria-label="Seek"><span data-dur>0:00</span></div>
     </div>
     <div class="p-right">
-      <button class="icon-btn" data-act="cur-ver" id="verBtn" hidden aria-label="Choose a YouTube version" title="Choose a YouTube version">${icon('versions')}</button>
+      <button class="icon-btn ver-btn" data-act="cur-ver" id="verBtn" hidden aria-label="Choose a YouTube version" title="Choose a YouTube version">${icon('versions')}</button>
       <button class="icon-btn" data-act="pb-open" aria-label="Playback settings" title="Playback settings">${icon('eq')}</button>
       <button class="icon-btn" data-act="radio-cur" aria-label="Start radio from this song" title="Start radio from this song">${icon('radio')}</button>
       <button class="icon-btn" data-act="nav" data-to="lyrics" id="lyBtn" aria-label="Lyrics">${icon('lyrics')}</button>
@@ -4340,6 +4340,7 @@ function buildShell() {
       <button class="icon-btn mini-skip" data-act="next" aria-label="Next">${icon('next')}</button>
     </div>
     <div class="p-mini">
+      <button class="icon-btn ver-btn" data-act="cur-ver" hidden aria-label="Choose a YouTube version" title="Choose a YouTube version">${icon('versions')}</button>
       <button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button>
     </div>
     <div class="mini-bar"><span id="miniBar"></span></div>
@@ -4577,7 +4578,7 @@ function updatePlayerUI() {
     $('#pTitle').textContent = t.title;
     $$('#pArtist,#fArtist').forEach(b => { b.textContent = t.artist; b.dataset.id = t.artist; });
     $$('.cur-like,.cur-down').forEach(b => b.dataset.tid = t.id);
-    $('#verBtn').hidden = !(t.sp || t.yt || t.src);   // any real song: pick which YouTube upload plays
+    $$('.ver-btn').forEach(b => b.hidden = !(t.sp || t.yt || t.src));   // any real song: pick which YouTube upload plays
     $('#fCover').src = tCover(t.id); $('#fCover').alt = t.album;
     $('#fTitle').textContent = t.title;
     $('#fCtx').textContent = state.ctx ? state.ctx.title : t.album;
@@ -7637,7 +7638,7 @@ setInterval(() => {
   if (mode === 'ok') {
     await connectServer();
     try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.keys = ys.keys || []; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
-    { const t = TRACKS[state.current], b = $('#verBtn'); if (b) b.hidden = !(t && (t.sp || t.yt || t.src)); }   // the song from before the refresh
+    { const t = TRACKS[state.current]; $$('.ver-btn').forEach(b => b.hidden = !(t && (t.sp || t.yt || t.src))); }   // the song from before the refresh
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
     setTimeout(askForEmail, 4000);
     await loadSpotify();
