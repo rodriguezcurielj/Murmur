@@ -146,6 +146,10 @@ body:not([data-view="search"]) .top-search{display:none}
 body:not([data-view="search"]) .topbar .top-right{margin-left:auto}
 .rs-wrap{display:none}
 body.tq-focus .rs-wrap{display:block}
+body.tq-focus .mfy{display:none}
+.rs-song img{width:42px;height:42px;border-radius:4px;object-fit:cover;flex:none}
+.rs-tx{display:flex;flex-direction:column;min-width:0}
+.rs-tx b{font-weight:600}
 .gbox-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}
 @media (min-width:900px){.gbox-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .gbox{position:relative;overflow:hidden;min-height:92px;border:0;border-radius:10px;padding:14px;text-align:left;color:#fff;cursor:pointer;
@@ -311,8 +315,14 @@ body.tq-focus .rs-wrap{display:block}
 .big-play{width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 8px 22px rgba(0,0,0,.4);transition:transform .15s}
 .big-play:hover{transform:scale(1.05)}
 .big-play svg{width:24px;height:24px}
-.actions .icon-btn{width:42px;height:42px}
-.actions .icon-btn svg{width:24px;height:24px}
+.actions .icon-btn{width:38px;height:38px}
+.actions .icon-btn svg{width:20px;height:20px}
+/* One button size everywhere: outlined pills 38px tall, icon-only ones 38px round, all with the same outline as Select. */
+.actions .text-btn,.head-actions .text-btn,.actions .out-btn,.actions .dl-col,.actions .sort-btn{height:38px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+.actions .text-btn,.head-actions .text-btn{padding:0 14px;font-size:14px}
+.actions .out-btn,.actions .sort-btn{width:38px;padding:0}
+.actions .dl-col{min-width:38px;padding:0 9px}
+.actions .out-btn.on,.actions .dl-col.on,.actions .sort-btn.on{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
 .text-btn{padding:8px 14px;border-radius:999px;border:1px solid var(--line);font-weight:600;font-size:14px;color:var(--muted)}
 .text-btn:hover{color:var(--fg);border-color:var(--muted)}
 .text-btn.danger{color:var(--danger);border-color:var(--danger)}
@@ -431,11 +441,16 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 /* ---------- full player ---------- */
 .full{position:fixed;inset:0;z-index:40;overflow:auto;background:linear-gradient(180deg,color-mix(in srgb,var(--tint,#5a3478) 55%,var(--bg)) 0%,var(--bg) 78%);padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(28px + env(safe-area-inset-bottom,0px))}
 .full-in{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
-.full-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;text-align:center}
+/* Equal side columns keep "Playing from" in the exact middle whatever buttons sit on each side. */
+.full-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.4fr) minmax(0,1fr);align-items:center;gap:8px;text-align:center}
+.full-top>.icon-btn{justify-self:start}
+.full-top-r{justify-self:end}
+.full-ctx{min-width:0;text-align:center}
 .full-top .eyebrow{color:var(--fg);opacity:.8;display:block}
 .full-ctx b{font-weight:700;font-size:14px;display:block}
 .full-cover{width:min(100%,46vh);align-self:center;border-radius:10px;box-shadow:0 22px 56px rgba(0,0,0,.55)}
 #viz{width:100%;height:52px;display:block}
+#full #viz{display:none}   /* the moving bars under the cover looked like dashes */
 .full-meta{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .full-meta>div{min-width:0}
 .full-title{font:800 26px/1.15 var(--font-display);letter-spacing:-.01em}
@@ -448,9 +463,10 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .controls.big .icon-btn svg{width:26px;height:26px}
 
 /* ---------- menu / toast ---------- */
-.menu{position:fixed;z-index:60;background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:4px;min-width:230px;max-width:calc(100vw - 16px);max-height:70vh;overflow:auto;box-shadow:0 16px 40px rgba(0,0,0,.55)}
+.menu{position:fixed;z-index:60;background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:4px;width:min(290px,calc(100vw - 16px));max-height:70vh;overflow:auto;box-shadow:0 16px 40px rgba(0,0,0,.55)}
 .menu-title{padding:8px 12px 6px;font-size:12px;color:var(--muted);font-weight:700}
-.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:5px;font-size:14px;font-weight:500}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:5px;font-size:14px;font-weight:500;text-align:left}
+.menu button svg{flex:none;width:18px;height:18px}
 .menu button:hover,.menu button:focus-visible{background:var(--hover)}
 .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
 .toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:110;background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100vw - 32px)}
@@ -494,6 +510,8 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 
 /* ---------- selection ---------- */
 .head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lib-top{flex-direction:column;align-items:flex-start;gap:10px}
+#upBtn{display:none!important}   /* Upload lives in Your Library */
 .text-btn{display:inline-flex;align-items:center;gap:6px}
 .text-btn svg{width:16px;height:16px}
 .radio-cta{display:flex;align-items:center;gap:12px;width:100%;max-width:520px;margin:2px 0 18px;padding:12px 16px;border-radius:var(--r);background:var(--accent);color:var(--accent-ink);text-align:left}
@@ -4148,7 +4166,7 @@ function searchResultsHTML() {
   const q = state.search.trim();
   if (!q) {
     // Recent searches only show while the search bar is in use; under it, genres to explore.
-    return `<h1 class="greet">Search</h1><div class="rs-wrap">${recentSearchesHTML()}</div>${moreForYouHTML()}`;
+    return `<h1 class="greet">Search</h1><div class="rs-wrap">${recentSearchesHTML()}</div><div class="mfy">${moreForYouHTML()}</div>`;
   }
   const ql = q.toLowerCase();
   const tracks = searchTracks(q).filter(id => !id.startsWith('yt-'));   // YouTube songs are listed in their own section
@@ -4220,7 +4238,7 @@ function closeDrop() {
 }
 function pickDrop(k) {
   const it = drop.items[k], input = $('#tq'); if (!it) return;
-  if (it.kind === 'song') { closeDrop(); input.blur(); playFrom('search', input.value.trim(), it.i); return; }
+  if (it.kind === 'song') { closeDrop(); input.blur(); const sq = input.value.trim(); playFrom('search', sq, it.i); const sc = getCollection('search', sq); if (sc && sc.tracks[it.i]) noteSearchSong(sc.tracks[it.i]); return; }
   if (it.kind === 'radio') { closeDrop(); input.blur(); radioFromQuery(input.value); return; }
   if (it.kind === 'sugg') input.value = it.s;
   submitSearch(input.value);
@@ -4251,11 +4269,17 @@ function noteSearch(q) {
   const k = q.toLowerCase();
   store.set('recentSearches', [q, ...store.get('recentSearches', []).filter(x => x.toLowerCase() !== k)].slice(0, 15));
 }
+// Songs you played from a search, newest first (shown with the recent searches).
+function noteSearchSong(tid) {
+  if (!TRACKS[tid]) return;
+  const t = TRACKS[tid], rec = { id: tid, title: t.title, artist: t.artist, cover: tCover(tid) };
+  store.set('recentSearchSongs', [rec, ...store.get('recentSearchSongs', []).filter(x => x.id !== tid)].slice(0, 20));
+}
 function recentSearchesHTML() {
-  const list = store.get('recentSearches', []);
-  if (!list.length) return '';
+  const list = store.get('recentSearches', []), songs = store.get('recentSearchSongs', []).filter(x => TRACKS[x.id]);
+  if (!list.length && !songs.length) return `<div class="shelf-head"><h2>Recent searches</h2></div><p class="small">Nothing yet. What you search for and play shows up here.</p>`;
   return `<div class="shelf-head"><h2>Recent searches</h2><div class="head-actions"><button class="link-btn small" data-act="rs-clear">Clear all</button></div></div>
-    <div class="rs-list">${list.map(q => `<div class="rs-item"><button class="rs-q" data-act="rs-go" data-q="${esc(q)}">${icon('search')}<span class="ell">${esc(q)}</span></button><button class="icon-btn" data-act="rs-del" data-q="${esc(q)}" aria-label="Remove ${esc(q)}" title="Remove">${icon('close')}</button></div>`).join('')}</div>`;
+    <div class="rs-list">${songs.map(x => `<div class="rs-item"><button class="rs-q rs-song" data-act="rs-play" data-tid="${esc(x.id)}"><img src="${esc(x.cover)}" alt=""><span class="rs-tx"><b class="ell">${esc(x.title)}</b><span class="small ell">Song · ${esc(x.artist)}</span></span></button><button class="icon-btn" data-act="rs-del-song" data-tid="${esc(x.id)}" aria-label="Remove ${esc(x.title)}" title="Remove">${icon('close')}</button></div>`).join('')}${list.map(q => `<div class="rs-item"><button class="rs-q" data-act="rs-go" data-q="${esc(q)}">${icon('search')}<span class="ell">${esc(q)}</span></button><button class="icon-btn" data-act="rs-del" data-q="${esc(q)}" aria-label="Remove ${esc(q)}" title="Remove">${icon('close')}</button></div>`).join('')}</div>`;
 }
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
 function viewCollection(type, id) {
@@ -4301,6 +4325,17 @@ function viewCollection(type, id) {
   const dlBtn = type !== 'downloads' && col.tracks.length && (server.on || dlTargets(col.tracks).some(t => offline.has(t)))
     ? `<button class="icon-btn dl-btn dl-col" data-act="col-dl" data-type="${type}" data-id="${esc(id)}" aria-label="Download to this device">${icon('download')}</button><span class="small dl-note"></span>` : '';
   const clearDl = type === 'downloads' && n ? `<button class="text-btn" data-act="dl-clear">${icon('trash')}<span>Remove all downloads</span></button>` : '';
+  // Everything that only some pages have goes in the ⋯ menu, so the buttons above sit in the same places on every page.
+  const mi = (act, ic, label, attrs = '') => `<button role="menuitem" data-act="${act}" ${attrs}>${icon(ic)}${label}</button>`;
+  const extras = [
+    type === 'artist' && server.on ? mi('artist-radio', 'radio', 'Artist radio', `data-id="${esc(col.artistName || id)}"`) : '',
+    col.discover ? mi('disc-refresh', 'repeat', disc.loading ? 'Finding songs…' : 'Get new suggestions') : '',
+    col.imported ? mi('sp-sync', 'repeat', 'Sync from Spotify', `data-id="${esc(id)}"`) : '',
+    albumOk ? mi('album-edit', 'edit', 'Edit album', `data-id="${esc(id)}"`) : '',
+    col.uploaded && col.mine && !col.uploadsAll ? (state.hiddenCols.has('album:' + id) ? mi('album-unhide', 'plus', 'Show in library', `data-id="${esc(id)}"`) : mi('album-hide', 'cloudOff', 'Hide from library', `data-id="${esc(id)}"`)) : '',
+    delLabel ? mi('col-delete', 'trash', delLabel, `data-type="${type}" data-id="${esc(id)}"`) : '',
+    clearDl ? mi('dl-clear', 'trash', 'Remove all downloads') : ''
+  ].filter(Boolean).join('');
   const editAlbum = (albumOk ?`<button class="text-btn" data-act="album-edit" data-id="${esc(id)}">${icon('edit')}<span>Edit album</span></button>` : '')
     + (col.uploaded && col.mine && !col.uploadsAll ? (state.hiddenCols.has('album:' + id)
       ? `<button class="text-btn" data-act="album-unhide" data-id="${esc(id)}">${icon('plus')}<span>Show in library</span></button>`
@@ -4315,10 +4350,11 @@ function viewCollection(type, id) {
   </header>
   <div class="actions">
     ${n ? playFab(type, id, 'big-play') : ''}
-    <button class="icon-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}">${icon('shuffle')}</button>
+    <button class="icon-btn out-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}" title="Shuffle">${icon('shuffle')}</button>
+    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) + sortSelHTML(type, id, col) : ''}${ytBatchBtn(type, id, col)}
     ${col.gpreview ? `<button class="text-btn gp-create" data-act="gp-make" data-g="${esc(id)}">${icon('plus')}<span>Create playlist</span></button><button class="text-btn" data-act="gp-skip" data-g="${esc(id)}" data-back="1">${icon('close')}<span>Don’t suggest</span></button>` : ''}
     ${col.radio ? `<button class="text-btn" data-act="radio-not" ${sameCtx('radio', 'station') ? '' : 'disabled'}>${icon('thumbDown')}<span>Not this artist</span></button>` : ''}
-    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) + sortSelHTML(type, id, col) : ''}${type === 'artist' && server.on ? `<button class="text-btn" data-act="artist-radio" data-id="${esc(col.artistName || id)}">${icon('radio')}<span>Artist radio</span></button>` : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
+    ${extras ? `<button class="icon-btn out-btn" data-act="col-more" aria-label="More options" title="More options">${icon('more')}</button><template id="colExtras">${extras}</template>` : ''}
   </div>
   ${server.on ? jobPanelsHTML(type, id) : ''}
   ${col.liked ? genrePlaylistsHTML() : ''}
@@ -4357,7 +4393,7 @@ function viewLibrary() {
   const selecting = !!state.libSel;
   const hidAlb = [...state.hiddenCols].filter(k => k.startsWith('album:') && ALBUM_MAP[k.slice(6)]).length, hidPl = [...state.hiddenCols].filter(k => !k.startsWith('album:')).length;
   const restore = (hidAlb ? `<div class="restore"><p class="small">${plural(hidAlb, 'album')} hidden from your library. The songs are still in Uploads.</p><button class="text-btn" data-act="albums-unhide">Show hidden albums</button></div>` : '');
-  return `<div class="shelf-head" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
+  return `<div class="shelf-head lib-top" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
       ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
       ${server.on ? `<button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import from Spotify</span></button>` : ''}
@@ -4525,7 +4561,7 @@ function buildShell() {
     <div class="full-top">
       <button class="icon-btn" data-act="full-close" aria-label="Close player">${icon('down')}</button>
       <div class="full-ctx"><span class="eyebrow">Playing from</span><b class="ell" id="fCtx"></b></div>
-      <span class="full-top-r"><button class="icon-btn" data-act="pb-open" aria-label="Playback settings">${icon('eq')}</button><button class="icon-btn" data-act="go-lyrics" aria-label="Lyrics">${icon('lyrics')}</button><button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button></span>
+      <span class="full-top-r"><button class="icon-btn" data-act="go-lyrics" aria-label="Lyrics">${icon('lyrics')}</button><button class="icon-btn" data-act="go-queue" aria-label="Open queue">${icon('queue')}</button></span>
     </div>
     <img class="cover full-cover" id="fCover" alt="">
     <div class="video-switch" id="fVideoSwitch" role="group" aria-label="Show for YouTube songs" hidden>
@@ -4534,7 +4570,7 @@ function buildShell() {
     </div>
     <canvas id="viz" aria-hidden="true"></canvas>
     <div class="full-meta"><div><div class="full-title" id="fTitle"></div><button class="full-artist ell" id="fArtist" data-act="open" data-type="artist"></button></div>
-      <span class="full-likes"><button class="icon-btn" data-act="rename" aria-label="Edit title and artist" title="Edit title and artist">${icon('edit')}</button><button class="icon-btn radio-only cur-down" data-act="radio-down" aria-label="Thumbs down">${icon('thumbDown')}</button><button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></span></div>
+      <span class="full-likes"><button class="icon-btn ver-btn" data-act="cur-ver" hidden aria-label="Choose a YouTube version" title="Choose a YouTube version">${icon('versions')}</button><button class="icon-btn radio-only cur-down" data-act="radio-down" aria-label="Thumbs down">${icon('thumbDown')}</button><button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></span></div>
     <div class="full-seek"><input type="range" data-seek id="fSeek" min="0" max="1000" value="0" aria-label="Seek"><div class="times"><span data-pos>0:00</span><span data-dur>0:00</span></div></div>
     <div class="controls big">${ctrls()}</div>
     <button class="text-btn full-radio" data-act="radio-cur">${icon('radio')}<span>Start radio from this song</span></button>
@@ -4826,6 +4862,8 @@ function drawViz() {
 
 /* ================= menu, toast, modal ================= */
 const menuEl = $('#menu');
+// Page-specific actions in a ⋯ menu run like their buttons did, then the menu closes.
+menuEl.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && !['m', 'cm', 'sort-pick'].includes(b.dataset.act)) setTimeout(closeMenu, 0); });
 let menuState = null;
 function openMenu(btn, tids, o = {}) {
   menuState = { tids, ctxType: o.ctxType || null, ctxId: o.ctxId || null, idx: o.idx, sub: !!o.sub, multi: tids.length > 1 || !!o.multi, anchor: btn.getBoundingClientRect() };
@@ -5412,6 +5450,7 @@ function act(el, e) {
       const type = list.dataset.ctxType, id = list.dataset.ctxId, i = +d.i;
       if (selMatches(type, id)) { toggleSel(i, e.shiftKey); return; }
       if (e.ctrlKey || e.metaKey || e.shiftKey) { startSel(type, id, i); return; }
+      if (['search', 'catq', 'ytq'].includes(type)) noteSearchSong(d.tid);
       if (d.tid === state.current && sameCtx(type, id)) togglePlay(); else playFrom(type, id, i);
       break;
     }
@@ -5627,11 +5666,21 @@ function act(el, e) {
       break;
     case 'yt-search': runYtSearch(d.q); break;
     case 'sort-open': openSortMenu(el); break;
+    case 'col-more': {
+      const tpl = $('#colExtras'); if (!tpl) return;
+      closeMenu(); menuEl.innerHTML = tpl.innerHTML; menuEl.hidden = false;
+      const r = el.getBoundingClientRect(), mw = menuEl.offsetWidth, mh = menuEl.offsetHeight;
+      menuEl.style.left = clamp(r.left, 8, innerWidth - mw - 8) + 'px';
+      menuEl.style.top = clamp(r.bottom + mh + 4 > innerHeight - 8 ? r.top - mh - 4 : r.bottom + 4, 8, innerHeight - mh - 8) + 'px';
+      break;
+    }
     case 'sort-pick': pickSort(d.key, d.k); break;
     case 'genre-box': disc.genre = d.g; store.set('discGenre', d.g); loadDiscover(false); navigate({ name: 'collection', type: 'discover', id: 'mix' }); break;
     case 'rs-go': { const q = $('#tq'); if (q) { q.value = d.q; const c = $('#tqClear'); if (c) c.hidden = false; } submitSearch(d.q); break; }
     case 'rs-del': store.set('recentSearches', store.get('recentSearches', []).filter(x => x !== d.q)); refreshSearch(); { const q = $('#tq'); if (q) q.focus(); } break;
-    case 'rs-clear': store.set('recentSearches', []); refreshSearch(); break;
+    case 'rs-clear': store.set('recentSearches', []); store.set('recentSearchSongs', []); refreshSearch(); break;
+    case 'rs-del-song': store.set('recentSearchSongs', store.get('recentSearchSongs', []).filter(x => x.id !== d.tid)); refreshSearch(); { const q = $('#tq'); if (q) q.focus(); } break;
+    case 'rs-play': { const ids = store.get('recentSearchSongs', []).map(x => x.id).filter(id => TRACKS[id]); const q = $('#tq'); if (q) q.blur(); noteSearchSong(d.tid); loadAndPlay(d.tid, true); break; }
     case 'tq-clear': { const q = $('#tq'); q.value = ''; onSearchInput(''); q.focus(); if (state.view.name === 'search') { state.search = ''; refreshSearch(); } break; }
     case 'drop-pick': pickDrop(+d.k); break;
     case 'go-settings': people = null; navigate({ name: 'people' }); break;
