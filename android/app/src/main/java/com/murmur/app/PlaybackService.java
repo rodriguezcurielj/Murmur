@@ -124,6 +124,10 @@ public class PlaybackService extends Service {
         String action = intent == null ? null : intent.getAction();
         if (ACTION_STOP.equals(action)) { shutDown(); return START_NOT_STICKY; }
         if (ACTION_CONTROL.equals(action)) {
+            // Widget buttons start this as a foreground service, so it must show its notification right away.
+            Notification fg = buildNotification();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, fg, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+            else startForeground(NOTIFICATION_ID, fg);
             MainActivity.control(intent.getStringExtra("do"));
             return START_NOT_STICKY;
         }
@@ -137,7 +141,7 @@ public class PlaybackService extends Service {
                 speed = (float) j.optDouble("speed", 1);
                 shuffle = j.optBoolean("shuffle", false); liked = j.optBoolean("liked", false);
                 String a = j.optString("art", "");
-                if (!a.equals(artUrl)) { artUrl = a; art = null; loadArt(a); }
+                if (!a.equals(artUrl)) { artUrl = a; art = null; MurmurWidget.saveArt(this, null); loadArt(a); }
             } catch (Exception ignored) {}
         } else if (intent != null) {
             playing = intent.getBooleanExtra("playing", false);
@@ -150,6 +154,8 @@ public class PlaybackService extends Service {
         else startForeground(NOTIFICATION_ID, n);
         updateSession();
         showControls();
+        MurmurWidget.save(this, title, artist, playing, liked);
+        MurmurWidget.refresh(this);
         // Hold the CPU and Wi-Fi awake only while music is actually playing.
         if (playing) {
             if (!wakeLock.isHeld()) wakeLock.acquire(6 * 60 * 60 * 1000L);
@@ -256,6 +262,8 @@ public class PlaybackService extends Service {
             new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                 if (!url.equals(artUrl) || !running) return;   // the song changed meanwhile
                 art = got;
+                MurmurWidget.saveArt(this, got);
+                MurmurWidget.refresh(this);
                 updateSession();
                 getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, buildNotification());
                 showControls();
@@ -293,6 +301,7 @@ public class PlaybackService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        MurmurWidget.refresh(this);   // shows paused, and its buttons now open Murmur
         getSystemService(NotificationManager.class).cancel(CONTROLS_ID);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();

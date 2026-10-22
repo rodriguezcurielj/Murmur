@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resizable from one cell up; also allowed on lock screens / cover screens that take widgets -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="40dp" android:minHeight="40dp"
+    android:minResizeWidth="40dp" android:minResizeHeight="40dp"
+    android:targetCellWidth="4" android:targetCellHeight="1"
+    android:maxResizeWidth="600dp" android:maxResizeHeight="600dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen|keyguard"
+    android:initialLayout="@layout/widget_wide"
+    android:initialKeyguardLayout="@layout/widget_large"
+    android:previewLayout="@layout/widget_wide"
+    android:description="@string/widget_desc"
+    android:updatePeriodMillis="0" />

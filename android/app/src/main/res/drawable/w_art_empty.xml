@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No cover yet: Murmur's bars on a dark square -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="rectangle"><solid android:color="#FF2A2A2A" /><corners android:radius="12dp" /></shape></item>
+    <item android:drawable="@drawable/ic_stat_murmur" android:gravity="center" android:width="40dp" android:height="40dp" />
+</layer-list>

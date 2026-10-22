@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Smallest (one cell, or a small panel): the cover with a play / pause button on it -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/w_bg">
+    <ImageView android:id="@+id/w_art" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="centerCrop" android:contentDescription="Cover" />
+    <ImageButton android:id="@+id/w_play" android:layout_width="40dp" android:layout_height="40dp" android:layout_gravity="bottom|end"
+        android:layout_margin="6dp" android:src="@drawable/n_play" android:background="@drawable/w_play_bg" android:tint="#FF121212"
+        android:scaleType="centerInside" android:padding="10dp" android:contentDescription="Play" />
+</FrameLayout>

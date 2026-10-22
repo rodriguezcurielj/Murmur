@@ -33,6 +33,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Home-screen widget: what's playing, with play / pause / skip / like -->
+        <receiver android:name=".MurmurWidget" android:exported="true" android:label="Murmur">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/murmur_widget_info" />
+        </receiver>
+
         <service
             android:name=".PlaybackService"
             android:exported="false"

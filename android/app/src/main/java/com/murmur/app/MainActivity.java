@@ -66,6 +66,18 @@ public class MainActivity extends Activity {
     private WebView web;
 
     /** Notification, lock-screen and headphone buttons: pass them to the page ("toggle", "play", "pause", "next", "prev"). */
+    /** Is Murmur's page loaded (open, or kept playing in the background)? The widget's buttons go straight to it then. */
+    static boolean pageAlive() { return keptWeb != null; }
+
+    /** A widget button pressed while Murmur was closed: do it once the page has had time to load. */
+    private void widgetAction(Intent i, boolean fresh) {
+        String what = i == null ? null : i.getStringExtra("do");
+        if (what == null) return;
+        i.removeExtra("do");
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> control(what), fresh ? 6000 : 300);
+        MurmurWidget.refresh(this);
+    }
+
     static void control(String action) {
         if (action == null) return;
         String safe = action.replaceAll("[^a-z0-9]", "");
@@ -122,6 +134,7 @@ public class MainActivity extends Activity {
             return insets;
         });
 
+        boolean freshPage = keptWeb == null;
         if (keptWeb == null) {
             keptContext = new MutableContextWrapper(this);
             keptWeb = createWebView(keptContext);
@@ -137,6 +150,7 @@ public class MainActivity extends Activity {
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
         applyBars(barBg, barLight);
+        widgetAction(getIntent(), freshPage);
 
         // Android 13+ (and always on Android 16) delivers the back gesture only to a registered callback;
         // without this, back closes the app instead of going to Murmur's Home.
@@ -260,6 +274,12 @@ public class MainActivity extends Activity {
 
     /** Opening the app again (maybe on the other screen): check which screen it's on and fit to it. */
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        widgetAction(intent, false);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         refit(web);
@@ -352,6 +372,7 @@ public class MainActivity extends Activity {
                 if (parent != null) parent.removeView(keptWeb);
                 keptWeb.destroy();
                 keptWeb = null;
+                MurmurWidget.refresh(this);   // Murmur closed: the widget's buttons open it again
                 keptContext = null;
             }
         } else if (keptContext != null) {

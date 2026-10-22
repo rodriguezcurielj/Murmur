@@ -1200,6 +1200,20 @@ body.in-radio .radio-only{display:grid!important}
   .sel-bar{bottom:92px}
   .up-status{bottom:96px}
   .full-cover{height:min(calc(100vh - 70px),42vw)}
+  /* The cover screen's big player has to fit without scrolling: only the song, the bar and the buttons. */
+  .full-radio,#fFacts,#fVideoSwitch{display:none!important}
+  .full{overflow:hidden}
+  .full-in{row-gap:4px}
+  .full-top .eyebrow{font-size:10px}
+  .full-ctx b{font-size:12px}
+  .full-title{font-size:17px}
+  .full-meta .icon-btn{width:34px;height:34px}
+  .full-seek .times{font-size:11px}
+  .full-cover{height:min(calc(100vh - 70px),36vw)}
+  .controls.big{gap:0;justify-content:space-between;min-width:0}
+  .controls.big .icon-btn{width:34px;height:34px}
+  .controls.big .icon-btn svg{width:20px;height:20px}
+  .controls.big .play-btn{width:46px;height:46px}
 }
 @media (prefers-reduced-motion:reduce){.dl-btn.busy{animation:none}*{transition:none!important}.eq i{animation:none;height:10px}.toast.show{animation:none}}
 .pb-list{display:flex;flex-direction:column}
@@ -7572,8 +7586,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.1';
-const ANDROID_NEW = 'The phone’s top bar (time, battery) and bottom bar now match your Murmur theme.';
+const ANDROID_LATEST = '3.2';
+const ANDROID_NEW = 'Murmur widgets for your home screen: long-press the home screen, tap Widgets, and pick Murmur. Resize it from a small square to a big card.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;
