@@ -60,7 +60,7 @@ try { window.murmurApplyTheme(JSON.parse(localStorage.getItem('murmur:theme') ||
 <title>Murmur Player</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
 <style>
 :root{
   /* Layout: three-pane shell (library rail · main stage · now-playing card) over a transport bar; phones collapse to stage + mini player + tab bar */
@@ -3444,7 +3444,27 @@ function prepAhead() {
     if (!server.on) return;
     const ids = [...state.manual.slice(0, 3), ...[1, 2, 3].map(k => state.list[state.order[state.pos + k]])].filter(Boolean).slice(0, 3);
     for (const id of ids) await prepTrack(id);
+    if (ids[0]) preloadNext(ids[0]);
   }, 300);
+}
+/* The very next song is also fetched whole to this device while the current one plays (a few MB), so when its
+   turn comes it starts with no waiting on the network at all. Only one is kept at a time. */
+const nextBlob = { id: null, url: null, busy: null };
+async function preloadNext(id) {
+  let t = TRACKS[id]; if (!t) return;
+  if (t.sp) { const m = sp.matches[t.key] || {}; if (!m.yt || m.file) return; t = TRACKS[addYtTrack(m.yt)]; }
+  if (!t || !t.yt || t.src || offline.has(t.id) || !ytAudioOn() || nextBlob.id === t.ytId || nextBlob.busy === t.ytId) return;
+  const u = ytAudioSrc(t); if (!u) return;
+  nextBlob.busy = t.ytId;
+  try {
+    const r = await fetch(u, { cache: 'no-store' });
+    if (!r.ok || +(r.headers.get('content-length') || 0) > 25e6) { try { r.body && r.body.cancel(); } catch (e) {} return; }
+    const blob = await r.blob();
+    if (blob.size < 50e3 || nextBlob.busy !== t.ytId) return;
+    const old = nextBlob.url;
+    nextBlob.id = t.ytId; nextBlob.url = URL.createObjectURL(blob.type ? blob : new Blob([blob], { type: 'audio/mp4' }));
+    if (old && !(FileEng.audio && FileEng.audio.getAttribute('src') === old)) URL.revokeObjectURL(old);
+  } catch (e) {} finally { if (nextBlob.busy === t.ytId) nextBlob.busy = null; }
 }
 const prepped = new Map();   // track id -> when it was last prepared (don't repeat within 30 minutes)
 async function prepTrack(id) {
@@ -3488,7 +3508,7 @@ const Engine = {
   load(t) {
     // Downloaded on this device: always from the saved file (no signal needed).
     if (t.yt && offline.has(t.id)) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t); return; }
-    const ya = t.yt && (ytAudioOn() || (ytKept.has(t.ytId) && server.on)) ? ytAudioSrc(t) : null;
+    const ya = t.yt && (ytAudioOn() || (ytKept.has(t.ytId) && server.on)) ? (nextBlob.id === t.ytId && nextBlob.url) || ytAudioSrc(t) : null;
     if (ya) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t, ya); return; }
     if (t.yt) { Synth.unload(); FileEng.unload(); this.mode = 'yt'; YTEng.load(t); return; }
     YTEng.unload();

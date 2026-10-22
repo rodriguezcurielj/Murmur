@@ -8,6 +8,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const createAuth = require('./auth');
 const createYouTube = require('./youtube');
 const createSpotify = require('./spotify');
@@ -88,6 +89,24 @@ app.use((req, res, next) => {
 });
 app.use(auth.cors);
 app.use(auth.sameOrigin);
+// Answers in JSON (song lists, liked songs, synced settings) go out compressed: about a fifth of the size, so
+// they arrive much sooner over a phone's connection.
+const takesEnc = req => { const a = String(req.headers['accept-encoding'] || ''); return /\bbr\b/.test(a) ? 'br' : /\bgzip\b/.test(a) ? 'gzip' : ''; };
+app.use((req, res, next) => {
+    const enc = takesEnc(req);
+    if (!enc) return next();
+    const json = res.json.bind(res);
+    res.json = body => {
+        const text = JSON.stringify(body);
+        if (text === undefined || text.length < 1400 || res.getHeader('Content-Encoding')) return json(body);
+        const buf = enc === 'br' ? zlib.brotliCompressSync(text, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }) : zlib.gzipSync(text, { level: 5 });
+        if (!res.getHeader('Content-Type')) res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Encoding', enc);
+        res.setHeader('Vary', 'Accept-Encoding');
+        return res.send(buf);
+    };
+    next();
+});
 
 const deferred = {};
 const sync = createSync(DATA, deferred, {
@@ -559,6 +578,28 @@ app.locals.ytAudio = require('./ytaudio')(app, auth, DATA, { userRecords: () => 
 app.use('/downloads', express.static(path.join(DATA, 'downloads'), { maxAge: '1h', fallthrough: false }));
 app.use('/media', auth.requireUserFiles, express.static(DIRS.music, { maxAge: '7d', fallthrough: false }));
 app.use('/covers', auth.requireUserFiles, express.static(DIRS.covers, { maxAge: '7d', fallthrough: false }));
+// The app page itself (~600 KB) is sent compressed (~120 KB), made once each time the page changes.
+const pageZip = { mtime: 0 };
+app.get(['/', '/index.html'], (req, res, next) => {
+    const enc = takesEnc(req), file = path.join(__dirname, 'public', 'index.html');
+    if (!enc) return next();
+    let st; try { st = fs.statSync(file); } catch { return next(); }
+    if (pageZip.mtime !== st.mtimeMs) {
+        const raw = fs.readFileSync(file);
+        Object.assign(pageZip, {
+            mtime: st.mtimeMs, etag: '"' + crypto.createHash('sha1').update(raw).digest('base64url').slice(0, 20) + '"',
+            br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }),
+            gzip: zlib.gzipSync(raw, { level: 9 })
+        });
+    }
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Vary', 'Accept-Encoding');
+    res.setHeader('ETag', pageZip.etag + enc);
+    if (req.headers['if-none-match'] === pageZip.etag + enc) return res.status(304).end();
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Encoding', enc);
+    res.send(pageZip[enc]);
+});
 app.use(express.static(path.join(__dirname, 'public'), {
     setHeaders(res, file) {
         if (/\.(html|webmanifest)$/.test(file) || file.endsWith('sw.js')) res.setHeader('Cache-Control', 'no-cache');
