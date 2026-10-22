@@ -5023,21 +5023,22 @@ function toast(msg) {
   t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, msg.length > 70 ? 4500 : 2600);
 }
-let modalSubmit = null, modalReturn = null;
+let modalSubmit = null, modalReturn = null, modalRequired = false;
 // page: on phones it fills the screen like its own page, with a back arrow (the account page).
 // drawer: slides in from the side like Spotify's account menu.
-function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit, page = false, drawer = false }) {
-  modalReturn = document.activeElement;
+// required: it can't be skipped (no cancel, tapping outside or Escape doesn't close it), e.g. adding your email.
+function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit, page = false, drawer = false, required = false }) {
+  modalReturn = document.activeElement; modalRequired = !!required;
   $('#modal').classList.toggle('m-page', !!page);
   $('#modal').classList.toggle('m-drawer', !!drawer);
   $('#modal').innerHTML = `<form class="modal" id="mForm" role="dialog" aria-modal="true" aria-labelledby="mTitle">
     ${page || drawer ? `<button type="button" class="icon-btn m-back" data-act="modal-close" aria-label="Back">${icon('back')}</button>` : ''}<h2 id="mTitle">${title}</h2><div class="m-body">${html}</div>
-    <div class="m-actions"><button type="button" class="text-btn" data-act="modal-close">${cancel}</button>${confirm ? `<button type="submit" class="m-ok${danger ? ' danger' : ''}">${confirm}</button>` : ''}</div></form>`;
+    <div class="m-actions">${required ? '' : `<button type="button" class="text-btn" data-act="modal-close">${cancel}</button>`}${confirm ? `<button type="submit" class="m-ok${danger ? ' danger' : ''}">${confirm}</button>` : ''}</div></form>`;
   modalSubmit = onSubmit; $('#modal').hidden = false; closeMenu();
   const f = $('#mForm input') || $('#mForm .m-ok'); if (f) { f.focus(); if (f.select) f.select(); }
 }
 function closeModal() {
-  $('#modal').hidden = true; modalSubmit = null;
+  $('#modal').hidden = true; modalSubmit = null; modalRequired = false;
   $$('#modal iframe').forEach(f => f.remove());   // stop a YouTube preview
   if (typeof ytpStop === 'function') ytpStop();
   if (modalReturn && modalReturn.focus && document.contains(modalReturn)) modalReturn.focus({ preventScroll: true });
@@ -5616,7 +5617,6 @@ function act(el, e) {
     case 'acct-people': closeModal(); people = null; navigate({ name: 'people' }); break;
     case 'acct-pin': closeModal(); openChangeMyPin(); break;
     case 'acct-email': closeModal(); openMyEmail(); break;
-    case 'email-later': try { localStorage.setItem('murmur:emailAskedAt:' + me.id, String(Date.now())); } catch (e) {} closeModal(); break;
     case 'acct-out': closeModal(); signOut(); break;
     case 'acct-server': closeModal(); gateBack = 'app'; showGate('connect'); break;
     case 'pick-server': pickServer(d.name); break;
@@ -5833,7 +5833,7 @@ function act(el, e) {
 /* ================= events ================= */
 document.addEventListener('click', e => {
   if (!menuEl.hidden && !e.target.closest('#menu')) closeMenu();
-  if (e.target.id === 'modal') { closeModal(); return; }
+  if (e.target.id === 'modal') { if (!modalRequired) closeModal(); return; }
   const el = e.target.closest('[data-act]');
   if (el && !el.disabled) act(el, e);
 });
@@ -5927,7 +5927,7 @@ document.addEventListener('keydown', e => {
     if (!$('#gate').hidden && gateBack) { const b = $('[data-act="gate-back"]'); if (b) b.click(); }
     else if (!$('#tqDrop').hidden) closeDrop();
     else if (!$('#dropOverlay').hidden) hideDrop();
-    else if (!$('#modal').hidden) closeModal();
+    else if (!$('#modal').hidden && !modalRequired) closeModal();
     else if (!menuEl.hidden) closeMenu();
     else if (!$('#full').hidden) $('#full').hidden = true;
     else if (state.sel || state.libSel) clearSel();
@@ -7204,7 +7204,7 @@ function showGate(step, msg = '') {
         <div class="field"><label for="gName">Your name</label><input id="gName" name="name" maxlength="40" required autocomplete="username" value="${esc(lastName)}"></div>
         <div class="field"><label for="gPin">Choose a 4-digit PIN</label><input id="gPin" name="pin" ${PIN_ATTRS}></div>
         <div class="field"><label for="gPin2">Type the PIN again</label><input id="gPin2" name="pin2" ${PIN_ATTRS}></div>
-        <div class="field"><label for="gEmail">Your email (optional)</label><input id="gEmail" name="email" type="email" maxlength="200" autocomplete="email" placeholder="So you can reset your PIN if you forget it"></div>
+        <div class="field"><label for="gEmail">Your email</label><input id="gEmail" name="email" type="email" required maxlength="200" autocomplete="email" placeholder="So you can reset your PIN if you forget it"></div>
         ${err}<button class="m-ok gate-ok" type="submit">Create my account</button></form>`);
   } else if (step === 'forgot') {
     html = card('Forgot your PIN?', 'Enter your name. If your account has an email, Murmur sends you a link to choose a new PIN.',
@@ -7600,25 +7600,23 @@ function appsSectionHTML(bare) {
     <a class="small" href="${APPS_PAGE}"${tgt}>All downloads and install steps</a></div>`;
 }
 /* Your email: where a link to reset a forgotten PIN goes. */
+// Everyone needs an email (it's where a forgotten-PIN link goes), so the first ask can't be skipped.
 function openMyEmail(first) {
-  openModal({ title: first ? 'Add your email' : 'Your email', confirm: 'Save', cancel: first ? 'Not now' : 'Cancel', html: `
-    <p>${first ? 'If you ever forget your PIN, Murmur can email you a link to choose a new one.' : 'Murmur only uses it to send you a link if you forget your PIN.'}</p>
-    <div class="field"><label for="meEmail">Email</label><input id="meEmail" name="email" type="email" maxlength="200" autocomplete="email" value="${esc(me.email || '')}" placeholder="you@example.com"></div>
-    ${me.email && !first ? '<p class="small">Clear it and save to remove it.</p>' : ''}`,
+  openModal({ title: first ? 'Add your email' : 'Your email', confirm: 'Save', cancel: 'Cancel', required: !!first, html: `
+    <p>${first ? 'Murmur needs your email. If you ever forget your PIN, it sends you a link there to choose a new one.' : 'Murmur only uses it to send you a link if you forget your PIN.'}</p>
+    <div class="field"><label for="meEmail">Email</label><input id="meEmail" name="email" type="email" required maxlength="200" autocomplete="email" value="${esc(me.email || '')}" placeholder="you@example.com"></div>`,
     onSubmit: async fd => {
       try {
         const r = await api('PUT', 'api/me/email', { email: String(fd.get('email') || '').trim() });
         me.email = r.email; store.set('auth', { ...(store.get('auth', null) || {}), ...me });
-        toast(r.email ? 'Email saved' : 'Email removed');
-      } catch (e) { toast(e.message); }
+        toast('Email saved');
+      } catch (e) { toast(e.message); if (first) setTimeout(() => openMyEmail(true), 300); }
     } });
-  if (first) { try { localStorage.setItem('murmur:emailAskedAt:' + me.id, String(Date.now())); } catch (e) {} }
 }
-// Ask once for people without an email (again after 30 days if they said not now).
+// Signed in without an email: ask now (after any other popup closes).
 function askForEmail() {
-  if (!me || me.email || !server.on || !$('#modal').hidden || !$('#gate').hidden) return;
-  let at = 0; try { at = +localStorage.getItem('murmur:emailAskedAt:' + me.id) || 0; } catch (e) {}
-  if (Date.now() - at < 30 * 24 * 3600e3) return;
+  if (!me || me.email || !server.on || !$('#gate').hidden) return;
+  if (!$('#modal').hidden) { setTimeout(askForEmail, 3000); return; }
   openMyEmail(true);
 }
 function openChangeMyPin() {
@@ -8078,7 +8076,7 @@ setInterval(() => {
     try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.keys = ys.keys || []; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
     { const t = TRACKS[state.current]; $$('.ver-btn').forEach(b => b.hidden = !(t && (t.sp || t.yt || t.src))); }   // the song from before the refresh
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
-    setTimeout(askForEmail, 4000);
+    setTimeout(askForEmail, 1500);
     await loadSpotify();
     queueGenreGuess();
     pollYtJobs();
@@ -8132,7 +8130,7 @@ setInterval(() => {
     if (v.name === 'collection' && !getCollection(v.type, v.id)) v = { name: 'home' };
     state.search = v.name === 'search' ? (st.search || '') : '';
     const q = $('#tq'); if (q) { q.value = state.search; const c = $('#tqClear'); if (c) c.hidden = !state.search; }
-    closeDrop(); if (!$('#modal').hidden) closeModal();
+    closeDrop(); if (!$('#modal').hidden && !modalRequired) closeModal();
     navigate(v, false);
     if (st.scroll) requestAnimationFrame(() => { $('#main').scrollTop = st.scroll; });
     if (v.name === 'search' && state.search) runCatalogSearch(state.search);

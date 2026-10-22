@@ -225,8 +225,10 @@ module.exports = function createAuth(file, opts = {}) {
     // Your email, for PIN reset links. '' removes it.
     app.put('/api/me/email', (req, res) => {
       const email = cleanEmail(req.body && req.body.email);
+      // Your own email can be changed but not removed: it's how a forgotten PIN gets reset.
+      if (!email) return res.status(400).json({ error: 'Enter your email.' });
       if (!emailOk(email)) return res.status(400).json({ error: 'That email address doesn’t look right.' });
-      if (email) req.user.email = email; else delete req.user.email;
+      req.user.email = email;
       save();
       res.json({ email: req.user.email || '' });
     });
