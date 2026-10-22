@@ -271,5 +271,13 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
     return matches[key];
   }
 
-  return { routes, importsFor: id => imports[id] || [], syncCollections, setFileMatch };
+  // The video picked for a song can't be downloaded (removed, private...): the song goes to "not found" so it can be picked again.
+  async function setNotFound(key, user) {
+    key = str(key, 400); if (!key || (matches[key] && matches[key].file)) return;
+    matches[key] = { ...(matches[key] || {}), none: true, by: user.name, at: Date.now() };
+    delete matches[key].yt;
+    await save('matches', matches);
+  }
+
+  return { routes, importsFor: id => imports[id] || [], syncCollections, setFileMatch, setNotFound };
 };

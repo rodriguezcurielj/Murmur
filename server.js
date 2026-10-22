@@ -314,6 +314,8 @@ async function runItems(job, list) {
             await fsp.rm(r.work, { recursive: true, force: true }).catch(() => {});
         }
         if (job.cancelled && item.state === 'working') item.state = 'cancelled';
+        // A Spotify song whose video is gone for good: it moves to "not found", to be matched by hand.
+        if (item.state === 'failed' && item.key && FOR_GOOD.test(item.msg || '') && !/music space/i.test(item.msg)) { try { await spotify.setNotFound(item.key, job.user); } catch (e) {} }
         item.pct = 100;
     }
 }

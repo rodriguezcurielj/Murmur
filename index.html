@@ -7078,7 +7078,11 @@ function syncLinkResult(tid) {
             // Already matched to a video (it plays from YouTube): no search needed.
             else if (t.sp && sp.matches[t.key] && sp.matches[t.key].yt && sp.matches[t.key].yt.id) items.push({ link: `https://www.youtube.com/watch?v=${sp.matches[t.key].yt.id}`, title: t.title, key: t.key, song: { title: t.title, artist: t.artist } });
             else {
-                try { const best = await bestYouTubeFor(t); if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title, key: t.sp ? t.key : '', song: { title: t.title, artist: t.artist } }); else missed.push(t.title); }
+                try {
+                    const best = await bestYouTubeFor(t);
+                    if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title, key: t.sp ? t.key : '', song: { title: t.title, artist: t.artist } });
+                    else { missed.push(t.title); if (t.sp) await saveMatch(t.key, { none: true }); }   // goes to "not found" (pick it by hand), not "missing"
+                }
                 catch (e) { missed.push(t.title); if (/quota|daily/i.test(e.message)) { stop = true; toast(e.message); } }
             }
             ytJobs.finding.done++; renderUploadStatus(); updateJobUI(); refreshYtButtons();
@@ -7103,7 +7107,7 @@ function syncLinkResult(tid) {
     function ytMissing(ids) {
         const queued = new Set();
         ytJobs.list.filter(jobRunning).forEach(j => j.items.forEach(x => { if (x.key) queued.add(x.key); if (x.link) queued.add(x.link); }));
-        return ids.map(id => TRACKS[id]).filter(t => t && !t.src && !(t.sp && spStatus(t.id) === 'file')
+        return ids.map(id => TRACKS[id]).filter(t => t && !t.src && !(t.sp && ['file', 'none'].includes(spStatus(t.id)))
             && !(t.sp && queued.has(t.key)) && !(t.yt && queued.has(ytLink(t.ytId))) && !ytFileTrack(t));
     }
     const ytFree = t => !!(t.yt || (t.sp && sp.matches[t.key] && sp.matches[t.key].yt));
@@ -7189,7 +7193,7 @@ function syncLinkResult(tid) {
                 if (st.added > (before || 0)) refresh = true;
                 ytJobs.seen.set(j.id, st.added);
                 if (j.finishedAt) {
-                    ytJobs.seen.set(j.id, -1);
+                    ytJobs.seen.set(j.id, -1); refresh = true;   // also picks up songs that moved to "not found"
                     if (!(ytJobs.watch && ytJobs.watch.id === j.id)) toast(`YouTube: added ${plural(st.added, 'song')}${st.failed.length ? `, ${st.failed.length} couldn’t be downloaded` : ''}${j.label ? ` (${j.label})` : ''}`);
                 }
             }
