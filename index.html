@@ -511,6 +511,18 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 /* ---------- selection ---------- */
 .head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .lib-top{flex-direction:column;align-items:flex-start;gap:10px}
+/* Select, Upload, Import from Spotify and + stay on one line: smaller buttons, and labels shorten before anything wraps. */
+.lib-top .head-actions{flex-wrap:nowrap;gap:6px;width:100%;min-width:0}
+.lib-top .head-actions .text-btn{height:34px;padding:0 11px;font-size:13px;gap:5px;flex:none}
+.lib-top .head-actions .lib-sp{flex:0 1 auto;min-width:0}
+.l-short{display:none}
+@media (max-width:420px){.lib-sp .l-long{display:none}.lib-sp .l-short{display:inline}}
+@media (max-width:360px){.lib-top .head-actions .text-btn svg{display:none}.lib-top .head-actions .text-btn{padding:0 10px}}
+/* Phones: your profile button on the left, the Murmur logo on the right (like Spotify). */
+@media (max-width:760px){.topbar .top-right{order:1;margin-left:0!important}.topbar .top-search{order:2}.topbar .m-brand{order:3;margin-left:auto}}
+.lib-top .head-actions .text-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-top .head-actions svg{width:15px;height:15px;flex:none}
+.lib-top .head-actions .icon-btn{width:34px;height:34px;flex:none}
 #upBtn{display:none!important}   /* Upload lives in Your Library */
 .text-btn{display:inline-flex;align-items:center;gap:6px}
 .text-btn svg{width:16px;height:16px}
@@ -4396,8 +4408,8 @@ function viewLibrary() {
   return `<div class="shelf-head lib-top" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
       ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
-      ${server.on ? `<button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import from Spotify</span></button>` : ''}
-      ${server.on && canEditMusic() && linkSources().length ? `<button class="text-btn" data-act="link-dl">${icon('download')}<span>Add from a link</span></button>` : ''}
+      ${server.on ? `<button class="text-btn lib-sp" data-act="sp-import" title="Import from Spotify">${icon('plus')}<span class="l-long">Import from Spotify</span><span class="l-short">Spotify</span></button>` : ''}
+      ${server.on && canEditMusic() && linkSources().length ? `<button class="icon-btn" data-act="link-dl" aria-label="Add from a link" title="Add from a link">${icon('download')}</button>` : ''}
       <button class="icon-btn" data-act="new-pl" aria-label="Create playlist">${icon('plus')}</button></div></div>
   <div class="chips" style="padding-left:0">${chipsHTML()}</div>
   ${selecting ? '<p class="small" style="margin:0 0 10px">Pick playlists and albums to delete or to add to a playlist. Liked Songs, Uploads and artists can’t be selected.</p>' : ''}
