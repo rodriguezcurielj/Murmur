@@ -4661,7 +4661,7 @@ function navigate(view, push = true) {
     try { history.pushState({ murmurView: view, i: hist.i, search: state.search || '', scroll: 0 }, '', viewHash(view)); } catch (e) {}
   }
   render(); $('#main').scrollTop = 0;
-  if (view.name === 'search') { const q = $('#tq'); if (q && document.activeElement !== q) q.focus(); }
+  // Search opens on the genre boxes; recent searches and the keyboard come up only when the search bar is tapped.
 }
 function refreshQueueView() { if (state.view.name === 'queue') render(); }
 
