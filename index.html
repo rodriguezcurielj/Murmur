@@ -607,12 +607,7 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
 /* Computers and the web version: the card sits in the middle of the top bar too */
 @media (min-width:761px){.top-status:not([hidden]){display:flex;flex:0 1 440px;margin:0 auto}body[data-view="search"] .top-status{display:none!important}
   body:not([data-view="search"]) .topbar .top-status:not([hidden])~.top-right{margin-left:0}}
-/* The thin line under the top bar: how far along downloads/uploads are, always (also when the card is closed) */
-.topbar{position:sticky}
-.top-line{position:absolute;left:0;right:0;bottom:0;height:3px;background:color-mix(in srgb,var(--accent) 14%,transparent);overflow:hidden;pointer-events:none}
-.top-line i{display:block;height:100%;width:var(--p,0%);background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 60%,#fff));border-radius:0 3px 3px 0;box-shadow:0 0 8px var(--accent);transition:width .5s}
-.top-line.busy i{width:35%;animation:tlBusy 1.3s ease-in-out infinite}
-@keyframes tlBusy{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+
 .job-card{position:relative}
 .job-card .job-x{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .job-card .job-x:hover{background:var(--hover);color:var(--fg)}
@@ -1753,8 +1748,9 @@ async function connectServer() {
 }
 function xhrUpload(file, onProg) {
   return new Promise((resolve, reject) => {
-    const x = new XMLHttpRequest();
+    const x = server.xhr = new XMLHttpRequest();
     x.open('POST', apiUrl('api/upload'));
+    x.onabort = () => reject(Object.assign(new Error('Cancelled'), { cancelled: true }));
     if (remote.token) x.setRequestHeader('Authorization', 'Bearer ' + remote.token);
     x.upload.onprogress = e => { if (e.lengthComputable) onProg(Math.round(e.loaded / e.total * 100)); };
     x.onload = () => {
@@ -1783,7 +1779,7 @@ async function pumpUploads() {
       const r = await xhrUpload(f, p => { server.current.pct = p; renderUploadStatus(); });
       addServerTrack(r); rebuildUploadAlbums(); server.done++;
       if (state.view.name === 'collection' && state.view.id === 'uploads' && !state.sel) render(); else renderSidebar();
-    } catch (err) { server.failed++; toast(`${f.name}: ${err.message}`); }
+    } catch (err) { if (!err.cancelled) { server.failed++; toast(`${f.name}: ${err.message}`); } }
   }
   server.busy = false; server.current = null; renderUploadStatus();
   if (server.done) toast(`Added ${plural(server.done, 'file')} to Uploads${server.failed ? ` · ${server.failed} failed` : ''}`);
@@ -1811,17 +1807,18 @@ let topHidden = '';
 /* Stop uploading / saving to this device / getting songs from YouTube (the X on the top card, or tapping a busy
    download button). The song or file in progress finishes; the rest are dropped. */
 function stopWork(kind, ctx) {
-  if (kind === 'up') { const n = server.queue.length; server.queue = []; toast(n ? `Stopped. The file uploading now finishes, ${plural(n, 'other')} skipped.` : 'The file uploading now will finish.'); }
+  if (kind === 'up') { server.queue = []; try { server.xhr && server.xhr.abort(); } catch (e) {} toast('Upload cancelled.'); }
   else if (kind === 'dl') {
     const keep = ctx ? dlq.queue.filter(id => !ctx.includes(id)) : [];
     const n = dlq.queue.length - keep.length; dlq.queue = keep; dlq.total -= n;
-    toast(`Paused saving to this device${n ? ` (${plural(n, 'song')} left)` : ''}. Tap download again to carry on.`);
+    if (dlq.ctl && (!ctx || (dlq.cur && ctx.includes(dlq.cur.id)))) dlq.ctl.abort();   // the song saving now stops too
+    toast(ctx ? 'Stopped saving to this device. Tap download again to carry on.' : 'Download cancelled.');
     syncDownloads();
   } else if (kind === 'yt') {
     if (ytJobs.finding && (!ctx || ytJobs.finding.ctx === ctx)) ytJobs.finding.stop = true;
     const run = ytJobs.list.filter(j => jobRunning(j) && (!ctx || j.ctx === ctx));
     run.forEach(j => { j.cancelled = true; api('DELETE', 'api/convert/jobs/' + j.id).catch(() => {}); });
-    toast('Paused getting songs from YouTube. The song downloading now finishes. Tap Add missing to carry on.');
+    toast('Stopped getting songs from YouTube. Tap Add missing to carry on.');
     setTimeout(() => pollYtJobs(), 1500);
   }
   topHidden = kind || '';   // the card closes right away (the one song finishing doesn't keep it open)
@@ -1833,12 +1830,7 @@ function renderTopStatus() {
   const el = $('#topStatus'); if (!el) return;
   const w = currentWork();
   if (!w || w.kind !== topHidden) topHidden = w && w.kind === topHidden ? topHidden : '';
-  const line = $('#topLine');
-  if (line) {
-    line.hidden = !w;
-    if (w) { line.classList.toggle('busy', w.pct == null); line.firstElementChild.style.setProperty('--p', Math.max(3, Math.min(100, w.pct || 0)) + '%'); }
-  }
-  const view = (ic, title, sub, end = '', pct = null, x = false) => `${pct == null ? '' : `<span class="ts-fill" style="--p:${Math.max(3, Math.min(100, pct))}%"></span>`}<span class="ts-ic">${icon(ic)}</span><span class="ts-txt"><b>${title}</b><small>${sub}</small></span>${end ? `<span class="ts-end">${end}</span>` : ''}${x ? `<button type="button" class="ts-x" data-act="ts-cancel" aria-label="Cancel" title="Cancel (the song in progress finishes, the rest are skipped)">${icon('close')}</button>` : ''}`;
+  const view = (ic, title, sub, end = '', pct = null, x = false) => `${pct == null ? '' : `<span class="ts-fill" style="--p:${Math.max(3, Math.min(100, pct))}%"></span>`}<span class="ts-ic">${icon(ic)}</span><span class="ts-txt"><b>${title}</b><small>${sub}</small></span>${end ? `<span class="ts-end">${end}</span>` : ''}${x ? `<button type="button" class="ts-x" data-act="ts-cancel" aria-label="Cancel" title="Cancel">${icon('close')}</button>` : ''}`;
   let html = '', warn = false, label = '', busy = false;
   if (w && w.kind !== topHidden) {
     busy = true;
@@ -1985,14 +1977,14 @@ async function loadOffline() {
   });
   return recs;
 }
-async function fetchWithProgress(url, onProg) {
+async function fetchWithProgress(url, onProg, signal) {
   const parts = []; let got = 0, total = 0, type = 'audio/mpeg';
   // A connection that drops partway (phone switching networks, a server restarting) carries on from where it
   // stopped, up to 4 times, instead of starting the song over.
   for (let tries = 0; ; tries++) {
     try {
       // no-store: never the browser's saved copy (Safari can hand back the tiny piece the player asked for first).
-      const res = await fetch(url, got ? { cache: 'no-store', headers: { Range: `bytes=${got}-` } } : { cache: 'no-store' });
+      const res = await fetch(url, got ? { cache: 'no-store', signal, headers: { Range: `bytes=${got}-` } } : { cache: 'no-store', signal });
       if (!res.ok) throw Object.assign(new Error(`The server answered ${res.status}.`), { status: res.status });
       if (got && res.status !== 206) { parts.length = 0; got = 0; }   // the server started over: so do we
       type = res.headers.get('content-type') || type;
@@ -2008,7 +2000,7 @@ async function fetchWithProgress(url, onProg) {
       if (got < total) throw new Error('The connection dropped.');
       return new Blob(parts, { type });
     } catch (e) {
-      if (e.status || tries >= 4 || !got) throw e;   // nothing came at all, or the server said no: try another server
+      if (e.status || tries >= 4 || !got || (signal && signal.aborted)) throw e;   // nothing came at all, or the server said no: try another server
       await new Promise(r => setTimeout(r, 1500 * (tries + 1)));
     }
   }
@@ -2062,6 +2054,7 @@ async function pumpDownloads() {
     let id = dlq.queue.shift(), t = TRACKS[id];
     if (!t) { dlq.total--; continue; }
     dlq.cur = { id, title: t.title, pct: 0 }; renderUploadStatus(); syncDownloads();
+    const ctl = dlq.ctl = new AbortController();   // Cancel stops this song right away too
     try {
       // An imported Spotify song: find (or reuse) its YouTube match, and save that.
       let spKey = t.yt ? dlSpKey.get(id) || '' : '';
@@ -2083,10 +2076,11 @@ async function pumpDownloads() {
       for (let attempt = 1; ; attempt++) {
         const from = order[(attempt - 1) % order.length];
         try {
-          blob = await fetchWithProgress(from, p => { dlq.cur.pct = p; dlq.cur.retry = false; renderUploadStatus(); });
+          blob = await fetchWithProgress(from, p => { dlq.cur.pct = p; dlq.cur.retry = false; renderUploadStatus(); }, ctl.signal);
           if (blob.size < 50e3) throw new Error('The server couldn’t get this song from YouTube.');
           break;
         } catch (e) {
+          if (ctl.signal.aborted) throw e;
           // Say what went wrong and where, and tell the server too (so it can be fixed).
           const why = e && e.status ? `${serverLabel(from.slice(0, from.indexOf('/', 8)))} answered ${e.status}` : e && /fetch|network|load failed/i.test(e.message) ? `Can’t reach ${serverLabel(from.slice(0, from.indexOf('/', 8)))}` : (e && e.message) || 'failed';
           try { api('POST', 'api/me/dl-error', { why, url: from.replace(/\?.*/, ''), attempt, ua: navigator.userAgent.slice(0, 160) }).catch(() => {}); } catch (er) {}
@@ -2098,11 +2092,13 @@ async function pumpDownloads() {
       let cover = null;
       if (t.cover) { try { const r = await fetch(t.cover); if (r.ok) cover = await r.blob(); } catch (e) {} }
       if (blob.size < 50e3) throw new Error('The server couldn’t get this song from YouTube.');
+      if (ctl.signal.aborted) throw new Error('cancelled');
       await Offline.put({ id, blob, cover, meta: t.raw, yt: t.yt ? ytMeta(id) : null, spKey: spKey || null, server: remote.base, savedAt: Date.now() });
       offline.set(id, { size: blob.size });
       if (cover) offlineCovers[id] = URL.createObjectURL(cover);
       saved++;
     } catch (e) {
+      if (ctl.signal.aborted) { dlq.done++; continue; }   // cancelled: nothing to say
       const full = /quota/i.test(`${e && e.name} ${e && e.message}`);
       toast(full ? 'This device is out of space for downloads.' : `Couldn't download ${t.title}. ${e && e.message ? e.message : ''}`);
       if (full) { dlq.total -= dlq.queue.length; dlq.queue = []; }
@@ -4915,7 +4911,6 @@ function buildShell() {
       <button class="icon-btn" data-act="fwd" id="fwdBtn" aria-label="Go forward">${icon('fwd')}</button>
       <div class="m-brand" data-act="logo-home" role="link" tabindex="0" title="Home">${LOGO}<span>Murmur</span></div>
       <div class="top-status" id="topStatus" data-act="ts-go" role="button" tabindex="0" hidden></div>
-      <div class="top-line" id="topLine" hidden><i></i></div>
       <div class="top-search" role="search">
         ${icon('search')}
         <label class="vh" for="tq">Search your music and YouTube</label>

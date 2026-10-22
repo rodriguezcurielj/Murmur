@@ -218,7 +218,12 @@ const jobView = j => ({ id: j.id, label: j.label, ctx: j.ctx, createdAt: j.creat
     items: j.items.map(x => ({ title: x.title, state: x.state, pct: x.pct, msg: x.msg, track: x.track })) });
 
 async function linkToSpotify(key, fileId, user) { try { await spotify.setFileMatch(key, fileId, user); } catch (e) { console.error('Could not link the song:', e.message); } }
-function convertOne(link, onPct) {
+// Stop yt-dlp and everything it started (on Windows, killing yt-dlp alone leaves its helpers running).
+function killTree(child) {
+    if (!child || child.exitCode != null) return;
+    try { if (process.platform === 'win32') execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {}); else child.kill('SIGKILL'); } catch {}
+}
+function convertOne(link, onPct, job) {
     return new Promise(resolve => {
         const work = path.join(DIRS.tmp, 'yt-' + crypto.randomBytes(6).toString('hex'));
         fs.mkdirSync(work, { recursive: true });
@@ -227,7 +232,7 @@ function convertOne(link, onPct) {
         // song can't hold up every download after it.
         const started = Date.now();
         const watch = setInterval(() => {
-            if (Date.now() - last > 180e3 || Date.now() - started > 900e3) { lastErr = 'The download got stuck'; try { child && child.kill(); } catch {} }
+            if (Date.now() - last > 180e3 || Date.now() - started > 900e3) { lastErr = 'The download got stuck'; killTree(child); }
         }, 15e3);
         const child = convert([link], 'mp3', line => {
             last = Date.now();
@@ -237,7 +242,8 @@ function convertOne(link, onPct) {
             else if (/^\[(Metadata|EmbedThumbnail)\]/.test(line)) onPct(95);
             else if (/has already been recorded in the archive/.test(line)) skipped = true;
             else if (/^ERROR:/.test(line)) lastErr = line.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?([\w-]+:\s*)?/, '');
-        }, code => { clearInterval(watch); resolve({ code, work, skipped, error: lastErr }); }, { outDir: work, archive: false, infoJson: true });
+        }, code => { clearInterval(watch); if (job) job.kill = null; resolve({ code, work, skipped, error: lastErr }); }, { outDir: work, archive: false, infoJson: true });
+        if (job) job.kill = () => killTree(child);
     });
 }
 /* The song's real name, artists and genre (songmeta.js), from what yt-dlp knows about the video. Songs from a
@@ -287,10 +293,11 @@ async function runItems(job, list) {
         const full = overLimit(job.user);
         if (full) { item.state = 'failed'; item.msg = full; item.pct = 100; continue; }
         item.state = 'working';
-        for (let attempt = 1; attempt <= 3 && item.state === 'working'; attempt++) {
+        for (let attempt = 1; attempt <= 3 && item.state === 'working' && !job.cancelled; attempt++) {
             if (attempt > 1) await new Promise(r => setTimeout(r, attempt * 4000));
             item.pct = 0;
-            const r = await convertOne(item.link, p => { item.pct = Math.max(item.pct, p); }, vid);
+            const r = await convertOne(item.link, p => { item.pct = Math.max(item.pct, p); }, job);
+            if (job.cancelled) { await fsp.rm(r.work, { recursive: true, force: true }).catch(() => {}); break; }
             try {
                 const files = listAudio(r.work);
                 if (files.length) {
@@ -306,6 +313,7 @@ async function runItems(job, list) {
             }
             await fsp.rm(r.work, { recursive: true, force: true }).catch(() => {});
         }
+        if (job.cancelled && item.state === 'working') item.state = 'cancelled';
         item.pct = 100;
     }
 }
@@ -341,7 +349,7 @@ app.get('/api/convert/jobs', auth.requireUser, (req, res) => {
 app.delete('/api/convert/jobs/:id', auth.requireUser, (req, res) => {
     const j = jobs.get(req.params.id);
     if (!j || j.userId !== req.user.id) return res.status(404).json({ error: 'That download isn’t running.' });
-    if (j.finishedAt) j.dismissed = true; else j.cancelled = true;
+    if (j.finishedAt) j.dismissed = true; else { j.cancelled = true; if (j.kill) j.kill(); }   // stops the song downloading now too
     saveJobs();
     res.json({ job: jobView(j) });
 });
