@@ -1261,7 +1261,13 @@ body.in-radio .radio-only{display:grid!important}
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 /* Things that belong to a person (not a device): saved per account on the server, cached here per account. */
-const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home', 'stations', 'names'];
+const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home', 'stations', 'names', 'recentSearches', 'recentSearchSongs', 'prefs'];
+/* Settings that follow you to every device too. Each is still read from its own key on the device; 'prefs' carries
+   them between devices. Volume, sign-in, the server you use and where you paused stay with the device. */
+const PREF_KEYS = ['theme', 'eq', 'playback', 'shuffle', 'repeat', 'sorts', 'gpSkipped', 'discGenre', 'ytFullVideo'];
+// Recent searches follow you to every device: newest first, both devices' searches kept when they meet.
+const RS_KEYS = { recentSearches: { id: x => String(x).toLowerCase(), max: 15 }, recentSearchSongs: { id: x => x && x.id, max: 20 } };
+const rsMerge = (k, first, second) => { const { id, max } = RS_KEYS[k], seen = new Set(); return [...(first || []), ...(second || [])].filter(x => { const i = id(x); if (i == null || seen.has(i)) return false; seen.add(i); return true; }).slice(0, max); };
 const store = {
   uid: '',          // the signed-in account (and its server) once known
   onChange: null,   // called when a synced value changes, so it can be sent to the server
@@ -1270,8 +1276,26 @@ const store = {
   set(k, v) {
     try { localStorage.setItem(this.key(k), JSON.stringify(v)); } catch (e) {}
     if (this.uid && this.onChange && SYNC_KEYS.includes(k)) this.onChange(k);
+    if (this.uid && !this.applyingPrefs && PREF_KEYS.includes(k)) { const p = { ...this.get('prefs', {}) }; if (JSON.stringify(p[k]) !== JSON.stringify(v)) { p[k] = v; this.set('prefs', p); } }
   }
 };
+// Settings another device saved: put them in place here and use them straight away.
+function applyPrefs() {
+  const p = store.get('prefs', null); if (!p || typeof p !== 'object') return;
+  const changed = PREF_KEYS.filter(k => k in p && JSON.stringify(store.get(k, undefined)) !== JSON.stringify(p[k]));
+  if (!changed.length) return;
+  store.applyingPrefs = true;
+  try { changed.forEach(k => store.set(k, p[k])); } finally { store.applyingPrefs = false; }
+  if (changed.includes('theme') && window.murmurApplyTheme) window.murmurApplyTheme(p.theme);
+  if (changed.includes('eq') && typeof applyEq === 'function') applyEq();
+  if (changed.includes('playback') && typeof applyPlayback === 'function') applyPlayback();
+  if (changed.includes('shuffle') && typeof state !== 'undefined') { state.shuffle = !!p.shuffle; if (state.list.length) buildOrder(state.order[state.pos]); }
+  if (changed.includes('repeat') && typeof state !== 'undefined') state.repeat = p.repeat || 'off';
+  if (changed.includes('discGenre') && typeof disc !== 'undefined') disc.genre = p.discGenre || '';
+  if (typeof updateToggles === 'function') try { updateToggles(); } catch (e) {}
+}
+// The first time an account has no synced settings yet, it starts from this device's.
+function seedPrefs() { const p = {}; PREF_KEYS.forEach(k => { const v = store.get(k, undefined); if (v !== undefined) p[k] = v; }); return p; }
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 function rnd(a, b) { let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; }
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -1985,7 +2009,7 @@ store.onChange = k => {
   userSync.dirty.add(k); savePending();
   clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 800);
 };
-const SYNC_EMPTY = k => k === 'plays' || k === 'genres' || k === 'names' || k === 'home' ? {} : [];
+const SYNC_EMPTY = k => k === 'plays' || k === 'genres' || k === 'names' || k === 'home' || k === 'prefs' ? {} : [];
 /* Another device may have saved since this one last looked. Instead of replacing its changes, combine them:
    start from what both saw last time (base), keep what each side added or removed. */
 function merge3(k, base, local, srv) {
@@ -2001,6 +2025,7 @@ function merge3(k, base, local, srv) {
   if (k === 'spTracks') return setMerge(base, local, srv, x => x && x.key);
   if (k === 'ytTracks') return setMerge(base, local, srv, x => x && x.id);
   if (k === 'stations') return setMerge(base, local, srv, x => x && x.id);
+  if (RS_KEYS[k]) return rsMerge(k, setMerge(base, local, srv, RS_KEYS[k].id), []);   // removals on either side stick
   if (k === 'playlists') {
     const bm = byId(base, x => x.id), sm = byId(srv, x => x.id);
     return setMerge(base, local, srv, x => x && x.id).map(p => {
@@ -2011,7 +2036,7 @@ function merge3(k, base, local, srv) {
       return { ...s, ...p, tracks: setMerge(b.tracks || [], p.tracks || [], s.tracks || []) };
     });
   }
-  if (k === 'plays' || k === 'genres' || k === 'names') {
+  if (k === 'plays' || k === 'genres' || k === 'names' || k === 'prefs') {
     const out = { ...srv };
     Object.keys(local).forEach(x => { if (!sameJSON(local[x], base[x])) out[x] = local[x]; });
     Object.keys(base).forEach(x => { if (!(x in local)) delete out[x]; });
@@ -2066,6 +2091,7 @@ function mergeKey(k, server, local) {
   if (local == null) return server;
   if (server == null) return local;
   if (k === 'liked' || k === 'hidden' || k === 'hiddenCols') return [...new Set([...local, ...server])];
+  if (RS_KEYS[k]) return rsMerge(k, local, server);
   if (k === 'spTracks' || k === 'ytTracks' || k === 'stations') {
     const id = k === 'spTracks' ? x => x.key : x => x.id, m = byId(server, id);
     local.forEach(x => { if (x && id(x) != null && !m.has(id(x))) m.set(id(x), x); });
@@ -2082,6 +2108,7 @@ function mergeKey(k, server, local) {
     return [...m.values()];
   }
   if (k === 'plays' || k === 'genres' || k === 'names') return { ...local, ...server };
+  if (k === 'prefs') return { ...server, ...local };   // this device's settings win the first time they meet
   return server;   // recent / ytRecent: the server's (most recent) copy
 }
 const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -2112,21 +2139,26 @@ async function loadUserData() {
     userSync.seen = data.updatedAt || 0;
     /* Keep what this device changed but couldn't send. Once per device and account, also merge in likes, songs and
        playlists this device has that the server lacks (saving from the Android app and GitHub Pages used to fail). */
-    const MERGE = ['liked', 'spTracks', 'ytTracks', 'playlists', 'plays', 'genres', 'stations', 'names'];
+    const MERGE = ['liked', 'spTracks', 'ytTracks', 'playlists', 'plays', 'genres', 'stations', 'names', 'recentSearches', 'recentSearchSongs'];
     const mergedKey = 'murmur:merged1:' + store.uid;
     let firstMerge = false; try { firstMerge = !localStorage.getItem(mergedKey); } catch (e) {}
     const up = new Set();
     SYNC_KEYS.forEach(k => {
       let local = null; try { if (localStorage.getItem(store.key(k)) != null) local = store.get(k, null); } catch (e) {}
+      // Recent searches used to be kept per device only: bring those along the first time.
+      let legacyRs = false;
+      if (local == null && RS_KEYS[k]) { local = legacyGet(k); legacyRs = local != null && local.length > 0; }
+      if (k === 'prefs' && local == null && data[k] == null) { local = seedPrefs(); legacyRs = Object.keys(local).length > 0; }
       let v = data[k] != null ? data[k] : null;
       userSync.base[k] = v;
-      if (local != null && (pending.includes(k) || (firstMerge && MERGE.includes(k)))) {
+      if (local != null && (pending.includes(k) || legacyRs || (firstMerge && MERGE.includes(k)))) {
         const merged = MERGE.includes(k) ? mergeKey(k, v, local) : local;
         if (!sameJSON(merged, v)) { v = merged; up.add(k); }
       }
       store.set(k, v != null ? v : SYNC_EMPTY(k));   // cache for offline use
     });
     try { localStorage.setItem(mergedKey, '1'); } catch (e) {}
+    applyPrefs();
     applyLibrary();
     userSync.ready = true;
     userSync.dirty = up; savePending();
@@ -2149,7 +2181,7 @@ async function pullUserData() {
     const data = (await api('GET', 'api/me/data')).data;
     if (!data || !data.updatedAt || data.updatedAt <= userSync.seen) return;
     if (!absorbServer(data)) return;
-    applyLibrary(); refreshAfterSync();
+    applyPrefs(); applyLibrary(); refreshAfterSync();
   } catch (e) {} finally { userSync.pulling = false; }
 }
 /* Take in the server's copy: keys with unsent changes here are merged with it, the rest replaced. Returns true if anything changed. */

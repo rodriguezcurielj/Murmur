@@ -11,7 +11,9 @@ const KEYS = {
   hidden: 'array', hiddenCols: 'array', ytTracks: 'array', ytRecent: 'array', spTracks: 'array', genres: 'object',
   history: 'array', home: 'object',   // songs played lately; how Home is set up
   stations: 'array',   // saved radio stations
-  names: 'object'      // your own title and artist for songs
+  names: 'object',     // your own title and artist for songs
+  recentSearches: 'array', recentSearchSongs: 'array',   // the Search page's recent searches, on every device
+  prefs: 'object'      // settings: theme, equalizer, playback, shuffle/repeat, sorting
 };
 const MAX_BYTES = 4 * 1024 * 1024;   // per value; a very large library still fits easily
 
