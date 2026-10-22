@@ -107,6 +107,9 @@ app.delete('/api/users/:id', auth.requireOwner, (req, res, next) => {
     next();
 });
 auth.routes(app);
+const mail = require('./mail')(DATA, auth);   // PIN reset emails
+auth.useMailer(mail);
+mail.routes(app);
 const youtube = createYouTube(path.join(DATA, 'settings.json'), auth);
 youtube.routes(app);
 createDiscover(DATA).routes(app);
@@ -589,6 +592,7 @@ Object.assign(deferred, {
     matches: spotify.syncCollections.matches,
     spotifyApp: spotify.syncCollections.spotifyApp,
     youtube: youtube.syncCollection,
+    mail: mail.syncCollection,
     sources: sources.syncCollection,
     ytcache: app.locals.ytAudio.syncCollection,   // liked songs kept on disk (their files sync too)
     activity: activity.syncCollection

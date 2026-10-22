@@ -1,4 +1,5 @@
 // Murmur sign-in: one owner plus people the owner adds, each with a name and a 4-digit PIN.
+// Each person can add an email; a forgotten PIN is reset with a link sent there (see mail.js).
 // PINs are stored as salted scrypt hashes. Sessions are random tokens kept in an
 // HttpOnly cookie; only a SHA-256 of each token is saved on disk.
 const crypto = require('crypto');
@@ -38,6 +39,9 @@ module.exports = function createAuth(file, opts = {}) {
   const cleanName = n => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 40);
   const findByName = n => db.users.find(u => u.name.toLowerCase() === cleanName(n).toLowerCase());
   const canEdit = u => u.role === 'owner' || !!u.canEdit;
+  // '' = no email. Anything else must look like an address.
+  const cleanEmail = e => String(e || '').trim().toLowerCase().slice(0, 200);
+  const emailOk = e => e === '' || /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e);
   const DUMMY_SALT = id(16);
 
   function checkPin(user, pin) {
@@ -102,14 +106,14 @@ module.exports = function createAuth(file, opts = {}) {
     if (Date.now() - s.lastSeen > 60e3) { s.lastSeen = Date.now(); save(); }
     return { user: u, session: s, token: mediaKey ? null : readToken(req) };
   }
-  const publicUser = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', expiresAt: s ? s.expiresAt : null, remembered: s ? s.remember : false });
+  const publicUser = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', email: u.email || '', expiresAt: s ? s.expiresAt : null, remembered: s ? s.remember : false });
   // A player on another site can't use our cookie, so it gets the token, plus a read-only key for audio and cover URLs.
   const creds = (req, s, token) => crossSite(req) ? { token, mediaKey: s.mediaKey } : {};
-  const personView = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', createdAt: u.createdAt, storageMB: u.storageMB || 0,
+  const personView = (u, s) => ({ id: u.id, name: u.name, role: u.role, canEdit: canEdit(u), avatar: u.avatar || '', email: u.email || '', createdAt: u.createdAt, storageMB: u.storageMB || 0,
     sessions: db.sessions.filter(x => x.userId === u.id).map(x => ({ id: x.id, device: x.device, createdAt: x.createdAt, expiresAt: x.expiresAt, remember: x.remember, lastSeen: x.lastSeen, current: !!s && x.id === s.id })) });
 
   /* --- middleware --- */
-  const PUBLIC = new Set(['/auth/status', '/auth/login', '/auth/setup', '/health']);
+  const PUBLIC = new Set(['/auth/status', '/auth/login', '/auth/setup', '/auth/forgot', '/auth/reset', '/health']);
   function cors(req, res, next) {
     const o = (req.headers.origin || '').replace(/\/+$/, '');
     if (o && allowedOrigins.has(o)) {
@@ -166,7 +170,9 @@ module.exports = function createAuth(file, opts = {}) {
       const name = cleanName(req.body && req.body.name), pin = req.body && req.body.pin;
       if (!name) return res.status(400).json({ error: 'Enter your name.' });
       if (!validPin(pin)) return res.status(400).json({ error: 'Your PIN must be exactly 4 digits.' });
-      const u = { id: id(), name, role: 'owner', canEdit: true, createdAt: Date.now() };
+      const email = cleanEmail(req.body && req.body.email);
+      if (!emailOk(email)) return res.status(400).json({ error: 'That email address doesn’t look right.' });
+      const u = { id: id(), name, role: 'owner', canEdit: true, createdAt: Date.now(), ...(email ? { email } : {}) };
       setPin(u, pin); db.users.push(u);
       const { session: s, token } = startSession(req, res, u);
       console.log(`Owner account created for ${name}`);
@@ -216,6 +222,15 @@ module.exports = function createAuth(file, opts = {}) {
       res.json({ ok: true });
     });
 
+    // Your email, for PIN reset links. '' removes it.
+    app.put('/api/me/email', (req, res) => {
+      const email = cleanEmail(req.body && req.body.email);
+      if (!emailOk(email)) return res.status(400).json({ error: 'That email address doesn’t look right.' });
+      if (email) req.user.email = email; else delete req.user.email;
+      save();
+      res.json({ email: req.user.email || '' });
+    });
+
     // Your profile picture: a small square image (the app shrinks it first) as a data URL, or '' to remove it.
     app.put('/api/me/avatar', (req, res) => {
       const img = String((req.body && req.body.image) || '');
@@ -235,7 +250,9 @@ module.exports = function createAuth(file, opts = {}) {
       if (!name) return res.status(400).json({ error: 'Enter a name.' });
       if (findByName(name)) return res.status(409).json({ error: `Someone called ${name} is already on the list. Use a different name.` });
       if (!validPin(pin)) return res.status(400).json({ error: 'The PIN must be exactly 4 digits.' });
-      const u = { id: id(), name, role: 'member', canEdit: !!(req.body && req.body.canEdit), createdAt: Date.now() };
+      const email = cleanEmail(req.body && req.body.email);
+      if (!emailOk(email)) return res.status(400).json({ error: 'That email address doesn’t look right.' });
+      const u = { id: id(), name, role: 'member', canEdit: !!(req.body && req.body.canEdit), createdAt: Date.now(), ...(email ? { email } : {}) };
       setPin(u, pin); db.users.push(u); save();
       console.log(`Added ${name}`);
       res.json({ user: personView(u) });
@@ -253,6 +270,11 @@ module.exports = function createAuth(file, opts = {}) {
         u.name = name;
       }
       if (b.canEdit != null && u.role !== 'owner') u.canEdit = !!b.canEdit;
+      if (b.email != null) {
+        const email = cleanEmail(b.email);
+        if (!emailOk(email)) return res.status(400).json({ error: 'That email address doesn’t look right.' });
+        if (email) u.email = email; else delete u.email;
+      }
       // How much music they may add (megabytes; 0 = no limit). The owner has no limit.
       if (b.storageMB != null && u.role !== 'owner') {
         const mb = Math.round(Number(b.storageMB));
@@ -279,6 +301,57 @@ module.exports = function createAuth(file, opts = {}) {
       res.json({ ok: true });
     });
 
+    /* Forgot PIN: a one-time link (30 minutes) to the person's email. The answer is the same whether or not
+       the name exists or has an email, so it can't be used to find out who's on this Murmur. The link is kept
+       on the person (as a hash), so it works on any of the synced servers. */
+    const asked = new Map();   // name or address -> times asked lately
+    app.post('/api/auth/forgot', async (req, res) => {
+      const name = cleanName(req.body && req.body.name);
+      if (!name) return res.status(400).json({ error: 'Enter your name.' });
+      if (!mailer || !mailer.ready()) return res.status(503).json({ error: 'Email isn’t set up on this Murmur yet. Ask the person who runs it to reset your PIN.' });
+      const now = Date.now();
+      for (const [k, v] of asked) if (v.at < now - HOUR) asked.delete(k);
+      const keys = ['ip:' + req.ip, 'name:' + name.toLowerCase()];
+      if (keys.some(k => (asked.get(k) || { n: 0 }).n >= 3)) return res.status(429).json({ error: 'Too many reset emails. Try again in an hour.' });
+      keys.forEach(k => { const v = asked.get(k) || { n: 0, at: now }; v.n++; asked.set(k, v); });
+      // Where the link opens: the page that asked, if it's this server or a site allowed to use it.
+      const own = `${secure(req) ? 'https' : 'http'}://${req.headers.host}`;
+      let page = '';
+      try { const u = new URL(String((req.body && req.body.page) || '')); if (u.origin === own || allowedOrigins.has(u.origin)) page = u.origin + u.pathname; } catch {}
+      if (!page) page = own + '/';
+      const sent = { ok: true, message: `If ${name} has an email on file, a reset link is on its way. It works for 30 minutes.` };
+      const u = findByName(name);
+      if (!u || !u.email) return res.json(sent);
+      const token = id(24);
+      u.reset = { hash: sha(token), until: now + 30 * 60e3 }; save();
+      const link = `${page}?reset=${token}`;
+      try {
+        await mailer.send(u.email, 'Reset your Murmur PIN',
+          `Hi ${u.name},\n\nSomeone (hopefully you) asked to reset your Murmur PIN. Open this link within 30 minutes to choose a new one:\n\n${link}\n\nIf this wasn't you, ignore this email. Your PIN stays the same.`,
+          `<p>Hi ${u.name.replace(/[<>&"]/g, '')},</p><p>Someone (hopefully you) asked to reset your Murmur PIN. Open this link within 30 minutes to choose a new one:</p>
+           <p><a href="${link}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#1ed760;color:#000;font-weight:700;text-decoration:none">Choose a new PIN</a></p>
+           <p style="color:#666;font-size:13px">If this wasn't you, ignore this email. Your PIN stays the same.</p>`);
+        console.log(`Sent a PIN reset link to ${u.name}`);
+      } catch (e) {
+        console.error('Could not send a PIN reset email:', e.message);
+        return res.status(502).json({ error: 'Murmur couldn’t send the email right now. Try again later, or ask the person who runs it.' });
+      }
+      res.json(sent);
+    });
+    app.post('/api/auth/reset', (req, res) => {
+      const token = String((req.body && req.body.token) || ''), pin = String((req.body && req.body.pin) || '');
+      const wait = waitFor('ip:' + req.ip);
+      if (wait) return res.status(429).json({ error: `Too many tries. Try again in ${Math.ceil(wait / 60)} minutes.` });
+      const h = token ? sha(token) : '', u = h && db.users.find(x => x.reset && x.reset.hash === h);
+      if (!u || u.reset.until < Date.now()) { fail('ip:' + req.ip); return res.status(400).json({ error: 'That reset link has expired or was already used. Ask for a new one.' }); }
+      if (!validPin(pin)) return res.status(400).json({ error: 'Your new PIN must be exactly 4 digits.' });
+      setPin(u, pin); delete u.reset;
+      db.sessions = db.sessions.filter(s => s.userId !== u.id);   // sign out everywhere, then in here
+      const { session: s, token: t } = startSession(req, res, u);
+      console.log(`${u.name} reset their PIN by email`);
+      res.json({ user: publicUser(u, s), ...creds(req, s, t) });
+    });
+
     app.delete('/api/sessions/:id', (req, res) => {
       const s = db.sessions.find(x => x.id === req.params.id);
       if (!s) return res.status(404).json({ error: 'That device is already signed out.' });
@@ -299,5 +372,7 @@ module.exports = function createAuth(file, opts = {}) {
   // Storage limit in bytes for a person (0 = no limit).
   const storageLimit = uid => { const u = db.users.find(x => x.id === uid); return u && u.role !== 'owner' && u.storageMB ? u.storageMB * 1024 * 1024 : 0; };
   const userCount = () => db.users.length;
-  return { cors, sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes, syncCollections, storageLimit, userCount };
+  let mailer = null;   // set once mail.js is ready
+  const useMailer = m => { mailer = m; };
+  return { cors, sameOrigin, requireUser, requireUserFiles, requireEdit, requireOwner, routes, syncCollections, storageLimit, userCount, useMailer };
 };
