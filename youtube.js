@@ -162,8 +162,21 @@ module.exports = function createYouTube(file, auth) {
         duration: seconds(x.contentDetails && x.contentDetails.duration)
       })).filter(x => x.duration > 30 && x.duration < 20 * 60);   // skip shorts and hour-long mixes
     }
+    if (!items.length) return webSearch(q);   // the API's music-only filters found nothing: ask like youtube.com does
     cache.set(q, { at: Date.now(), items }); saveCache();
     if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
+    return items;
+  }
+  /* Picking a song by hand: everything YouTube has for those words (any channel or category, explicit too), like
+     searching on youtube.com, plus the regular results after them. Costs no daily quota when the web search works. */
+  async function wideSearch(q, key) {
+    const hit = cache.get('w:' + q);
+    if (hit && Date.now() - hit.at < CACHE_MS) return hit.items;
+    let items = [];
+    try { items = await webSearch(q); } catch (e) { /* try the others */ }
+    if (items.length < 8) { try { items = [...items, ...(await search(q, key))]; } catch (e) { if (!items.length && (await hasYtdlp())) items = await ytdlpSearch(q); } }
+    items = items.filter((x, i, a) => a.findIndex(y => y.id === x.id) === i);
+    if (items.length) { cache.set('w:' + q, { at: Date.now(), items }); saveCache(); }
     return items;
   }
 
@@ -179,11 +192,11 @@ module.exports = function createYouTube(file, auth) {
       ...(req.user && req.user.role === 'owner' ? { keys: keys().map(k => ({ tail: tail(k), left: leftFor(k) })) } : {}) }));
 
     app.get('/api/youtube/search', async (req, res) => {
-      if (!keys().length) return res.status(501).json({ error: 'YouTube isn’t connected yet. The owner can add an API key under People & settings.' });
+      if (!keys().length && req.query.wide !== '1') return res.status(501).json({ error: 'YouTube isn’t connected yet. The owner can add an API key under People & settings.' });
       const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
       if (!q) return res.status(400).json({ error: 'Type something to search for.' });
       try {
-        const items = await search(q.toLowerCase(), settings.youtubeKey);
+        const items = req.query.wide === '1' ? await wideSearch(q.toLowerCase(), settings.youtubeKey) : await search(q.toLowerCase(), settings.youtubeKey);
         res.json({ items });
         // ?prep=2: the player is about to play one of the first results; start getting their audio now.
         const n = Math.min(3, +req.query.prep || 0);

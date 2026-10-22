@@ -134,6 +134,7 @@ public class MainActivity extends Activity {
             return insets;
         });
 
+        restoreLauncherIcon();
         boolean freshPage = keptWeb == null;
         if (keptWeb == null) {
             keptContext = new MutableContextWrapper(this);
@@ -279,31 +280,57 @@ public class MainActivity extends Activity {
         widgetAction(intent, false);
     }
 
-    /**
-     * The launcher icon follows the theme: each theme has its own icon entry in the manifest (Icon_<theme>), and
-     * only the chosen one is turned on. Switched when Murmur leaves the screen, so the app never closes under you.
+    /*
+     * Android can't recolour the app's own icon in place (switching it removes it from the home screen). So the
+     * app drawer icon stays the same, and Murmur offers a home-screen icon (a pinned shortcut) in your theme's
+     * colours instead: that one CAN be updated in place, so it changes colour with your theme and stays put.
      */
     static final String[] ICON_THEMES = { "murmur", "midnight", "ocean", "forest", "sunset", "crimson", "lavender", "sakura",
             "gold", "coffee", "neon", "noir", "blackblue", "paper", "daylight", "mint", "blossom" };
-    private void applyIcon() {
+    static final String THEMED_ID = "murmur_themed";
+
+    /** 3.4 switched the app's own icon with the theme; put the usual one back (once) for anyone it changed. */
+    private void restoreLauncherIcon() {
         android.content.SharedPreferences p = getSharedPreferences("murmur", Context.MODE_PRIVATE);
-        String want = p.getString("iconWant", null), have = p.getString("iconHave", "murmur");
-        if (want == null || want.equals(have) || !java.util.Arrays.asList(ICON_THEMES).contains(want)) return;
+        if ("murmur".equals(p.getString("iconHave", "murmur"))) return;
         android.content.pm.PackageManager pm = getPackageManager();
         try {
-            pm.setComponentEnabledSetting(new android.content.ComponentName(this, getPackageName() + ".Icon_" + want),
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED, android.content.pm.PackageManager.DONT_KILL_APP);
-            for (String t : ICON_THEMES) if (!t.equals(want))
+            for (String t : ICON_THEMES)
                 pm.setComponentEnabledSetting(new android.content.ComponentName(this, getPackageName() + ".Icon_" + t),
-                        android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED, android.content.pm.PackageManager.DONT_KILL_APP);
-            p.edit().putString("iconHave", want).apply();
-        } catch (Exception ignored) { /* this phone doesn't allow it: keep the icon it has */ }
+                        t.equals("murmur") ? android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED : android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        android.content.pm.PackageManager.DONT_KILL_APP);
+            p.edit().putString("iconHave", "murmur").apply();
+        } catch (Exception ignored) {}
     }
 
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (!isChangingConfigurations()) applyIcon();
+    /** The themed icon: the logo in the theme's colour on its background, as an adaptive icon. */
+    static android.graphics.drawable.Icon themedIcon(Context c, String theme) {
+        int px = 432;
+        android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas cv = new android.graphics.Canvas(bmp);
+        int bg = c.getResources().getIdentifier("icon_bg_" + theme, "color", c.getPackageName());
+        int fg = c.getResources().getIdentifier("ic_fg_" + theme, "drawable", c.getPackageName());
+        cv.drawColor(bg != 0 ? c.getColor(bg) : BG);
+        if (fg != 0) { android.graphics.drawable.Drawable d = c.getDrawable(fg); if (d != null) { d.setBounds(0, 0, px, px); d.draw(cv); } }
+        return android.graphics.drawable.Icon.createWithAdaptiveBitmap(bmp);
+    }
+    static android.content.pm.ShortcutInfo themedShortcut(Context c, String theme) {
+        Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return new android.content.pm.ShortcutInfo.Builder(c, THEMED_ID).setShortLabel("Murmur").setLongLabel("Murmur")
+                .setIcon(themedIcon(c, theme)).setIntent(i).build();
+    }
+    static boolean themedPinned(Context c) {
+        android.content.pm.ShortcutManager sm = c.getSystemService(android.content.pm.ShortcutManager.class);
+        if (sm == null) return false;
+        for (android.content.pm.ShortcutInfo s : sm.getPinnedShortcuts()) if (THEMED_ID.equals(s.getId())) return true;
+        return false;
+    }
+    /** New theme: the home-screen icon (if it's there) changes colour where it is. */
+    static void updateThemedIcon(Context c, String theme) {
+        try {
+            android.content.pm.ShortcutManager sm = c.getSystemService(android.content.pm.ShortcutManager.class);
+            if (sm != null && themedPinned(c)) sm.updateShortcuts(java.util.Collections.singletonList(themedShortcut(c, theme)));
+        } catch (Exception ignored) {}
     }
 
     @Override
@@ -474,6 +501,27 @@ public class MainActivity extends Activity {
         public void setIcon(String theme) {
             if (theme == null || !java.util.Arrays.asList(ICON_THEMES).contains(theme)) return;
             app.getSharedPreferences("murmur", Context.MODE_PRIVATE).edit().putString("iconWant", theme).apply();
+            updateThemedIcon(app, theme);
+        }
+
+        /** Can this phone's home screen take a Murmur icon in the theme's colours? */
+        @JavascriptInterface
+        public boolean canPinIcon() {
+            android.content.pm.ShortcutManager sm = app.getSystemService(android.content.pm.ShortcutManager.class);
+            return sm != null && sm.isRequestPinShortcutSupported();
+        }
+
+        /** Is the themed icon on the home screen already? */
+        @JavascriptInterface
+        public boolean hasThemedIcon() { return themedPinned(app); }
+
+        /** Ask the home screen to add the themed icon (Android shows its own "Add to home screen" box). */
+        @JavascriptInterface
+        public void pinIcon() {
+            android.content.pm.ShortcutManager sm = app.getSystemService(android.content.pm.ShortcutManager.class);
+            if (sm == null || !sm.isRequestPinShortcutSupported()) return;
+            String theme = app.getSharedPreferences("murmur", Context.MODE_PRIVATE).getString("iconWant", "murmur");
+            try { sm.requestPinShortcut(themedShortcut(app, theme), null); } catch (Exception ignored) {}
         }
 
         /** The page's theme: background colour (#rrggbb) and whether it's a light theme. */

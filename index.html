@@ -628,6 +628,16 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
   body:not([data-view="search"]) .topbar .top-status:not([hidden])~.top-right{margin-left:0}}
 
 .job-card{position:relative}
+.themed-ic-btn{margin-top:14px;white-space:normal;text-align:left;line-height:1.3;padding:9px 14px}
+.themed-ic-note{display:flex;align-items:center;gap:6px;margin-top:14px;color:var(--accent)}.themed-ic-note svg{width:15px;height:15px}
+.invite-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 14px;margin:8px 0 14px}
+.invite-form .field{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.invite-form select{height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:var(--raise);color:var(--fg);font:500 14px var(--font-body)}
+.invite-form .m-ok{display:inline-flex;align-items:center;gap:8px}
+.invite-list{display:flex;flex-direction:column;gap:6px;margin:0 0 22px;max-width:640px}
+.invite-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--raise)}
+.invite-ic{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.invite-txt{flex:1;min-width:0;display:flex;flex-direction:column;font-size:13.5px}
 .nf-btn{color:#f5a623;border-color:color-mix(in srgb,#f5a623 40%,transparent)!important}
 .nf-list{display:flex;flex-direction:column;gap:4px;margin-top:10px;max-height:min(60vh,520px);overflow:auto}
 .nf-row{display:flex;align-items:center;gap:10px;padding:6px;border-radius:10px}
@@ -1020,7 +1030,7 @@ body.in-radio .radio-only{display:grid!important}
 .photo-rm{color:var(--danger);background:transparent}
 .acct-photo-links{margin-top:2px}
 .acct-photo-links label{cursor:pointer}
-.acct-group h3{margin:6px 0 6px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.acct-group h3{margin:6px 0 6px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--accent) 75%,var(--muted))}
 .acct-list{display:flex;flex-direction:column;border-radius:12px;background:var(--raise);overflow:hidden}
 .acct-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;background:none;border:0;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);color:var(--fg);font:inherit;font-size:14px;font-weight:600;text-align:left;text-decoration:none;cursor:pointer}
 .acct-row:first-child{border-top:0}
@@ -1029,6 +1039,13 @@ body.in-radio .radio-only{display:grid!important}
 .acct-row.static:hover{background:none}
 .acct-row.danger,.acct-row.danger .ar-ic{color:var(--danger)}
 .ar-ic{display:grid;place-items:center;flex:none;color:var(--muted)}
+/* Account drawer: a splash of the theme colour behind your name, and coloured icons */
+.m-drawer .modal{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 22%,var(--panel)) 0,var(--panel) 260px)}
+.m-drawer .acct-head .avatar-lg{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent),0 10px 26px -10px color-mix(in srgb,var(--accent) 80%,transparent)}
+.m-drawer .acct-row .ar-ic{width:32px;height:32px;border-radius:10px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.m-drawer .acct-row.danger .ar-ic{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
+.m-drawer .acct-row:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.m-drawer .photo-btn:not(.photo-rm){border-color:color-mix(in srgb,var(--accent) 45%,var(--line));color:var(--accent)}
 .ar-ic svg,.ar-chev svg{width:18px;height:18px}
 .ar-label{flex:1;min-width:0}
 .ar-val{max-width:45%;color:var(--muted);font-weight:500;font-size:13px}
@@ -4297,14 +4314,15 @@ function tasteSeeds() {
   return { genres, artists, guessed };
 }
 const ytQueryFor = s => s.kind === 'genre' ? `${s.value} music` : `songs like ${s.value}`;
-async function ytSearch(q, genreTag, prep) {
+async function ytSearch(q, genreTag, prep, wide) {
   q = q.trim().toLowerCase();
-  // Results are kept for 12 hours on this device to save YouTube's daily quota.
-  const cached = store.get('yt:' + q, null);
-  if (cached && Date.now() - cached.at < 12 * 3600e3) return cached.items.map(v => addYtTrack(v, genreTag));
+  // Results are kept for 12 hours on this device to save YouTube's daily quota (never an empty answer).
+  const ck = (wide ? 'ytw:' : 'yt:') + q, cached = store.get(ck, null);
+  if (cached && cached.items && cached.items.length && Date.now() - cached.at < 12 * 3600e3) return cached.items.map(v => addYtTrack(v, genreTag));
   // prep: about to play one of these, so the server starts getting the top results' audio right away.
-  const res = await api('GET', 'api/youtube/search?q=' + encodeURIComponent(q) + (prep && ytAudioOn() ? '&prep=2' : ''));
-  try { store.set('yt:' + q, { at: Date.now(), items: res.items }); } catch (e) {}
+  // wide: picking a song by hand, so everything YouTube has (like searching on youtube.com).
+  const res = await api('GET', 'api/youtube/search?q=' + encodeURIComponent(q) + (prep && ytAudioOn() ? '&prep=2' : '') + (wide ? '&wide=1' : ''));
+  if (res.items && res.items.length) try { store.set(ck, { at: Date.now(), items: res.items }); } catch (e) {}
   return res.items.map(v => addYtTrack(v, genreTag));
 }
 async function loadSuggestions() {
@@ -6037,6 +6055,9 @@ function act(el, e) {
       break;
     }
     case 'ts-cancel': stopWork((currentWork() || {}).kind); break;
+    case 'pin-themed-icon': try { window.MurmurAndroid.pinIcon(); } catch (e) {} setTimeout(() => { if (!$('#modal').hidden) $('.m-body').innerHTML = themePickerHTML(); }, 4000); break;
+    case 'invite-share': shareJoin(d.t); break;
+    case 'invite-del': api('DELETE', 'api/invites/' + d.t).then(() => { invitesList = null; render(); toast('That link no longer works.'); }).catch(er => toast(er.message)); break;
     case 'job-miss-x': d.ids.split(',').forEach(id => api('DELETE', 'api/convert/jobs/' + id).catch(() => {})); ytJobs.list = ytJobs.list.filter(j => !d.ids.split(',').includes(j.id)); updateJobUI(); break;
     case 'job-hide': ytJobs.hiddenCards.add(d.key); updateJobUI(); break;
     case 'job-dismiss': api('DELETE', 'api/convert/jobs/' + d.id).catch(() => {}); ytJobs.list = ytJobs.list.filter(j => j.id !== d.id); updateJobUI(); break;
@@ -6586,13 +6607,13 @@ async function chooseVersion(id, opts = {}) {
   if (!server.on) { toast('Picking a version needs a connection to your Murmur server.'); return; }
   let ids;
   const q = opts.q || (t.yt ? t.title : `${cleanArtist(t.artist)} - ${t.title}`);
-  try { ids = await ytSearch(q, ''); } catch (e) { toast(e.message); return; }
+  try { ids = await ytSearch(q, '', false, true); } catch (e) { toast(e.message); return; }
   // Few or no results with the artist: also look for just the song's name, so there's always something to pick from.
-  if (!opts.q && !t.yt && ids.filter(x => TRACKS[x]).length < 4) {
-    try { const more = await ytSearch(String(t.title).replace(/\s*[([].*?[)\]]/g, '').trim() || t.title, ''); ids = [...new Set([...ids, ...more])]; } catch (e) {}
+  if (!opts.q && !t.yt && (ids.filter(x => TRACKS[x]).length < 4 || spStatus(id) === 'none')) {
+    try { const more = await ytSearch(String(t.title).replace(/\s*[([].*?[)\]]/g, '').trim() || t.title, '', false, true); ids = [...new Set([...ids, ...more])]; } catch (e) {}
   }
   if (t.yt) ids = [id, ...ids.filter(x => x !== id)];
-  ids = ids.filter(x => TRACKS[x]).slice(0, 10);
+  ids = ids.filter(x => TRACKS[x]).slice(0, 20);   // plenty to choose from
   // The picker always opens (even with nothing found), with a search box to try other words.
   const cur = t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : t.ytId;
   openModal({ title: `Pick a version of “${esc(t.title)}”`, confirm: 'Use this version', html: `<p class="small">${t.duration ? `This one is <b>${fmt(t.duration)}</b> long. ` : ''}Tap ▶ to listen before you pick. ${t.sp ? 'Your choice is saved for everyone.' : 'The one you pick takes this song’s place in Liked Songs, your playlists and the queue.'}</p>
@@ -7748,7 +7769,16 @@ function showGate(step, msg = '') {
     <h1>${title}</h1><p class="gate-sub">${sub}</p>${form}</div>`;
   const err = msg ? `<p class="gate-err" role="alert">${esc(msg)}</p>` : '';
   let html;
-  if (step === 'setup') {
+  if (step === 'join') {
+    html = card('Join Murmur', '<span id="joinBy">Checking your link…</span>',
+      `<form id="gForm" data-step="join" class="gate-form">
+        <div class="field"><label for="gName">Your name</label><input id="gName" name="name" maxlength="40" required autocomplete="username" autocapitalize="words" spellcheck="false" placeholder="What friends call you"></div>
+        <div class="field"><label for="gPin">Choose a 4-digit PIN</label><input id="gPin" name="pin" ${PIN_ATTRS}></div>
+        <div class="field"><label for="gPin2">Type the PIN again</label><input id="gPin2" name="pin2" ${PIN_ATTRS}></div>
+        <div class="field"><label for="gEmail">Your email</label><input id="gEmail" name="email" type="email" required maxlength="200" autocomplete="email" placeholder="So you can reset your PIN if you forget it"></div>
+        ${err}<button class="m-ok gate-ok" type="submit">Create my account</button>
+        <button type="button" class="link-btn gate-alt" data-act="gate-login">I already have an account</button></form>`);
+  } else if (step === 'setup') {
     html = card('Set up Murmur', 'You’re the first one here, so this will be the owner account. Pick your name and a 4-digit PIN. You’ll use them to sign in and to let other people in.',
       `<form id="gForm" data-step="setup" class="gate-form">
         <div class="field"><label for="gName">Your name</label><input id="gName" name="name" maxlength="40" required autocomplete="username" value="${esc(lastName)}"></div>
@@ -7800,10 +7830,11 @@ function showGate(step, msg = '') {
         <button type="button" class="link-btn gate-forgot" data-act="gate-forgot">Forgot your PIN?</button>
         <p class="small">Don’t have a PIN? Ask the person who runs this Murmur to add you.</p></form>`);
   }
-  if (['setup', 'login', 'expired', 'forgot'].includes(step)) html = html.replace(/<\/div>$/, `${gateServerHTML()}</div>`);
+  if (['setup', 'login', 'expired', 'forgot', 'join'].includes(step)) html = html.replace(/<\/div>$/, `${gateServerHTML()}</div>`);
   if (['setup', 'login', 'expired', 'connect', 'unreachable', 'offline-expired'].includes(step)) html = `<div class="gate-col">${step === 'login' ? welcomeHTML() : ''}${html}${step === 'login' && invite ? '' : gateAppsHTML()}</div>`;
   g.innerHTML = html; g.hidden = false;
   if (step === 'connect' || step === 'unreachable' || step === 'offline-expired') checkServerList();
+  if (step === 'join') checkJoin();
   const f = (lastName && $('#gPin')) || $('#gName') || g.querySelector('button');
   if (f) setTimeout(() => f.focus(), 0);
 }
@@ -7941,10 +7972,11 @@ async function gateSubmit(form) {
   }
   const name = String(fd.get('name') || '').trim(), pin = String(fd.get('pin') || '');
   if (!/^\d{4}$/.test(pin)) { showGate(step, 'Your PIN must be exactly 4 digits.'); return; }
-  if (step === 'setup' && pin !== fd.get('pin2')) { showGate('setup', 'Those two PINs don’t match. Try again.'); return; }
+  if ((step === 'setup' || step === 'join') && pin !== fd.get('pin2')) { showGate(step, 'Those two PINs don’t match. Try again.'); return; }
   const btn = form.querySelector('.gate-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
   try {
-    const res = await api('POST', step === 'setup' ? 'api/auth/setup' : 'api/auth/login', { name, pin, ...(step === 'setup' ? { email: String(fd.get('email') || '').trim() } : {}) });
+    const res = await api('POST', step === 'setup' ? 'api/auth/setup' : step === 'join' ? 'api/auth/invite/' + joinToken : 'api/auth/login', { name, pin, ...(step === 'setup' || step === 'join' ? { email: String(fd.get('email') || '').trim() } : {}) });
+    if (step === 'join') { joinToken = ''; try { sessionStorage.removeItem('murmur:join'); } catch (e) {} }
     store.set('lastName', name);
     if (res.token) saveToken(res.token, res.mediaKey, false);   // signed in from another site (GitHub Pages)
     me = res.user;
@@ -8076,7 +8108,16 @@ function themePickerHTML() {
     <i style="background:${(t.light ? t.c : window.murmurSpotifyGreys(t.c))[1]};--sw-fg:${t.c[5]};--sw-accent:${t.c[7]}"></i>${esc(t.name)}</button>`;
   const all = window.MURMUR_THEMES || [];
   return `<section aria-label="Themes"><p class="small" style="margin:0 0 4px">Dark</p><div class="theme-grid">${all.filter(t => !t.light).map(sw).join('')}</div>
-    <p class="small" style="margin:10px 0 4px">Light</p><div class="theme-grid">${all.filter(t => t.light).map(sw).join('')}</div></section>`;
+    <p class="small" style="margin:10px 0 4px">Light</p><div class="theme-grid">${all.filter(t => t.light).map(sw).join('')}</div></section>${themedIconHTML()}`;
+}
+/* Android: a home-screen Murmur icon in your theme's colours (Android can't recolour the app's own icon). */
+function themedIconHTML() {
+  const a = window.MurmurAndroid;
+  let can = false, has = false; try { can = !!(a && a.canPinIcon && a.canPinIcon()); has = !!(a && a.hasThemedIcon && a.hasThemedIcon()); } catch (e) {}
+  if (!can) return '';
+  return has ? `<p class="small themed-ic-note">${icon('check')} Your home-screen Murmur icon changes colour with your theme.</p>`
+    : `<button type="button" class="photo-btn themed-ic-btn" data-act="pin-themed-icon">${icon('plus')}<span>Add a Murmur icon in these colours to your home screen</span></button>
+       <p class="small">It changes colour whenever you change the theme, and stays where you put it. (Android can’t recolour the app’s own icon, so you can remove the plain one.)</p>`;
 }
 function setTheme(id) {
   const applied = window.murmurApplyTheme ? window.murmurApplyTheme(id) : id;
@@ -8090,8 +8131,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.4';
-const ANDROID_NEW = 'The app icon now takes the colours of your theme, and the update reminder no longer shows when you already have the newest version.';
+const ANDROID_LATEST = '3.5';
+const ANDROID_NEW = 'Your app icon stays put now: add a home-screen Murmur icon that changes colour with your theme (Account → Theme).';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;
@@ -8238,7 +8279,7 @@ function viewPeople() {
   };
   const tab = adminTab();
   const body = tab === 'media' ? `<div class="adm-grid">${ytSettingsHTML()}${spotifySettingsHTML()}${sourcesSettingsHTML()}</div>`
-    : tab === 'new' ? `<h2 class="sub-head">New account</h2>
+    : tab === 'new' ? `${signupLinksHTML()}<h2 class="sub-head">Or make the account yourself</h2>
       <p class="small" style="max-width:60ch">They sign in with this name and 4-digit PIN. After you create it, you can share a link that opens Murmur with their name filled in and shows them how to install it on their phone.</p>
       <form id="addPerson" class="person-add">
         <div class="field"><label for="apName">Name</label><input id="apName" name="name" maxlength="40" required autocomplete="off"></div>
@@ -8380,6 +8421,46 @@ async function addPerson(form) {
 }
 
 /* ================= admin: four sections behind buttons ================= */
+/* Sign-up links: send one, and the person picks their own name, PIN and email. */
+let invitesList = null;
+function signupLinksHTML() {
+  if (invitesList === null) { invitesList = 'loading'; api('GET', 'api/invites').then(r => { invitesList = r.invites || []; if (state.view.name === 'people') render(); }).catch(() => { invitesList = []; }); }
+  const list = Array.isArray(invitesList) ? invitesList : [];
+  return `<h2 class="sub-head">Send a sign-up link</h2>
+    <p class="small" style="max-width:60ch">The easiest way: send someone a link. They open it, pick their own name, PIN and email, and they’re in. No need to tell them a PIN.</p>
+    <form id="mkInvite" class="invite-form">
+      <label class="field"><span>Link works for</span><select name="days"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option></select></label>
+      <label class="field"><span>How many people</span><select name="uses"><option value="1" selected>1 person</option><option value="5">Up to 5</option><option value="20">Up to 20</option></select></label>
+      <label class="switch"><input type="checkbox" name="canEdit"><span>They can add, edit and delete music</span></label>
+      <button class="m-ok" type="submit">${icon('share')}<span>Make a sign-up link</span></button>
+    </form>
+    ${list.length ? `<div class="invite-list">${list.map(i => `<div class="invite-row"><span class="invite-ic">${icon('share')}</span><span class="invite-txt"><b>${i.maxUses > 1 ? `For up to ${i.maxUses} people` : 'For 1 person'} · ${i.uses} used</b><span class="small">Works until ${new Date(i.expiresAt).toLocaleDateString()}${i.canEdit ? ' · can add music' : ''}</span></span>
+      <button type="button" class="photo-btn" data-act="invite-share" data-t="${esc(i.token)}">${icon('share')}<span>Share</span></button><button type="button" class="icon-btn" data-act="invite-del" data-t="${esc(i.token)}" aria-label="Turn this link off" title="Turn this link off">${icon('close')}</button></div>`).join('')}</div>` : ''}`;
+}
+function joinLink(token) {
+  const here = SERVERS.find(x => normalizeServer(x.url) === normalizeServer(remote.base || location.origin));
+  const q = new URLSearchParams({ t: token }); if (here) q.set('s', here.name);
+  return PAGES_URL + '#join?' + q.toString();
+}
+function shareJoin(token) {
+  const link = joinLink(token);
+  const text = `Join me on Murmur! Open this link, pick your name and a PIN, and you’re in:\n${link}`;
+  shareMsg = { text, link, name: '' };
+  openModal({ title: 'Your sign-up link', confirm: false, cancel: 'Done', html: `<p>Send this to the person (or people). It opens Murmur, they choose their name, PIN and email, and then it shows them how to install it on their phone or computer.</p>
+    <pre class="share-preview">${esc(text)}</pre>
+    <div class="share-btns">${navigator.share ? `<button type="button" class="m-ok" data-act="share-go">${icon('share')}<span>Share…</span></button>` : ''}
+      <button type="button" class="${navigator.share ? 'text-btn' : 'm-ok'}" data-act="share-copy">${icon('save')}<span>Copy message</span></button>
+      <button type="button" class="text-btn" data-act="share-link">${icon('share')}<span>Copy link only</span></button></div>` });
+}
+document.addEventListener('submit', async e => {
+  if (!e.target || e.target.id !== 'mkInvite') return;
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const r = await api('POST', 'api/invites', { days: Number(fd.get('days')), uses: Number(fd.get('uses')), canEdit: !!fd.get('canEdit') });
+    invitesList = null; shareJoin(r.invite.token); if (state.view.name === 'people') render();
+  } catch (er) { toast(er.message); }
+}, true);
 const ADMIN_TABS = [['media', 'YouTube & Spotify', 'play'], ['new', 'New account', 'plus'], ['accounts', 'Accounts', 'user'], ['email', 'Email', 'lock'], ['activity', 'Activity', 'eq'], ['servers', 'Servers', 'server']];
 const adminTab = () => { const t = store.get('adminTab', 'accounts'); return ADMIN_TABS.some(x => x[0] === t) ? t : 'accounts'; };
 function adminTabsHTML() {
@@ -8432,6 +8513,21 @@ const invite = (() => {
   try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) {}
   return inv;
 })();
+// A sign-up link ("#join?t=<token>&s=<server>"): the person picks their own name, PIN and email.
+let joinToken = (() => {
+  const h = location.hash;
+  if (!/^#join\b/.test(h)) { try { return sessionStorage.getItem('murmur:join') || ''; } catch (e) { return ''; } }
+  const q = new URLSearchParams(h.replace(/^#join\??/, ''));
+  const t = /^[0-9a-f]{32}$/.test(q.get('t') || '') ? q.get('t') : '', srv = String(q.get('s') || '');
+  if (srv && SERVERS.some(x => x.name === srv)) { store.set('serverName', srv); store.set('server', null); }
+  try { if (t) sessionStorage.setItem('murmur:join', t); history.replaceState(history.state, '', location.pathname + location.search); } catch (e) {}
+  return t;
+})();
+async function checkJoin() {
+  const el = $('#joinBy'); if (!el) return;
+  try { const r = await api('GET', 'api/auth/invite/' + joinToken); el.innerHTML = `<b>${esc(r.by || 'Someone')}</b> invited you to Murmur. Pick your name, a 4-digit PIN and your email, and you’re in.`; }
+  catch (e) { joinToken = ''; try { sessionStorage.removeItem('murmur:join'); } catch (er) {} showGate('login', e.message); }
+}
 let welStep = 0;
 function welcomeHTML() {
   if (!invite || installedApp()) return '';
@@ -8617,6 +8713,8 @@ setInterval(() => {
   const mode = await checkAuth();
   if (resetToken && !['connect', 'unreachable', 'offline-expired'].includes(mode)) { showGate('reset'); return; }   // opened from a PIN reset email
   if ((server.auth || cfg) && 'serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {} }
+  if (joinToken && ['login', 'expired'].includes(mode)) { showGate('join'); return; }
+  if (joinToken && mode === 'ok') { joinToken = ''; try { sessionStorage.removeItem('murmur:join'); } catch (e) {} setTimeout(() => toast('You’re already signed in, so that sign-up link wasn’t needed.'), 1200); }
   if (['setup', 'login', 'expired', 'offline-expired', 'connect', 'unreachable'].includes(mode)) { showGate(mode); return; }
   $('#acctBtn').hidden = !me;
   $('#adminBtn').hidden = !(me && me.role === 'owner' && mode === 'ok');   // the owner manages accounts from here

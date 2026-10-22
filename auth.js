@@ -138,7 +138,7 @@ module.exports = function createAuth(file, opts = {}) {
   }
   function requireUser(req, res, next) {
     // /api/sync/... is for other Murmur servers; each of those routes checks the shared sync key itself.
-    if (PUBLIC.has(req.path) || req.path.startsWith('/sync/')) return next();
+    if (PUBLIC.has(req.path) || req.path.startsWith('/sync/') || req.path.startsWith('/auth/invite/')) return next();   // sign-up links work before signing in
     const a = current(req);
     if (!a) return res.status(401).json({ error: 'Please sign in.' });
     req.user = a.user; req.session = a.session; req.token = a.token;
@@ -240,6 +240,45 @@ module.exports = function createAuth(file, opts = {}) {
       if (img) req.user.avatar = img; else delete req.user.avatar;
       save();
       res.json({ avatar: req.user.avatar || '' });
+    });
+
+    /* ---- Sign-up links: the owner makes a link, and whoever opens it picks their own name, PIN and email ---- */
+    if (!Array.isArray(db.invites)) db.invites = [];
+    const liveInvite = t => db.invites.find(i => i.token === t && i.expiresAt > Date.now() && i.uses < i.maxUses);
+    const inviteView = i => ({ token: i.token, createdAt: i.createdAt, expiresAt: i.expiresAt, uses: i.uses, maxUses: i.maxUses, canEdit: !!i.canEdit, by: i.byName });
+    app.get('/api/invites', requireOwner, (req, res) => res.json({ invites: db.invites.filter(i => i.expiresAt > Date.now() && i.uses < i.maxUses).map(inviteView) }));
+    app.post('/api/invites', requireOwner, (req, res) => {
+      const b = req.body || {};
+      const days = Math.min(30, Math.max(1, Number(b.days) || 7)), maxUses = Math.min(50, Math.max(1, Number(b.uses) || 1));
+      db.invites = db.invites.filter(i => i.expiresAt > Date.now() && i.uses < i.maxUses);   // tidy up old ones
+      const inv = { token: id(16), createdAt: Date.now(), expiresAt: Date.now() + days * DAY, uses: 0, maxUses, canEdit: !!b.canEdit, by: req.user.id, byName: req.user.name };
+      db.invites.push(inv); save();
+      res.json({ invite: inviteView(inv) });
+    });
+    app.delete('/api/invites/:token', requireOwner, (req, res) => { db.invites = db.invites.filter(i => i.token !== req.params.token); save(); res.json({ ok: true }); });
+    // Opening the link: is it still good, and who sent it.
+    app.get('/api/auth/invite/:token', (req, res) => {
+      const i = liveInvite(String(req.params.token || ''));
+      if (!i) return res.status(404).json({ error: 'This sign-up link has expired or was already used. Ask for a new one.' });
+      res.json({ ok: true, by: i.byName, expiresAt: i.expiresAt });
+    });
+    // Signing up with it: their own name, PIN and email. They're signed in right away.
+    app.post('/api/auth/invite/:token', (req, res) => {
+      const key = 'ip:' + req.ip, wait = waitFor(key);
+      if (wait) return res.status(429).json({ error: `Too many tries. Try again in ${Math.ceil(wait / 60)} minutes.` });
+      const i = liveInvite(String(req.params.token || ''));
+      if (!i) { fail(key); return res.status(404).json({ error: 'This sign-up link has expired or was already used. Ask for a new one.' }); }
+      const b = req.body || {}, name = cleanName(b.name), pin = b.pin, email = cleanEmail(b.email);
+      if (!name) return res.status(400).json({ error: 'Enter your name.' });
+      if (findByName(name)) return res.status(409).json({ error: `Someone called ${name} is already on Murmur. Pick a different name (add a last initial).` });
+      if (!validPin(pin)) return res.status(400).json({ error: 'Your PIN must be exactly 4 digits.' });
+      if (!email) return res.status(400).json({ error: 'Enter your email (it’s how you reset a forgotten PIN).' });
+      if (!emailOk(email)) return res.status(400).json({ error: 'That email address doesn’t look right.' });
+      const u = { id: id(), name, role: 'member', canEdit: !!i.canEdit, createdAt: Date.now(), email, invitedBy: i.by };
+      setPin(u, pin); db.users.push(u); i.uses++;
+      const { session: s, token } = startSession(req, res, u);
+      console.log(`${name} signed up with a link from ${i.byName}`);
+      res.json({ user: publicUser(u, s), ...creds(req, s, token) });
     });
 
     app.get('/api/users', requireOwner, (req, res) => {
