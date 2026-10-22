@@ -79,6 +79,7 @@ function convert(links, format, onLine, done, opts = {}) {
         if (buf) onLine(buf);                    // send any leftover text
         done(code);
     });
+    return p;                                  // so the caller can stop it (server.js stops one that hangs)
 }
 
 // Share convert() and OUT_DIR with server.js (or any other file that wants them)

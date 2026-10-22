@@ -501,7 +501,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .drop>svg{width:30px;height:30px;color:var(--accent)}
 .drop>span{display:flex;flex-direction:column;gap:2px;min-width:0}
 .empty code,.drop code{font-size:13px;background:var(--raise);padding:1px 6px;border-radius:4px}
-.up-status{position:fixed;left:16px;bottom:96px;z-index:65;width:min(340px,calc(100vw - 32px));background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:8px;font-size:13px;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+.up-status{display:none!important;position:fixed;left:16px;bottom:96px;z-index:65;width:min(340px,calc(100vw - 32px));background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:8px;font-size:13px;box-shadow:0 12px 30px rgba(0,0,0,.45)}
 body[data-view="people"] .up-status{display:none!important}   /* downloads keep going, the bar just stays off the Admin page */
 .up-track{height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .up-track span{display:block;height:100%;background:var(--accent);transition:width .2s}
@@ -540,12 +540,28 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
 .top-status .ts-ic svg{width:17px;height:17px}
 .top-status .ts-txt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.15}
 .top-status .ts-txt b{font:800 13.5px var(--font-display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.top-status .ts-txt small{font:500 11.5px var(--font-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.top-status .ts-txt small{font:500 11.5px var(--font-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px;padding:6px 0 6px 6px;margin:-6px 0 -6px -6px}   /* room for the pulsing ring around the dot, so it isn't cut off */
 .top-status .ts-dot{flex:none;width:6px;height:6px;border-radius:50%;background:#3ddc84;animation:tsPulse 2.2s ease-out infinite}
 .top-status.warn .ts-dot{background:#f5a623}
-@keyframes tsPulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.65)}100%{box-shadow:0 0 0 7px rgba(61,220,132,0)}}
+@keyframes tsPulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.65)}100%{box-shadow:0 0 0 5px rgba(61,220,132,0)}}
 .top-status .ts-end{flex:none;font:800 12px var(--font-display);color:var(--c)}
 @media (prefers-reduced-motion:reduce){.top-status::after,.top-status .ts-dot{animation:none}}
+.top-status .ts-x{flex:none;display:grid;place-items:center;width:26px;height:26px;margin-right:-4px;border:0;border-radius:50%;background:color-mix(in srgb,var(--fg) 10%,transparent);color:var(--fg);cursor:pointer}
+.top-status .ts-x svg{width:13px;height:13px}
+.top-status .ts-x:hover{background:color-mix(in srgb,var(--fg) 18%,transparent)}
+/* Computers: the card shows in the top bar only while something is downloading or uploading */
+@media (min-width:761px){.top-status.busy:not([hidden]){display:flex;flex:0 1 420px;margin:0 auto}body[data-view="search"] .top-status{display:none!important}}
+/* The thin line under the top bar: how far along downloads/uploads are, always (also when the card is closed) */
+.topbar{position:sticky}
+.top-line{position:absolute;left:0;right:0;bottom:0;height:3px;background:color-mix(in srgb,var(--accent) 14%,transparent);overflow:hidden;pointer-events:none}
+.top-line i{display:block;height:100%;width:var(--p,0%);background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 60%,#fff));border-radius:0 3px 3px 0;box-shadow:0 0 8px var(--accent);transition:width .5s}
+.top-line.busy i{width:35%;animation:tlBusy 1.3s ease-in-out infinite}
+@keyframes tlBusy{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.job-card{position:relative}
+.job-card .job-x{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.job-card .job-x:hover{background:var(--hover);color:var(--fg)}
+.job-card .job-x svg{width:14px;height:14px}
+.job-card .job-top{padding-right:30px}
 @media (max-height:560px) and (max-width:760px){.topbar .top-status{display:none!important}}
 .lib-top .head-actions .text-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lib-top .head-actions svg{width:15px;height:15px;flex:none}
@@ -1715,20 +1731,40 @@ async function pumpUploads() {
   if (server.done) toast(`Added ${plural(server.done, 'file')} to Uploads${server.failed ? ` · ${server.failed} failed` : ''}`);
   if (!state.sel) render(); else renderSidebar();
 }
-/* Phones: the pill in the middle of the top bar. Uploading or downloading shows how far along; otherwise which
-   server you're on, or that you're offline. Tapping it opens your account (where servers are switched). */
+/* What's going on right now (uploading, saving to this device, getting songs from YouTube), for the top bar.
+   kind: tells the X which thing it closes; pct null = still starting (moving line). */
+function currentWork() {
+  const c = server.current, d = dlq.cur;
+  if (c) return { kind: 'up', ic: 'upload', title: esc(c.name), sub: c.pct < 100 ? `Uploading${server.queue.length ? ` · ${server.queue.length} more after this` : ''}` : 'Adding to your library…', pct: c.pct };
+  if (d && dlq.total) return { kind: 'dl', ic: 'download', title: esc(d.title || 'Saving songs'), sub: d.retry ? 'Connection dropped, trying again…' : `Saving to this device · ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`, pct: Math.round((dlq.done + (d.pct || 0) / 100) / dlq.total * 100) };
+  const yj = typeof ytJobs !== 'undefined' ? ytJobs : null;
+  if (yj && yj.finding) { const f = yj.finding; return { kind: 'yt', ic: 'download', title: 'Finding the songs on YouTube', sub: `${f.done} of ${f.total}`, pct: Math.round(f.done / Math.max(1, f.total) * 100) }; }
+  const run = yj ? yj.list.filter(jobRunning) : [];
+  if (run.length) {
+    const st = jobStats({ items: run.flatMap(j => j.items), startedAt: Math.min(...run.map(j => j.startedAt || Date.now())), finishedAt: null });
+    const started = run.some(j => j.startedAt);
+    return { kind: 'yt', ic: 'download', title: st.cur ? esc(st.cur.title) : 'Getting songs from YouTube', sub: `Adding to Murmur · ${Math.min(st.n, st.fin + 1)} of ${st.n}${st.eta && started ? ` · ${st.eta}` : ''}`, pct: started ? st.pct : null };
+  }
+  return null;
+}
+let topHidden = '';   // the X on the top card: that kind of work shows as the thin line only, until it's done
+/* The card in the middle of the top bar (phones; on computers only while something is going on), and the thin
+   progress line under the top bar. Tapping the card opens your account (where servers are switched). */
 function renderTopStatus() {
   const el = $('#topStatus'); if (!el) return;
-  const c = server.current, d = dlq.cur;
-  const view = (ic, title, sub, end = '', pct = null) => `${pct == null ? '' : `<span class="ts-fill" style="--p:${Math.max(3, Math.min(100, pct))}%"></span>`}<span class="ts-ic">${icon(ic)}</span><span class="ts-txt"><b>${title}</b><small>${sub}</small></span>${end ? `<span class="ts-end">${end}</span>` : ''}`;
-  let html = '', warn = false, label = '';
-  if (c) {
-    html = view('upload', esc(c.name), c.pct < 100 ? `Uploading${server.queue.length ? ` · ${server.queue.length} more after this` : ''}` : 'Adding to your library…', `${c.pct}%`, c.pct);
-    label = 'Uploading songs';
-  } else if (d && dlq.total) {
-    const pct = Math.round((dlq.done + (d.pct || 0) / 100) / dlq.total * 100);
-    html = view('download', esc(d.title || 'Saving songs'), `Saving to this device · ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`, `${pct}%`, pct);
-    label = 'Downloading to this device';
+  const w = currentWork();
+  if (!w || w.kind !== topHidden) topHidden = w && w.kind === topHidden ? topHidden : '';
+  const line = $('#topLine');
+  if (line) {
+    line.hidden = !w;
+    if (w) { line.classList.toggle('busy', w.pct == null); line.firstElementChild.style.setProperty('--p', Math.max(3, Math.min(100, w.pct || 0)) + '%'); }
+  }
+  const view = (ic, title, sub, end = '', pct = null, x = false) => `${pct == null ? '' : `<span class="ts-fill" style="--p:${Math.max(3, Math.min(100, pct))}%"></span>`}<span class="ts-ic">${icon(ic)}</span><span class="ts-txt"><b>${title}</b><small>${sub}</small></span>${end ? `<span class="ts-end">${end}</span>` : ''}${x ? `<button type="button" class="ts-x" data-act="ts-hide" aria-label="Close (it keeps going)" title="Close (it keeps going, the thin line shows how far along)">${icon('close')}</button>` : ''}`;
+  let html = '', warn = false, label = '', busy = false;
+  if (w && w.kind !== topHidden) {
+    busy = true;
+    html = view(w.ic, w.title, w.sub, w.pct == null ? '' : `${w.pct}%`, w.pct, true);
+    label = w.sub;
   } else if (server.offlineMode || (me && !server.on)) {
     warn = true;
     html = view('cloudOff', 'Offline', `<span class="ts-dot"></span>${offline.size ? `${plural(offline.size, 'song')} saved on this device` : 'Nothing saved on this device yet'}`);
@@ -1742,27 +1778,12 @@ function renderTopStatus() {
     label = `Connected to ${name}. Tap for your account and servers.`;
   }
   el.hidden = !html; if (!html) return;
-  el.classList.toggle('warn', warn);
+  el.classList.toggle('warn', warn); el.classList.toggle('busy', busy);
   if (el.innerHTML !== html) el.innerHTML = html;
   el.title = label; el.setAttribute('aria-label', label);
 }
 function renderUploadStatus() {
-  renderTopStatus();
-  const el = $('#upStatus'); if (!el) return;
-  const c = server.current, d = dlq.cur;
-  if (c) {
-    const more = server.queue.length ? ` · ${server.queue.length} more` : '';
-    el.innerHTML = `<span class="ell"><b>${c.pct < 100 ? 'Uploading' : 'Processing'}</b> ${esc(c.name)}${more}</span><span class="up-track"><span style="width:${c.pct}%"></span></span>`;
-  } else if (d) {
-    el.innerHTML = `<span class="ell"><b>${d.retry ? 'Connection dropped, trying again' : `Downloading to this device ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`}</b> ${esc(d.title)}</span><span class="up-track"><span style="width:${d.pct}%"></span></span>`;
-  } else if (ytJobs.finding) {
-    const f = ytJobs.finding;
-    el.innerHTML = `<span class="ell"><b>Adding to Murmur library: finding songs</b> ${f.done} of ${f.total}</span><span class="up-track"><span style="width:${Math.round(f.done / f.total * 100)}%"></span></span>`;
-  } else if (ytJobs.list.some(jobRunning)) {
-    const run = ytJobs.list.filter(jobRunning), j = run[0], st = jobStats(j);
-    el.innerHTML = `<span class="ell"><b>Adding to Murmur library ${Math.min(st.n, st.fin + 1)} of ${st.n}</b> ${st.cur ? esc(st.cur.title) : ''}${run.length > 1 ? ` · ${run.length - 1} more waiting` : ''}${st.eta ? ` · ${st.eta}` : ''}</span><span class="up-track"><span style="width:${st.pct}%"></span></span>`;
-  } else { el.hidden = true; return; }
-  el.hidden = false;
+  renderTopStatus();   // all progress shows at the top now (the card and the thin line under the top bar)
 }
 /* Network trouble (a dropped connection, a phone waking up, a server restarting after an update) makes fetch
    fail with "Failed to fetch". Requests that are safe to repeat are tried again a few times before giving up,
@@ -4704,7 +4725,8 @@ function buildShell() {
       <button class="icon-btn" data-act="back" id="backBtn" aria-label="Go back">${icon('back')}</button>
       <button class="icon-btn" data-act="fwd" id="fwdBtn" aria-label="Go forward">${icon('fwd')}</button>
       <div class="m-brand" data-act="logo-home" role="link" tabindex="0" title="Home">${LOGO}<span>Murmur</span></div>
-      <button type="button" class="top-status" id="topStatus" data-act="acct" hidden></button>
+      <div class="top-status" id="topStatus" data-act="acct" role="button" tabindex="0" hidden></div>
+      <div class="top-line" id="topLine" hidden><i></i></div>
       <div class="top-search" role="search">
         ${icon('search')}
         <label class="vh" for="tq">Search your music and YouTube</label>
@@ -5736,7 +5758,10 @@ function act(el, e) {
     case 'sel-edit': openEdit(selIds()); break;
     case 'sel-yt': { const c = state.sel ? state.sel.type + ':' + state.sel.id : ''; const col = state.sel && getCollection(state.sel.type, state.sel.id); const b = ytBatch(selIds()); if (b.miss.length > b.pick.length && b.pick.length) toast(`Getting ${b.pick.length} of ${b.miss.length} now. Do the rest after.`); getManyFromYouTube(b.miss.length ? b.pick.map(t => t.id) : selIds(), c, col ? col.title : ''); clearSel(); break; }
     case 'col-yt': { const col = getCollection(d.type, d.id); if (col) getManyFromYouTube(ytBatch(col.allTracks).pick.map(t => t.id), d.type + ':' + d.id, col.title); break; }
-    case 'job-cancel': api('DELETE', 'api/convert/jobs/' + d.id).then(() => { toast('Stopping after the song that’s downloading now'); pollYtJobs(); }).catch(e => toast(e.message)); break;
+    case 'job-cancel': ytJobs.list.filter(j => jobRunning(j) && j.id !== d.id && j.ctx === (ytJobs.list.find(x => x.id === d.id) || {}).ctx).forEach(j => api('DELETE', 'api/convert/jobs/' + j.id).catch(() => {}));
+      api('DELETE', 'api/convert/jobs/' + d.id).then(() => { toast('Stopping after the song that’s downloading now'); pollYtJobs(); }).catch(e => toast(e.message)); break;
+    case 'ts-hide': { const w = currentWork(); topHidden = w ? w.kind : ''; renderTopStatus(); break; }
+    case 'job-hide': ytJobs.hiddenCards.add(d.key); updateJobUI(); break;
     case 'job-dismiss': api('DELETE', 'api/convert/jobs/' + d.id).catch(() => {}); ytJobs.list = ytJobs.list.filter(j => j.id !== d.id); updateJobUI(); break;
     case 'sel-genre': openGenrePicker(selIds()); break;
     case 'gf': { const k = d.type + ':' + d.id; if (d.g && state.gf[k] !== d.g) state.gf[k] = d.g; else delete state.gf[k]; state.sel = null; render(); break; }
@@ -6799,7 +6824,7 @@ function syncLinkResult(tid) {
 
     /* ---------- YouTube downloads are background jobs on the server; the page only watches them ---------- */
     var YT_JOB_MAX = 100;   // var: the corner status reads these before this part of the page has run
-    var ytJobs = { list: [], timer: null, lastRefresh: 0, seen: new Map(), finding: null, watch: null, missed: {}, first: true };
+    var ytJobs = { list: [], timer: null, lastRefresh: 0, seen: new Map(), finding: null, watch: null, missed: {}, first: true, hiddenCards: new Set() };
     async function startYtJob(items, label, ctx, missed = []) {
         const res = await api('POST', 'api/convert/jobs', { items, label, ctx });
         if (missed.length) ytJobs.missed[res.job.id] = missed;
@@ -6824,7 +6849,7 @@ function syncLinkResult(tid) {
     function pollYtJobs(delay = 0) {
         clearTimeout(ytJobs.timer);
         ytJobs.timer = setTimeout(async () => {
-            if (!server.on) return;
+            if (!server.on) { pollYtJobs(10000); return; }   // reconnecting: keep watching once the server is back
             try { ytJobs.list = (await api('GET', 'api/convert/jobs')).jobs || []; }
             catch (e) { pollYtJobs(8000); return; }
             let refresh = false;
@@ -6885,7 +6910,19 @@ function syncLinkResult(tid) {
     function jobPanelsHTML(type, id) {
         const key = type + ':' + id, f = ytJobs.finding;
         const finding = f && f.ctx === key ? `<div class="job-card"><div class="job-top"><b>Finding the songs on YouTube</b><span class="small">${f.done} of ${f.total}</span></div><div class="ytdl-bar"><span style="width:${Math.round(f.done / f.total * 100)}%"></span></div></div>` : '';
-        return `<div id="jobPanels" data-key="${esc(key)}">${finding}${ytJobs.list.filter(j => j.ctx === key).map(j => `<div class="job-card" data-job="${j.id}">${jobCardInner(j)}</div>`).join('')}</div>`;
+        if (ytJobs.hiddenCards.has(key)) return `<div id="jobPanels" data-key="${esc(key)}"></div>`;
+        const x = `<button type="button" class="job-x" data-act="job-hide" data-key="${esc(key)}" aria-label="Close (downloading keeps going)" title="Close (downloading keeps going; the thin line at the top shows how far along)">${icon('close')}</button>`;
+        // Everything for this list in one card: running jobs together (the newest finished one only when nothing runs).
+        const mine = ytJobs.list.filter(j => j.ctx === key), run = mine.filter(jobRunning);
+        let card = '';
+        if (run.length) {
+            const merged = { ...run[0], items: run.flatMap(j => j.items), startedAt: run.find(j => j.startedAt) ? Math.min(...run.filter(j => j.startedAt).map(j => j.startedAt)) : null, finishedAt: null };
+            card = `<div class="job-card" data-job="${run[0].id}">${x}${jobCardInner(merged)}</div>`;
+        } else if (mine.length) {
+            const last = mine.sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0))[0];
+            card = `<div class="job-card" data-job="${last.id}">${x}${jobCardInner(last)}</div>`;
+        }
+        return `<div id="jobPanels" data-key="${esc(key)}">${finding ? finding.replace('<div class="job-card">', '<div class="job-card">' + x) : card}</div>`;
     }
     // Update the cards in place, so the page and scroll position stay put.
     function updateJobUI() {

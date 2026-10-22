@@ -203,6 +203,16 @@ app.post('/convert', auth.requireUser, auth.requireEdit, express.json(), async (
 const MAX_JOB_SONGS = 100;
 const jobs = new Map();
 let jobChain = Promise.resolve();
+/* Jobs are saved to disk while they run, so a server restart (an update) carries on where it left off instead of
+   losing the rest of the songs. */
+const JOBS_FILE = path.join(DATA, 'ytjobs.json');
+let jobsDirty = false;
+const saveJobs = () => { jobsDirty = true; };
+setInterval(() => {
+    if (!jobsDirty) return; jobsDirty = false;
+    const keep = [...jobs.values()].filter(j => !j.finishedAt || Date.now() - j.finishedAt < 24 * 3600e3);
+    fsp.writeFile(JOBS_FILE + '.tmp', JSON.stringify(keep)).then(() => fsp.rename(JOBS_FILE + '.tmp', JOBS_FILE)).catch(() => {});
+}, 3000).unref();
 const YT_LINK = /^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{6,20}$/;
 const jobView = j => ({ id: j.id, label: j.label, ctx: j.ctx, createdAt: j.createdAt, startedAt: j.startedAt, finishedAt: j.finishedAt, cancelled: !!j.cancelled,
     items: j.items.map(x => ({ title: x.title, state: x.state, pct: x.pct, msg: x.msg, track: x.track })) });
@@ -212,15 +222,22 @@ function convertOne(link, onPct) {
     return new Promise(resolve => {
         const work = path.join(DIRS.tmp, 'yt-' + crypto.randomBytes(6).toString('hex'));
         fs.mkdirSync(work, { recursive: true });
-        let skipped = false, lastErr = '';
-        convert([link], 'mp3', line => {
+        let skipped = false, lastErr = '', last = Date.now();
+        // A download that goes quiet for 3 minutes (or runs past 15) is stopped and tried again, so one stuck
+        // song can't hold up every download after it.
+        const started = Date.now();
+        const watch = setInterval(() => {
+            if (Date.now() - last > 180e3 || Date.now() - started > 900e3) { lastErr = 'The download got stuck'; try { child && child.kill(); } catch {} }
+        }, 15e3);
+        const child = convert([link], 'mp3', line => {
+            last = Date.now();
             let m;
             if ((m = line.match(/^\[download\]\s+([\d.]+)%/))) onPct(Math.round(parseFloat(m[1]) * 0.8));
             else if (/^\[ExtractAudio\]/.test(line)) onPct(85);
             else if (/^\[(Metadata|EmbedThumbnail)\]/.test(line)) onPct(95);
             else if (/has already been recorded in the archive/.test(line)) skipped = true;
             else if (/^ERROR:/.test(line)) lastErr = line.replace(/^ERROR:\s*(\[[^\]]+\]\s*)?([\w-]+:\s*)?/, '');
-        }, code => resolve({ code, work, skipped, error: lastErr }), { outDir: work, archive: false, infoJson: true });
+        }, code => { clearInterval(watch); resolve({ code, work, skipped, error: lastErr }); }, { outDir: work, archive: false, infoJson: true });
     });
 }
 /* The song's real name, artists and genre (songmeta.js), from what yt-dlp knows about the video. Songs from a
@@ -238,10 +255,28 @@ async function nameForVideo(dir, item) {
         return { title: n.title, artist: n.artist, genre: n.genre, named: 1, ytTitle, ytArtist };
     } catch (e) { console.error('Could not name the song:', e.message); return {}; }
 }
+// Errors that won't go away by trying again (the video is gone, private, blocked in this country...).
+const FOR_GOOD = /unavailable|private video|has been removed|copyright|not available|age.?restrict|members.?only|account.*terminated|music space/i;
 async function runJob(job) {
-    job.startedAt = Date.now();
-    for (const item of job.items) {
+    job.startedAt = job.startedAt || Date.now();
+    // Songs added to this job while it runs (another "Add missing" on the same list) are picked up too.
+    const runAll = async () => { do await runItems(job, job.items); while (!job.cancelled && job.items.some(x => x.state === 'waiting')); };
+    await runAll();
+    // Second chance: songs that failed for a passing reason (connection, YouTube busy) are tried once more at the end.
+    const again = job.items.filter(x => x.state === 'failed' && !FOR_GOOD.test(x.msg || ''));
+    if (again.length && !job.cancelled) {
+        await new Promise(r => setTimeout(r, 20e3));
+        for (const x of again) { x.state = 'waiting'; x.pct = 0; x.msg = ''; }
+        saveJobs();
+        await runAll();
+    }
+    job.finishedAt = Date.now(); saveJobs();
+}
+async function runItems(job, list) {
+    for (const item of list) {
+        saveJobs();
         if (job.cancelled) { if (item.state === 'waiting') item.state = 'cancelled'; continue; }
+        if (item.state !== 'waiting' && item.state !== 'working') continue;
         const vid = (item.link.match(/[?&]v=([\w-]+)/) || [])[1];
         const have = library.find(t => t.ytId && t.ytId === vid);
         if (have) {
@@ -252,7 +287,8 @@ async function runJob(job) {
         const full = overLimit(job.user);
         if (full) { item.state = 'failed'; item.msg = full; item.pct = 100; continue; }
         item.state = 'working';
-        for (let attempt = 1; attempt <= 2 && item.state === 'working'; attempt++) {
+        for (let attempt = 1; attempt <= 3 && item.state === 'working'; attempt++) {
+            if (attempt > 1) await new Promise(r => setTimeout(r, attempt * 4000));
             item.pct = 0;
             const r = await convertOne(item.link, p => { item.pct = Math.max(item.pct, p); }, vid);
             try {
@@ -264,15 +300,14 @@ async function runJob(job) {
                     // A song from an imported Spotify playlist now plays this file ("In Murmur").
                     if (item.key) await linkToSpotify(item.key, track.id, job.user);
                 }
-                else if (attempt === 2) { item.state = 'failed'; item.msg = r.error || 'YouTube didn’t give the audio'; }
+                else if (attempt === 3 || FOR_GOOD.test(r.error || '')) { item.state = 'failed'; item.msg = r.error || 'YouTube didn’t give the audio'; }
             } catch (err) {
-                if (attempt === 2) { item.state = 'failed'; item.msg = err.message; }
+                if (attempt === 3) { item.state = 'failed'; item.msg = err.message; }
             }
             await fsp.rm(r.work, { recursive: true, force: true }).catch(() => {});
         }
         item.pct = 100;
     }
-    job.finishedAt = Date.now();
 }
 // Anyone signed in can bring songs into the library this way (e.g. the songs of a Spotify playlist they imported).
 app.post('/api/convert/jobs', auth.requireUser, (req, res) => {
@@ -280,11 +315,20 @@ app.post('/api/convert/jobs', auth.requireUser, (req, res) => {
     const items = (Array.isArray(b.items) ? b.items : []).filter(x => x && YT_LINK.test(String(x.link || '')));
     if (!items.length) return res.status(400).json({ error: 'No YouTube links were sent.' });
     if (items.length > MAX_JOB_SONGS) return res.status(400).json({ error: `That’s ${items.length} songs. Murmur gets up to ${MAX_JOB_SONGS} at a time; pick fewer and do the rest after.` });
-    const job = { id: crypto.randomBytes(6).toString('hex'), userId: req.user.id, user: req.user, label: String(b.label || '').slice(0, 120),
+    // Songs already on their way (in any of this person's running jobs) aren't added twice, and new songs for a list
+    // that's already downloading join that job: one progress card, no second one waiting behind it.
+    const queued = new Set([...jobs.values()].filter(j => j.userId === req.user.id && !j.finishedAt && !j.cancelled).flatMap(j => j.items.filter(x => ['waiting', 'working'].includes(x.state)).map(x => x.link)));
+    const fresh = items.filter((x, i) => !queued.has(x.link) && items.findIndex(y => y.link === x.link) === i);
+    const ctxNow = String(b.ctx || '').slice(0, 120);
+    const joinTo = [...jobs.values()].find(j => j.userId === req.user.id && !j.finishedAt && !j.cancelled && j.ctx === ctxNow);
+    const mkItem = x => ({ link: x.link, title: String(x.title || '').slice(0, 200) || 'YouTube song', key: String(x.key || '').slice(0, 400), state: 'waiting', pct: 0, msg: '',
+        song: x.song && typeof x.song.title === 'string' ? { title: String(x.song.title).slice(0, 200), artist: String(x.song.artist || '').slice(0, 200) } : null });
+    if (joinTo) { joinTo.items.push(...fresh.map(mkItem)); saveJobs(); return res.json({ job: jobView(joinTo) }); }
+    if (!fresh.length) { const any = [...jobs.values()].find(j => j.userId === req.user.id && !j.finishedAt); if (any) return res.json({ job: jobView(any) }); }
+    const job = { id: crypto.randomBytes(6).toString('hex'), userId: req.user.id, user: { id: req.user.id, name: req.user.name, role: req.user.role }, label: String(b.label || '').slice(0, 120),
         ctx: String(b.ctx || '').slice(0, 120), createdAt: Date.now(), added: 0,
-        items: items.map(x => ({ link: x.link, title: String(x.title || '').slice(0, 200) || 'YouTube song', key: String(x.key || '').slice(0, 400), state: 'waiting', pct: 0, msg: '',
-            song: x.song && typeof x.song.title === 'string' ? { title: String(x.song.title).slice(0, 200), artist: String(x.song.artist || '').slice(0, 200) } : null })) };
-    jobs.set(job.id, job);
+        items: fresh.map(mkItem) };
+    jobs.set(job.id, job); saveJobs();
     jobChain = jobChain.then(() => runJob(job)).catch(err => console.error('YouTube job failed:', err));
     // Forget finished jobs after a day.
     for (const [id, j] of jobs) if (j.finishedAt && Date.now() - j.finishedAt > 24 * 3600e3) jobs.delete(id);
@@ -298,8 +342,19 @@ app.delete('/api/convert/jobs/:id', auth.requireUser, (req, res) => {
     const j = jobs.get(req.params.id);
     if (!j || j.userId !== req.user.id) return res.status(404).json({ error: 'That download isn’t running.' });
     if (j.finishedAt) j.dismissed = true; else j.cancelled = true;
+    saveJobs();
     res.json({ job: jobView(j) });
 });
+// Jobs that were running when the server stopped: carry on (the song that was mid-download starts over).
+try {
+    for (const j of JSON.parse(fs.readFileSync(JOBS_FILE, 'utf8'))) {
+        if (!j || !j.id || !Array.isArray(j.items)) continue;
+        jobs.set(j.id, j);
+        if (j.finishedAt) continue;
+        for (const x of j.items) if (x.state === 'working') { x.state = 'waiting'; x.pct = 0; }
+        jobChain = jobChain.then(() => runJob(j)).catch(err => console.error('YouTube job failed:', err));
+    }
+} catch { /* no saved jobs */ }
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
