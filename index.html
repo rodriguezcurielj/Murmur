@@ -517,7 +517,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .lib-top .head-actions .lib-sp{flex:0 1 auto;min-width:0}
 .l-short{display:none}
 @media (max-width:420px){.lib-sp .l-long{display:none}.lib-sp .l-short{display:inline}}
-@media (max-width:360px){.lib-top .head-actions .text-btn svg{display:none}.lib-top .head-actions .text-btn{padding:0 10px}}
+@media (max-width:360px){.adm-tab svg{display:none}.lib-top .head-actions .text-btn svg{display:none}.lib-top .head-actions .text-btn{padding:0 10px}}
 /* Phones: your profile button on the left, the Murmur logo on the right (like Spotify). */
 @media (max-width:760px){.topbar .top-right{order:1;margin-left:0!important}.topbar .top-search{order:2}.topbar .m-brand{order:3;margin-left:auto}}
 .lib-top .head-actions .text-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -791,9 +791,9 @@ body.in-radio .radio-only{display:grid!important}
 .adm-tab{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;border:1px solid color-mix(in srgb,var(--fg) 14%,transparent);background:transparent;color:var(--fg);font:600 14px var(--font);cursor:pointer}
 .adm-tab svg{width:17px;height:17px}
 @media (max-width:760px){
-  .adm-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px;margin:0 -16px 14px;padding:0 16px}
-  .adm-tabs::-webkit-scrollbar{display:none}
-  .adm-tab{flex:none;padding:6px 12px;font-size:13px;gap:6px}
+  /* All the Admin sections listed at the top at once (no sideways scrolling): two to a row so every name fits. */
+  .adm-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0 0 14px}
+  .adm-tab{justify-content:center;padding:8px 6px;font-size:13px;gap:6px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .adm-tab svg{width:14px;height:14px}
 }
 .adm-tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
