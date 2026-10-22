@@ -1751,7 +1751,7 @@ function currentWork() {
   const UPL = { type: 'album', id: 'uploads' }, DL = { type: 'downloads', id: 'downloads' };
   const ctxGo = k => { const i = (k || '').indexOf(':'); return i > 0 ? { type: k.slice(0, i), id: k.slice(i + 1) } : UPL; };
   if (c) return { kind: 'up', go: UPL, ic: 'upload', title: esc(c.name), sub: c.pct < 100 ? `Uploading${server.queue.length ? ` · ${server.queue.length} more after this` : ''}` : 'Adding to your library…', pct: c.pct };
-  if (d && dlq.total) return { kind: 'dl', go: dlq.from || DL, ic: 'download', title: esc(d.title || 'Saving songs'), sub: d.retry ? 'Connection dropped, trying again…' : `Saving to this device · ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`, pct: Math.round((dlq.done + (d.pct || 0) / 100) / dlq.total * 100) };
+  if (d && dlq.total) return { kind: 'dl', go: dlq.from || DL, ic: 'download', title: esc(d.title || 'Saving songs'), sub: d.retry ? esc(typeof d.retry === 'string' ? d.retry : 'Connection dropped, trying again…') : `Saving to this device · ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`, pct: Math.round((dlq.done + (d.pct || 0) / 100) / dlq.total * 100) };
   const yj = typeof ytJobs !== 'undefined' ? ytJobs : null;
   if (yj && yj.finding) { const f = yj.finding; return { kind: 'yt', go: ctxGo(f.ctx), ic: 'download', title: 'Finding the songs on YouTube', sub: `${f.done} of ${f.total}`, pct: Math.round(f.done / Math.max(1, f.total) * 100) }; }
   const run = yj ? yj.list.filter(j => jobRunning(j) && !j.cancelled) : [];
@@ -1946,7 +1946,8 @@ async function fetchWithProgress(url, onProg) {
   // stopped, up to 4 times, instead of starting the song over.
   for (let tries = 0; ; tries++) {
     try {
-      const res = await fetch(url, got ? { headers: { Range: `bytes=${got}-` } } : undefined);
+      // no-store: never the browser's saved copy (Safari can hand back the tiny piece the player asked for first).
+      const res = await fetch(url, got ? { cache: 'no-store', headers: { Range: `bytes=${got}-` } } : { cache: 'no-store' });
       if (!res.ok) throw Object.assign(new Error(`The server answered ${res.status}.`), { status: res.status });
       if (got && res.status !== 206) { parts.length = 0; got = 0; }   // the server started over: so do we
       type = res.headers.get('content-type') || type;
@@ -2041,8 +2042,11 @@ async function pumpDownloads() {
           if (blob.size < 50e3) throw new Error('The server couldn’t get this song from YouTube.');
           break;
         } catch (e) {
-          if (/quota/i.test(`${e && e.name} ${e && e.message}`) || attempt >= Math.max(6, order.length * 2)) throw e;
-          dlq.cur.retry = true; renderUploadStatus();
+          // Say what went wrong and where, and tell the server too (so it can be fixed).
+          const why = e && e.status ? `${serverLabel(from.slice(0, from.indexOf('/', 8)))} answered ${e.status}` : e && /fetch|network|load failed/i.test(e.message) ? `Can’t reach ${serverLabel(from.slice(0, from.indexOf('/', 8)))}` : (e && e.message) || 'failed';
+          try { api('POST', 'api/me/dl-error', { why, url: from.replace(/\?.*/, ''), attempt, ua: navigator.userAgent.slice(0, 160) }).catch(() => {}); } catch (er) {}
+          if (/quota/i.test(`${e && e.name} ${e && e.message}`) || attempt >= Math.max(6, order.length * 2)) throw new Error(why);
+          dlq.cur.retry = `${why} · trying again (${attempt + 1} of ${Math.max(6, order.length * 2)})`; renderUploadStatus();
           await new Promise(r => setTimeout(r, Math.min(attempt, 4) * 1500));
         }
       }

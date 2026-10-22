@@ -357,6 +357,8 @@ try {
 } catch { /* no saved jobs */ }
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
+// A download to someone's device that failed a try: logged, so the cause can be found.
+app.post('/api/me/dl-error', auth.requireUser, (req, res) => { const b = req.body || {}; console.log(`Device download failed (${req.user.name}, try ${Number(b.attempt) || 0}): ${String(b.why || '').slice(0, 200)} | ${String(b.url || '').slice(0, 160)} | ${String(b.ua || '').slice(0, 160)}`); res.json({ ok: true }); });
 
 /* Admin → Servers: how this server is doing. */
 const backups = require('./backup')(DATA, auth);
