@@ -489,6 +489,12 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .dl-note:empty{display:none}
 .dl-col svg{width:20px;height:20px}
 .dl-btn.busy{color:var(--accent)}
+.dl-ring{width:32px!important;height:32px!important;fill:currentColor}
+.dl-ring circle{fill:none;stroke-width:3;transform:rotate(-90deg);transform-origin:50% 50%}
+.dl-ring-bg{stroke:color-mix(in srgb,var(--accent) 22%,transparent)}
+.dl-ring-fg{stroke:var(--accent);stroke-linecap:round;transition:stroke-dasharray .4s}
+.dl-ring.waiting .dl-ring-fg{animation:spinRing 1s linear infinite}
+@keyframes spinRing{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}
 .spin{flex:none;display:inline-block;width:16px;height:16px;border-radius:50%;border:2.5px solid color-mix(in srgb,var(--accent) 25%,transparent);border-top-color:var(--accent);animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .yt-btn-wrap{display:contents}
@@ -1811,7 +1817,8 @@ function renderTopStatus() {
   el.title = label; el.setAttribute('aria-label', label);
 }
 function renderUploadStatus() {
-  renderTopStatus();   // all progress shows at the top now (the card and the thin line under the top bar)
+  renderTopStatus();
+  if (dlq.cur) dlButtons();   // the circle on the list's download button fills as each song saves   // all progress shows at the top now (the card and the thin line under the top bar)
 }
 /* Network trouble (a dropped connection, a phone waking up, a server restarting after an update) makes fetch
    fail with "Failed to fetch". Requests that are safe to repeat are tried again a few times before giving up,
@@ -2058,6 +2065,10 @@ function confirmRemoveDownloads(ids) {
 function syncDownloads() {
   const busy = new Set([...dlq.queue, ...(dlq.cur ? [dlq.cur.id] : [])]);
   $$('.row[data-tid]').forEach(r => { r.classList.toggle('is-dl', localPlayable(r.dataset.tid)); r.classList.toggle('is-dling', busy.has(r.dataset.tid)); });
+  dlButtons(busy);
+}
+/* The download buttons on lists. While saving: a circle that fills up around a pause sign (tap = pause). */
+function dlButtons(busy = new Set([...dlq.queue, ...(dlq.cur ? [dlq.cur.id] : [])])) {
   $$('[data-act="col-dl"]').forEach(b => {
     const col = getCollection(b.dataset.type, b.dataset.id); if (!col) return;
     // Count songs (not files): two songs can share one download, and a Spotify song's download is its YouTube match.
@@ -2065,7 +2076,12 @@ function syncDownloads() {
     const done = ups.length && have === ups.length, going = dlTargets(ups).some(id => busy.has(id)) || ups.some(id => busy.has(id));
     b.classList.toggle('on', !!done); b.classList.toggle('busy', going && !done);
     // Just the download symbol; while downloading it shows how far along it is.
-    b.innerHTML = (going && !done ? `<span class="spin" aria-hidden="true"></span>` : icon(done ? 'dlFill' : 'download')) + (going && !done ? `<span class="dl-count">${have}/${ups.length}</span>` : '');
+    if (going && !done) {
+      const part = dlq.cur && ups.includes(dlq.cur.id) ? (dlq.cur.pct || 0) / 100 : 0;
+      const pct = Math.min(1, (have + part) / Math.max(1, ups.length)), C = 2 * Math.PI * 15;
+      const html = `<svg class="dl-ring${pct < 0.02 ? ' waiting' : ''}" viewBox="0 0 36 36" aria-hidden="true"><circle class="dl-ring-bg" cx="18" cy="18" r="15"/><circle class="dl-ring-fg" cx="18" cy="18" r="15" stroke-dasharray="${pct < 0.02 ? C * 0.25 : (pct * C).toFixed(1)} ${C.toFixed(1)}"/><rect x="13.5" y="12.5" width="3" height="11" rx="1"/><rect x="19.5" y="12.5" width="3" height="11" rx="1"/></svg>`;
+      if (b.innerHTML !== html) b.innerHTML = html;
+    } else b.innerHTML = icon(done ? 'dlFill' : 'download');
     const skipped = dlSkipped(col);
     b.title = (done ? 'On this device. Tap to remove the download.' : going ? `Downloading to this device: ${have} of ${ups.length}. Tap to pause.` : have ? `Download the other ${ups.length - have} songs to this device` : 'Download to this device to play with no connection. (It doesn’t change the Murmur library.)')
       + (skipped ? ' ' + ytOnlyText(skipped) : '');
