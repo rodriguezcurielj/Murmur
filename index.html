@@ -7586,8 +7586,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.2';
-const ANDROID_NEW = 'Murmur widgets for your home screen: long-press the home screen, tap Widgets, and pick Murmur. Resize it from a small square to a big card.';
+const ANDROID_LATEST = '3.3';
+const ANDROID_NEW = 'New square Murmur widget for small spaces like the Razr outside screen, and widgets can now be held and resized without opening Murmur.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;

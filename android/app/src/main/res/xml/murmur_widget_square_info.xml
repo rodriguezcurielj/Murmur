@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Square Murmur widget, sized for small panels like the Razr's outside screen (2 x 2 cells) -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp" android:minHeight="110dp"
+    android:minResizeWidth="40dp" android:minResizeHeight="40dp"
+    android:targetCellWidth="2" android:targetCellHeight="2"
+    android:maxResizeWidth="600dp" android:maxResizeHeight="600dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen|keyguard"
+    android:initialLayout="@layout/widget_large"
+    android:initialKeyguardLayout="@layout/widget_large"
+    android:previewLayout="@layout/widget_large"
+    android:description="@string/widget_square_desc"
+    android:updatePeriodMillis="0" />

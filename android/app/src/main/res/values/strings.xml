@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Murmur</string>
+    <string name="widget_square_desc">Square: the cover with play, pause and skip (fits small panels)</string>
     <string name="widget_desc">What\'s playing, with play, pause and skip</string>
 </resources>

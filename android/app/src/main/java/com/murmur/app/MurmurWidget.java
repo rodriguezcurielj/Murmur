@@ -46,8 +46,8 @@ public class MurmurWidget extends AppWidgetProvider {
     /** Redraw every Murmur widget. */
     static void refresh(Context ctx) {
         AppWidgetManager m = AppWidgetManager.getInstance(ctx);
-        int[] ids = m.getAppWidgetIds(new ComponentName(ctx, MurmurWidget.class));
-        for (int id : ids) draw(ctx, m, id);
+        for (Class<?> c : new Class<?>[] { MurmurWidget.class, MurmurWidgetSquare.class })
+            for (int id : m.getAppWidgetIds(new ComponentName(ctx, c))) draw(ctx, m, id);
     }
 
     @Override
@@ -93,7 +93,12 @@ public class MurmurWidget extends AppWidgetProvider {
         if (art != null) v.setImageViewBitmap(R.id.w_art, art); else v.setImageViewResource(R.id.w_art, R.drawable.w_art_empty);
         v.setImageViewResource(R.id.w_play, playing ? R.drawable.n_pause : R.drawable.n_play);
         v.setContentDescription(R.id.w_play, playing ? "Pause" : "Play");
-        v.setOnClickPendingIntent(R.id.w_root, openApp(ctx, null, 20));
+        // Only the song name opens Murmur. A tap target over the whole widget made the launcher open the app when
+        // you let go after holding it to move or resize it.
+        if (layout != R.layout.widget_tiny) {
+            v.setOnClickPendingIntent(R.id.w_title, openApp(ctx, null, 20));
+            v.setOnClickPendingIntent(R.id.w_artist, openApp(ctx, null, 25));
+        }
         v.setOnClickPendingIntent(R.id.w_play, button(ctx, "toggle", 21));
         if (layout != R.layout.widget_tiny) {
             v.setOnClickPendingIntent(R.id.w_prev, button(ctx, "prev", 22));

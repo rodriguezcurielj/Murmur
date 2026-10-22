@@ -10,8 +10,8 @@ android {
         applicationId 'com.murmur.app'
         minSdk 26
         targetSdk 36
-        versionCode 23
-        versionName '3.2'
+        versionCode 24
+        versionName '3.3'
         // The page the app opens. It's the GitHub Pages copy, which finds your server through config.js.
         buildConfigField 'String', 'START_URL', '"https://rodriguezcurielj.github.io/Murmur/"'
     }
