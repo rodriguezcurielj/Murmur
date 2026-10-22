@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="murmur-build" content="20261015024548">
-<meta name="theme-color" content="#120e17">
+<meta name="theme-color" content="#121212">
 <meta name="description" content="Murmur: your self-hosted music player.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
@@ -51,6 +51,7 @@ window.murmurApplyTheme = function (id) {
   var d = window.MurmurDesktop; if (d && d.setFrame) { document.documentElement.classList.add('desktop-frame'); d.setFrame(c[0], c[6]); }
   // The Android app colours the phone's status bar and navigation bar to match.
   var an = window.MurmurAndroid; if (an && an.setBars) try { an.setBars(c[0], !!t.light); } catch (e) {}
+  if (an && an.setIcon) try { an.setIcon(t.id); } catch (e) {}   // the app icon takes the theme's colours too
   return t.id;
 };
 try { window.murmurApplyTheme(JSON.parse(localStorage.getItem('murmur:theme') || '"murmur"')); } catch (e) {}
@@ -65,7 +66,7 @@ try { window.murmurApplyTheme(JSON.parse(localStorage.getItem('murmur:theme') ||
 :root{
   /* Layout: three-pane shell (library rail · main stage · now-playing card) over a transport bar; phones collapse to stage + mini player + tab bar */
   --bg:#121212; --panel:#181818; --raise:#242424; --hover:#2e2e2e; --line:#383838;
-  --fg:#f5eff9; --muted:#a798b4; --accent:#ffb070; --accent-ink:#2b1505; --danger:#ff8e8e;
+  --fg:#f5f5f5; --muted:#a7a7a7; --accent:#ffb070; --accent-ink:#2b1505; --danger:#ff8e8e;
   --font-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
   --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --r:10px;
@@ -192,7 +193,7 @@ body.tq-focus .mfy{display:none}
 .cover{object-fit:cover;background:var(--raise);flex:none;aspect-ratio:1;max-width:100%}
 .mosaic{display:grid;grid-template-columns:1fr 1fr;overflow:hidden}
 .mosaic img{width:100%;height:100%;object-fit:cover}
-.liked-cover{display:grid;place-items:center;background:linear-gradient(140deg,#5b35c9 0%,#c06ad8 55%,#ffb070 100%);color:#fff}
+.liked-cover{display:grid;place-items:center;background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 35%,#1a1030) 0%,color-mix(in srgb,var(--accent) 70%,#6a3fd0) 55%,var(--accent) 100%);color:#fff}
 .liked-cover svg{width:42%;height:42%;fill:currentColor}
 .round{border-radius:50%!important}
 
@@ -444,7 +445,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .prog{font-family:var(--font-display);font-weight:600;color:var(--fg);letter-spacing:.02em}
 
 /* ---------- full player ---------- */
-.full{position:fixed;inset:0;z-index:40;overflow:auto;background:linear-gradient(180deg,color-mix(in srgb,var(--tint,#5a3478) 55%,var(--bg)) 0%,var(--bg) 78%);padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(28px + env(safe-area-inset-bottom,0px))}
+.full{position:fixed;inset:0;z-index:40;overflow:auto;background:linear-gradient(180deg,color-mix(in srgb,var(--tint,color-mix(in srgb,var(--accent) 45%,var(--bg))) 55%,var(--bg)) 0%,var(--bg) 78%);padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(28px + env(safe-area-inset-bottom,0px))}
 .full-in{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
 /* Equal side columns keep "Playing from" in the exact middle whatever buttons sit on each side. */
 .full-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.4fr) minmax(0,1fr);align-items:center;gap:8px;text-align:center}
@@ -562,7 +563,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .yt-add.busy:hover .pause-ic{display:inline-flex}.yt-add.busy:hover .spin{display:none}
 .yt-add .pause-ic svg{width:14px;height:14px}
 @keyframes dlpulse{50%{opacity:.35}}
-.dl-cover{background:linear-gradient(140deg,#1d6b5a 0%,#3a8f7a 50%,#ffb070 100%)}
+.dl-cover{background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 25%,#0d3b33) 0%,color-mix(in srgb,var(--accent) 55%,#2f8f78) 50%,var(--accent) 100%)}
 .dl-cover svg{fill:none}
 .offline-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 16px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,var(--raise));border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);font-size:14px}
 .offline-banner>svg{color:var(--accent);flex:none}
@@ -811,7 +812,7 @@ body.in-radio .radio-only{display:grid!important}
 }
 .stations{flex:none;display:flex;flex-direction:column;padding:12px 8px 8px;min-height:0;max-height:32vh}
 .st-list{min-height:0;overflow-x:hidden}
-.st-ic{display:grid;place-items:center;background:linear-gradient(140deg,#c2543b 0%,#ffb070 100%);color:#fff}
+.st-ic{display:grid;place-items:center;background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 45%,#000) 0%,var(--accent) 100%);color:#fff}
 .st-ic svg{width:50%;height:50%}
 .st-del{opacity:0;flex:none}
 .st-item:hover .st-del,.st-item:focus-within .st-del{opacity:1}
@@ -898,7 +899,7 @@ body.in-radio .radio-only{display:grid!important}
 .src-lic a{color:inherit}
 .src-add{flex:none}
 .src-set{padding:8px 0;border-top:1px solid color-mix(in srgb,var(--fg) 8%,transparent)}
-.admin-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;padding:10px 14px;border-radius:12px;background:rgba(255,176,112,.12);border:1px solid rgba(255,176,112,.35)}
+.admin-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
 .admin-banner svg{width:18px;height:18px;color:var(--accent);flex:none}
 .admin-banner span{flex:1;min-width:200px}
 .admin-plays{margin:0 0 18px;padding-left:22px;display:grid;gap:4px}
@@ -1125,7 +1126,7 @@ body.in-radio .radio-only{display:grid!important}
 .ver:hover{background:var(--hover)}
 .ver input{accent-color:var(--accent);width:16px;height:16px;flex:none}
 .ver img,.ver-ph{width:48px;height:48px;border-radius:4px;object-fit:cover;flex:none}
-.ver-ph{display:grid;place-items:center;background:linear-gradient(140deg,#5b35c9,#ffb070);color:#fff}
+.ver-ph{display:grid;place-items:center;background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 40%,#000),var(--accent));color:#fff}
 .ver-ph svg{width:20px;height:20px}
 .ver>span:last-child{display:flex;flex-direction:column;min-width:0}
 .ver b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1146,7 +1147,7 @@ body.in-radio .radio-only{display:grid!important}
 .yt-settings{margin:12px 0 4px}
 
 /* ---------- modal ---------- */
-.modal-back{position:fixed;inset:0;z-index:90;background:rgba(8,5,12,.62);display:grid;place-items:center;padding:16px}
+.modal-back{position:fixed;inset:0;z-index:90;background:color-mix(in srgb,color-mix(in srgb,var(--bg) 30%,#000) 66%,transparent);display:grid;place-items:center;padding:16px}
 .modal-back.m-drawer{padding:0;place-items:stretch;justify-items:end}
 .m-drawer .modal{width:min(380px,92vw);max-height:none;height:100%;border:0;border-left:1px solid var(--line);border-radius:0;box-shadow:-20px 0 50px rgba(0,0,0,.5);animation:drawerR .2s ease-out;padding:16px 18px calc(16px + env(safe-area-inset-bottom))}
 .m-drawer .m-back{display:inline-grid;place-items:center;width:36px;height:36px;margin:0 4px 0 -8px;vertical-align:middle}
@@ -1229,7 +1230,7 @@ body.in-radio .radio-only{display:grid!important}
   .row.plain{grid-template-columns:minmax(0,1fr) auto}
   .genres{grid-auto-columns:42vw;gap:10px}
   .gt{font-size:17px;padding:12px}
-  .player{grid-column:1;grid-template-columns:minmax(0,1fr) auto;margin:0 8px 6px;padding:6px;border-radius:8px;background:color-mix(in srgb,var(--tint,#5a3478) 45%,var(--raise));min-height:0;gap:8px;overflow:hidden}
+  .player{grid-column:1;grid-template-columns:minmax(0,1fr) auto;margin:0 8px 6px;padding:6px;border-radius:8px;background:color-mix(in srgb,var(--tint,color-mix(in srgb,var(--accent) 45%,var(--bg))) 45%,var(--raise));min-height:0;gap:8px;overflow:hidden}
   .p-center,.p-right{display:none}
   .player{grid-template-columns:auto minmax(0,1fr) auto}
   .p-mini-ctrl{display:flex;align-items:center;gap:0;grid-column:1;grid-row:1}
@@ -4817,7 +4818,8 @@ function viewCollection(type, id) {
     + (col.uploaded && col.mine && !col.uploadsAll ? (state.hiddenCols.has('album:' + id)
       ? `<button class="text-btn" data-act="album-unhide" data-id="${esc(id)}">${icon('plus')}<span>Show in library</span></button>`
       : `<button class="text-btn" data-act="album-hide" data-id="${esc(id)}">${icon('cloudOff')}<span>Hide from library</span></button>`) : '');
-  return `<header class="hero" style="--tint:${col.color}">
+  // The header glow follows the theme (its accent colour), so every list matches the colours you picked.
+  return `<header class="hero" style="--tint:var(--accent)">
     ${coverHTML(col, 'hero-cover')}
     <div class="hero-meta"><span class="eyebrow">${col.kind}</span>${title}
       ${col.desc ? `<p class="hero-desc">${esc(col.desc)}</p>` : ''}
@@ -8088,8 +8090,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.3';
-const ANDROID_NEW = 'New square Murmur widget for small spaces like the Razr outside screen, and widgets can now be held and resized without opening Murmur.';
+const ANDROID_LATEST = '3.4';
+const ANDROID_NEW = 'The app icon now takes the colours of your theme, and the update reminder no longer shows when you already have the newest version.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;

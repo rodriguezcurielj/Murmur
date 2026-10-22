@@ -50,7 +50,7 @@ import java.util.Set;
 public class MainActivity extends Activity {
     private static final int PICK_FILES = 1;
     private static final String HOME = BuildConfig.START_URL;
-    private static final int BG = Color.parseColor("#120e17");
+    private static final int BG = Color.parseColor("#121212");
     private FrameLayout rootView;
 
     /*
@@ -279,6 +279,33 @@ public class MainActivity extends Activity {
         widgetAction(intent, false);
     }
 
+    /**
+     * The launcher icon follows the theme: each theme has its own icon entry in the manifest (Icon_<theme>), and
+     * only the chosen one is turned on. Switched when Murmur leaves the screen, so the app never closes under you.
+     */
+    static final String[] ICON_THEMES = { "murmur", "midnight", "ocean", "forest", "sunset", "crimson", "lavender", "sakura",
+            "gold", "coffee", "neon", "noir", "blackblue", "paper", "daylight", "mint", "blossom" };
+    private void applyIcon() {
+        android.content.SharedPreferences p = getSharedPreferences("murmur", Context.MODE_PRIVATE);
+        String want = p.getString("iconWant", null), have = p.getString("iconHave", "murmur");
+        if (want == null || want.equals(have) || !java.util.Arrays.asList(ICON_THEMES).contains(want)) return;
+        android.content.pm.PackageManager pm = getPackageManager();
+        try {
+            pm.setComponentEnabledSetting(new android.content.ComponentName(this, getPackageName() + ".Icon_" + want),
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED, android.content.pm.PackageManager.DONT_KILL_APP);
+            for (String t : ICON_THEMES) if (!t.equals(want))
+                pm.setComponentEnabledSetting(new android.content.ComponentName(this, getPackageName() + ".Icon_" + t),
+                        android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED, android.content.pm.PackageManager.DONT_KILL_APP);
+            p.edit().putString("iconHave", want).apply();
+        } catch (Exception ignored) { /* this phone doesn't allow it: keep the icon it has */ }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (!isChangingConfigurations()) applyIcon();
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -440,7 +467,14 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String version() { return "3.1"; }
+        public String version() { return BuildConfig.VERSION_NAME; }
+
+        /** The theme's id: the app icon switches to that theme's colours the next time Murmur leaves the screen. */
+        @JavascriptInterface
+        public void setIcon(String theme) {
+            if (theme == null || !java.util.Arrays.asList(ICON_THEMES).contains(theme)) return;
+            app.getSharedPreferences("murmur", Context.MODE_PRIVATE).edit().putString("iconWant", theme).apply();
+        }
 
         /** The page's theme: background colour (#rrggbb) and whether it's a light theme. */
         @JavascriptInterface

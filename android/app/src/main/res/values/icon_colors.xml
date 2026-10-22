@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated: app icon colours for each Murmur theme (see gen in the change log) -->
+<resources>
+    <color name="icon_bg_murmur">#19171b</color>
+    <color name="icon_bg_midnight">#16191f</color>
+    <color name="icon_bg_ocean">#151a1c</color>
+    <color name="icon_bg_forest">#171a18</color>
+    <color name="icon_bg_sunset">#1c1619</color>
+    <color name="icon_bg_crimson">#181616</color>
+    <color name="icon_bg_lavender">#19181f</color>
+    <color name="icon_bg_sakura">#1c171a</color>
+    <color name="icon_bg_gold">#191715</color>
+    <color name="icon_bg_coffee">#1a1816</color>
+    <color name="icon_bg_neon">#151519</color>
+    <color name="icon_bg_noir">#151515</color>
+    <color name="icon_bg_blackblue">#161616</color>
+    <color name="icon_bg_paper">#ffffff</color>
+    <color name="icon_bg_daylight">#ffffff</color>
+    <color name="icon_bg_mint">#ffffff</color>
+    <color name="icon_bg_blossom">#ffffff</color>
+</resources>
