@@ -523,16 +523,29 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
 @media (max-width:360px){.adm-tab svg{display:none}.lib-top .head-actions .text-btn svg{display:none}.lib-top .head-actions .text-btn{padding:0 10px}}
 /* Phones: your profile button on the left, the Murmur logo on the right (like Spotify). */
 @media (max-width:760px){.topbar .top-right{order:1;margin-left:0!important}.topbar .top-search{order:2}.topbar .m-brand{order:3;margin-left:auto}
-  /* Phones: a small status pill in the middle of the top bar (which server, downloads, offline) */
-  .topbar .top-status:not([hidden]){order:2;margin:0 auto;display:inline-flex}
+  /* Phones: a status bar filling the middle of the top bar (which server, downloads, offline) */
+  .topbar .top-status:not([hidden]){order:2;flex:1;min-width:0;margin:0 4px;display:flex}
   body[data-view="search"] .topbar .top-status{display:none!important}
   .topbar .top-status:not([hidden])~.m-brand{margin-left:0}}
-.top-status{display:none;align-items:center;gap:7px;max-width:52vw;height:30px;padding:0 12px;border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);border-radius:999px;background:color-mix(in srgb,var(--fg) 5%,transparent);color:var(--muted);font:600 12.5px var(--font-body);white-space:nowrap;cursor:pointer}
-.top-status>span:last-child{overflow:hidden;text-overflow:ellipsis}
-.top-status .ts-dot{flex:none;width:7px;height:7px;border-radius:50%;background:#3ddc84;box-shadow:0 0 0 3px color-mix(in srgb,#3ddc84 22%,transparent)}
-.top-status.warn .ts-dot{background:#f5a623;box-shadow:0 0 0 3px color-mix(in srgb,#f5a623 22%,transparent)}
-.top-status .ts-bar{flex:none;width:34px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--fg) 14%,transparent);overflow:hidden}
-.top-status .ts-bar i{display:block;height:100%;background:var(--accent);border-radius:2px}
+.top-status{--c:var(--accent);position:relative;display:none;align-items:center;gap:10px;height:44px;padding:0 12px 0 8px;overflow:hidden;isolation:isolate;
+  border:1px solid color-mix(in srgb,var(--c) 34%,transparent);border-radius:16px;color:var(--fg);text-align:left;cursor:pointer;
+  background:linear-gradient(120deg,color-mix(in srgb,var(--c) 26%,var(--bg)) 0%,color-mix(in srgb,var(--c) 8%,var(--bg)) 55%,color-mix(in srgb,var(--c) 16%,var(--bg)) 100%);
+  box-shadow:0 6px 18px -10px color-mix(in srgb,var(--c) 70%,transparent),inset 0 1px 0 color-mix(in srgb,#fff 10%,transparent);transition:transform .15s}
+.top-status:active{transform:scale(.97)}
+.top-status.warn{--c:#f5a623}
+.top-status::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,#fff 9%,transparent) 50%,transparent 70%);transform:translateX(-100%);animation:tsShine 6s ease-in-out infinite}
+@keyframes tsShine{0%,70%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.top-status .ts-fill{position:absolute;inset:0 auto 0 0;z-index:-1;width:var(--p,0%);background:linear-gradient(90deg,color-mix(in srgb,var(--c) 22%,transparent),color-mix(in srgb,var(--c) 42%,transparent));transition:width .4s}
+.top-status .ts-ic{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:11px;background:color-mix(in srgb,var(--c) 24%,transparent);color:var(--c)}
+.top-status .ts-ic svg{width:17px;height:17px}
+.top-status .ts-txt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.15}
+.top-status .ts-txt b{font:800 13.5px var(--font-display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-status .ts-txt small{font:500 11.5px var(--font-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.top-status .ts-dot{flex:none;width:6px;height:6px;border-radius:50%;background:#3ddc84;animation:tsPulse 2.2s ease-out infinite}
+.top-status.warn .ts-dot{background:#f5a623}
+@keyframes tsPulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.65)}100%{box-shadow:0 0 0 7px rgba(61,220,132,0)}}
+.top-status .ts-end{flex:none;font:800 12px var(--font-display);color:var(--c)}
+@media (prefers-reduced-motion:reduce){.top-status::after,.top-status .ts-dot{animation:none}}
 @media (max-height:560px) and (max-width:760px){.topbar .top-status{display:none!important}}
 .lib-top .head-actions .text-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lib-top .head-actions svg{width:15px;height:15px;flex:none}
@@ -1707,15 +1720,26 @@ async function pumpUploads() {
 function renderTopStatus() {
   const el = $('#topStatus'); if (!el) return;
   const c = server.current, d = dlq.cur;
-  const bar = pct => `<span class="ts-bar"><i style="width:${Math.max(4, Math.min(100, pct || 0))}%"></i></span>`;
+  const view = (ic, title, sub, end = '', pct = null) => `${pct == null ? '' : `<span class="ts-fill" style="--p:${Math.max(3, Math.min(100, pct))}%"></span>`}<span class="ts-ic">${icon(ic)}</span><span class="ts-txt"><b>${title}</b><small>${sub}</small></span>${end ? `<span class="ts-end">${end}</span>` : ''}`;
   let html = '', warn = false, label = '';
-  if (c) { html = bar(c.pct) + `<span>Uploading${server.queue.length ? ` · ${server.queue.length + 1} left` : ''}</span>`; label = 'Uploading songs'; }
-  else if (d && dlq.total) { html = bar(dlq.done / dlq.total * 100) + `<span>Saving ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}</span>`; label = 'Downloading to this device'; }
-  else if (server.offlineMode || (me && !server.on)) { warn = true; html = `<span class="ts-dot"></span><span>Offline${offline.size ? ` · ${offline.size} saved` : ''}</span>`; label = 'Offline: only downloaded songs play'; }
-  else if (server.on) {
+  if (c) {
+    html = view('upload', esc(c.name), c.pct < 100 ? `Uploading${server.queue.length ? ` · ${server.queue.length} more after this` : ''}` : 'Adding to your library…', `${c.pct}%`, c.pct);
+    label = 'Uploading songs';
+  } else if (d && dlq.total) {
+    const pct = Math.round((dlq.done + (d.pct || 0) / 100) / dlq.total * 100);
+    html = view('download', esc(d.title || 'Saving songs'), `Saving to this device · ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`, `${pct}%`, pct);
+    label = 'Downloading to this device';
+  } else if (server.offlineMode || (me && !server.on)) {
+    warn = true;
+    html = view('cloudOff', 'Offline', `<span class="ts-dot"></span>${offline.size ? `${plural(offline.size, 'song')} saved on this device` : 'Nothing saved on this device yet'}`);
+    label = 'Offline: only downloaded songs play';
+  } else if (server.on) {
     const base = remote.base || location.origin, name = serverLabel(base);
     let short = name; try { if (name === base) short = new URL(base).hostname.split('.')[0]; } catch (e) {}
-    html = `<span class="ts-dot"></span><span>${esc(short)}</span>`; label = `Connected to ${name}`;
+    let ms = 0; try { ms = (ytAudio.status[normalizeServer(base)] || ytAudio.status[base] || {}).ms; } catch (e) {}
+    const songs = Object.values(TRACKS).filter(t => t.src).length;
+    html = view('server', esc(short), `<span class="ts-dot"></span>Online${ms ? ` · ${Math.round(ms)} ms` : ''}${offline.size ? ` · ${offline.size} saved here` : songs ? ` · ${plural(songs, 'song')}` : ''}`);
+    label = `Connected to ${name}. Tap for your account and servers.`;
   }
   el.hidden = !html; if (!html) return;
   el.classList.toggle('warn', warn);
