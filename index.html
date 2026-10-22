@@ -617,7 +617,7 @@ body.in-radio .radio-only{display:grid!important}
 .pr-fold-btn{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border-radius:12px;background:var(--raise);font-weight:700;text-align:left}
 .pr-fold-btn:hover{background:var(--hover)}
 .pr-fold-btn svg{width:18px;height:18px;flex:none;transition:transform .2s}
-.pr-fold-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.pr-fold-btn[aria-expanded="true"]>svg:first-child{transform:rotate(180deg)}   /* only the arrow turns, never the thumb icons */
 .pr-fold-btn span:first-of-type{flex:1}
 .pr-n{font-size:13px;font-weight:600;color:var(--muted);background:var(--bg);border-radius:999px;padding:1px 9px}
 .pr-list{display:flex;flex-direction:column;gap:2px;padding:6px 0 4px}
