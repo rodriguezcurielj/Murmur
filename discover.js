@@ -212,6 +212,38 @@ module.exports = function createDiscover(dataDir) {
       } catch (e) { res.status(502).json({ error: 'Couldn’t reach the song catalog. Try again in a moment.' }); }
     });
 
+    // A genre page like Spotify's: its popular songs, artists and albums. Deezer's per-genre charts are mostly the
+    // global chart, so this reads the genre's editor playlists instead (e.g. Corridos -> "Esenciales Corridos").
+    const GENRE_QUERY = { 'hip-hop': 'hip hop hits', 'hip-hop/rap': 'hip hop hits', 'rap': 'hip hop hits', 'regional mexican': 'regional mexicano', 'latin': 'latin hits',
+      'r&b': 'r&b hits', 'soul & funk': 'soul funk', 'electronic': 'electronic hits', 'alternative': 'alternative hits', 'pop': 'pop hits', 'dance': 'dance hits' };
+    app.get('/api/catalog/genre-page', async (req, res) => {
+      const name = String(req.query.name || '').trim().slice(0, 60);
+      if (!name) return res.status(400).json({ error: 'Which genre?' });
+      const words = name.toLowerCase().split(/[^a-z0-9áéíóúñ&]+/).filter(w => w.length > 2);
+      const score = p => {
+        const t = String(p.title || '').toLowerCase(), by = String((p.user && p.user.name) || '');
+        return (/deezer/i.test(by) ? 4 : 0) + (words.some(w => t.includes(w)) ? 3 : 0) + (/\b(hits|top|best|esenciales|essentials|exitos|éxitos|power)\b/.test(t) ? 2 : 0)
+          - (/\b(instrumental|lofi|lo-fi|beats|chill|sleep|study|karaoke|kids|remix|covers?|jazzy|christmas|xmas|navidad|holiday|halloween|nouvel|fete|fête)\b/.test(t) ? 6 : 0)
+          // Playlists for one country, language or decade aren't the genre as a whole.
+          - (/\b(france|french|fran[cç]ais|afro|zouk|konpa|deutsch|german|uk|italia|brasil|polska|nederland|\d0s|19\d0|20\d0)\b|'\d0s/.test(t) ? 5 : 0)
+          + (/\b(us|usa|america|american)\b/.test(t) ? 1 : 0) + Math.min(2, (p.nb_tracks || 0) / 50);
+      };
+      try {
+        const q = GENRE_QUERY[name.toLowerCase()] || name;
+        const found = [...((await dz('search/playlist?limit=15&q=' + encodeURIComponent(q.toLowerCase()))).data || []),
+          ...(q !== name ? ((await dz('search/playlist?limit=10&q=' + encodeURIComponent(name.toLowerCase())).catch(() => ({ data: [] }))).data || []) : [])];
+        const seenPl = new Set(), lists = found.filter(p => !seenPl.has(p.id) && seenPl.add(p.id)).sort((a, b) => score(b) - score(a)).slice(0, 3);
+        const tracks = (await Promise.all(lists.map(p => dz(`playlist/${p.id}/tracks?limit=80`).catch(() => ({ data: [] }))))).flatMap(r => r.data || []).filter(t => t && t.artist && t.album);
+        // Songs: most popular first, one copy each. Artists and albums: the ones that show up most across the playlists.
+        const seen = new Set(), songs = tracks.filter(t => { const k = keyOf(toTrack(t, '')); if (seen.has(k)) return false; seen.add(k); return true; })
+          .sort((a, b) => (b.rank || 0) - (a.rank || 0));
+        const count = (key, pick) => { const m = new Map(); tracks.forEach(t => { const k = key(t); if (!k) return; const e = m.get(k) || { n: 0, rank: 0, v: pick(t) }; e.n++; e.rank = Math.max(e.rank, t.rank || 0); m.set(k, e); }); return [...m.values()].sort((a, b) => b.n - a.n || b.rank - a.rank).map(e => e.v); };
+        const artists = count(t => t.artist.id, t => ({ name: t.artist.name, picture: t.artist.picture_big || t.artist.picture_medium || '' })).slice(0, 16);
+        const albums = count(t => t.album.id, t => ({ id: t.album.id, title: t.album.title, cover: t.album.cover_big || t.album.cover_medium || '', artist: t.artist.name, type: 'album' })).slice(0, 16);
+        res.json({ name, songs: songs.slice(0, 30).map(t => toTrack(t, name)), artists, albums, from: lists.map(p => p.title) });
+      } catch (e) { res.status(502).json({ error: 'Couldn’t reach the music catalog.' }); }
+    });
+
     // Popular songs for a genre name (for the "Because you like …" shelves on Home).
     app.get('/api/catalog/genre', async (req, res) => {
       const name = String(req.query.name || '').trim().toLowerCase().slice(0, 60);

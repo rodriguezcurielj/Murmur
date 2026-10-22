@@ -3528,6 +3528,13 @@ function collectionOf(type, id) {
     return { type, id, kind: 'Artist', title: info ? info.name : name, desc: '', sub, tracks, popCount: pop.length, cover: (info && info.picture) || (tracks[0] ? tCover(tracks[0]) : null),
       color: tracks[0] && ALBUM_MAP[TRACKS[tracks[0]].albumId] ? ALBUM_MAP[TRACKS[tracks[0]].albumId].colors[0] : '#6b5a7d', round: true, artistName: name, loadingCat: !!(cp && cp.loading) };
   }
+  if (type === 'cgenre') {
+    const g = catPages.genres.get(id) || {}, page = g.page;
+    if (!page) return g.error ? null : { type, id, kind: 'Genre', title: id, desc: '', sub: 'Loading…', tracks: [], allTracks: [], cover: null, color: gbColor(id)[0], loadingCat: true, genrePage: true };
+    const tracks = g.ids.filter(visible);
+    return { type, id, kind: 'Genre', title: id, desc: '', sub: `Popular ${esc(id)} right now · ${plural(page.artists.length, 'artist')}`, tracks,
+      mosaic: mosaicFor(tracks), cover: tracks[0] ? tCover(tracks[0]) : null, color: gbColor(id)[0], genrePage: true };
+  }
   if (type === 'calbum') {
     const a = catPages.albums.get(id);
     if (!a || !a.album) return a && a.loading ? { type, id, kind: 'Album', title: 'Loading…', desc: '', sub: '', tracks: [], cover: null, color: '#6b5a7d', loadingCat: true } : null;
@@ -4269,11 +4276,17 @@ const FILE_ACCEPT = (/Windows/.test(navigator.userAgent) ? '' : 'audio/*,video/*
 /* Search page: colourful genre boxes, two to a row. Your own top genres come first. Tap = Discover in that genre. */
 const GB_COLORS = [['#e8115b', '#ff6b9b'], ['#1e3264', '#4a78d0'], ['#8d67ab', '#c79bf2'], ['#e1118c', '#ff7ac8'], ['#148a08', '#4fd13f'], ['#bc5900', '#ff9d3c'],
   ['#0d73ec', '#52a8ff'], ['#509bf5', '#9fd0ff'], ['#ba5d07', '#f5a442'], ['#27856a', '#5fd3b0'], ['#e91429', '#ff6a6a'], ['#503750', '#a27aa2'], ['#477d95', '#8fc3db'], ['#af2896', '#f06ed8']];
+// Genre names from different places mean the same thing ("Hip-Hop/Rap", "Rap/Hip Hop", "Latin Music"): one name each.
+const GENRE_CANON = { 'hiphoprap': 'Hip-Hop', 'raphiphop': 'Hip-Hop', 'hiphop': 'Hip-Hop', 'rap': 'Hip-Hop', 'latinmusic': 'Latin', 'latin': 'Latin', 'traditionalmexicano': 'Regional Mexican',
+  'regionalmexicano': 'Regional Mexican', 'regionalmexican': 'Regional Mexican', 'musicamexicana': 'Regional Mexican', 'rnb': 'R&B', 'randb': 'R&B', 'electro': 'Electronic', 'electronica': 'Electronic',
+  'corrido': 'Corridos', 'corridos': 'Corridos', 'corridostumbados': 'Corridos', 'reggaeton': 'Reggaeton', 'reggaetón': 'Reggaeton' };
+const canonGenre = g => GENRE_CANON[String(g).toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9ó]+/g, '')] || g;
+function gbColor(g) { let h = 0; for (const ch of String(g)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return GB_COLORS[h % GB_COLORS.length]; }
 function moreForYouHTML() {
-  const mine = topGenres().filter(g => g && g !== NO_GENRE);
-  const list = [...new Set([...mine, ...GENRE_LIST])].slice(0, 14);
+  const mine = [...new Set(topGenres().filter(g => g && g !== NO_GENRE).map(canonGenre))];
+  const list = [...new Set([...mine, ...GENRE_LIST.map(canonGenre)])].slice(0, 14);
   if (!list.length) return '';
-  return `<div class="shelf-head"><h2>More for you</h2></div><div class="gbox-grid">${list.map((g, i) => { const c = GB_COLORS[i % GB_COLORS.length];
+  return `<div class="shelf-head"><h2>More for you</h2></div><div class="gbox-grid">${list.map(g => { const c = gbColor(g);
     return `<button class="gbox" data-act="genre-box" data-g="${esc(g)}" style="--g1:${c[0]};--g2:${c[1]}"><span>${esc(g)}</span>${mine.includes(g) ? '<small>From your music</small>' : ''}</button>`; }).join('')}</div>`;
 }
 /* Recent searches, newest first, shown on the empty Search page (this device only). */
@@ -4296,7 +4309,7 @@ function recentSearchesHTML() {
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
 function viewCollection(type, id) {
   // Artist and catalog album pages fill in from the music catalog (only fetched when the page is opened).
-  if (type === 'artist') catArtist(cleanArtist(id)); else if (type === 'calbum') catAlbum(id);
+  if (type === 'artist') catArtist(cleanArtist(id)); else if (type === 'calbum') catAlbum(id); else if (type === 'cgenre') catGenre(id);
   const col = getCollection(type, id);
   if (col && type === 'radio') return viewRadio(col);
   if (!col) return `<div class="empty"><h2>This is gone</h2>It was deleted or removed. Pick something from your library instead.</div>`;
@@ -4321,6 +4334,11 @@ function viewCollection(type, id) {
       : `<div class="empty"><h2>Your playlist is empty</h2>Add songs from the list below, or use the ⋯ menu on any song.</div>`;
   } else body = (type === 'artist' && col.popCount ? `<div class="shelf-head"><h2>Popular</h2>${col.tracks.length > col.popCount ? `<p>Then ${plural(col.tracks.length - col.popCount, 'song')} from your library</p>` : ''}</div>` : '') + trackList(col.tracks, type, id);
   if (type === 'discover') body = discoverGenreBarHTML() + body;
+  else if (type === 'cgenre') {
+    const gp = (catPages.genres.get(id) || {}).page;
+    body = (gp ? shelfHTML('Popular artists', gp.artists.map(artistCard)) + shelfHTML('Popular albums', gp.albums.map(a => albumCard({ ...a, year: '' }).replace('<div class="sb ell">Album</div>', `<div class="sb ell">${esc(a.artist)}</div>`))) : '')
+      + (n ? `<div class="shelf-head"><h2>Popular songs</h2></div>` : '') + body;
+  }
   else if (col.allTracks.length > 1) body = genreBarHTML(col) + body;
   if ((col.uploadsAll || (col.uploaded && col.mine)) && canEditMusic()) {
     body = `<label class="drop" for="fileGlobal" tabindex="0" role="button">${icon('upload')}<span><b>Drop audio or video files here, or click to choose</b>
@@ -5687,7 +5705,7 @@ function act(el, e) {
       break;
     }
     case 'sort-pick': pickSort(d.key, d.k); break;
-    case 'genre-box': disc.genre = d.g; store.set('discGenre', d.g); loadDiscover(false); navigate({ name: 'collection', type: 'discover', id: 'mix' }); break;
+    case 'genre-box': navigate({ name: 'collection', type: 'cgenre', id: d.g }); break;
     case 'rs-go': { const q = $('#tq'); if (q) { q.value = d.q; const c = $('#tqClear'); if (c) c.hidden = false; } submitSearch(d.q); break; }
     case 'rs-del': store.set('recentSearches', store.get('recentSearches', []).filter(x => x !== d.q)); refreshSearch(); { const q = $('#tq'); if (q) q.focus(); } break;
     case 'rs-clear': store.set('recentSearches', []); store.set('recentSearchSongs', []); refreshSearch(); break;
@@ -7004,8 +7022,8 @@ async function loadDiscover(force, retried) {
 }
 /* ---------- artist and album pages filled in from the catalog, like Spotify: popular songs, albums,
    singles, similar artists, and more by the same artist under an album ---------- */
-const catPages = { artists: new Map(), albums: new Map() };
-const catRefresh = () => { if (state.view.name === 'collection' && ['artist', 'album', 'calbum'].includes(state.view.type)) render(); };
+const catPages = { artists: new Map(), albums: new Map(), genres: new Map() };
+const catRefresh = () => { if (state.view.name === 'collection' && ['artist', 'album', 'calbum', 'cgenre'].includes(state.view.type)) render(); };
 function catArtist(name) {
   const k = normKey(name); if (!k) return null;
   if (!catPages.artists.has(k) && server.on) {
@@ -7015,6 +7033,16 @@ function catArtist(name) {
       .catch(e => catPages.artists.set(k, { error: e.message })).finally(catRefresh);
   }
   return catPages.artists.get(k) || null;
+}
+// A genre page (Search -> genre box): its popular songs, artists and albums from the catalog.
+function catGenre(name) {
+  if (!catPages.genres.has(name) && server.on) {
+    catPages.genres.set(name, { loading: true });
+    api('GET', 'api/catalog/genre-page?name=' + encodeURIComponent(name))
+      .then(r => catPages.genres.set(name, { page: r, ids: catIds(r.songs || []) }))
+      .catch(e => catPages.genres.set(name, { error: e.message })).finally(catRefresh);
+  }
+  return catPages.genres.get(name) || null;
 }
 function catAlbum(id) {
   if (!catPages.albums.has(id) && server.on) {
