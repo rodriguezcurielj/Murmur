@@ -5515,7 +5515,7 @@ document.addEventListener('submit', async e => {
     e.preventDefault();
     const fd = new FormData(e.target);
     try {
-      mailCfg = await api('PUT', 'api/mail/settings', { user: fd.get('user'), pass: fd.get('pass') || '', fromName: fd.get('fromName') });
+      mailCfg = await api('PUT', 'api/mail/settings', { user: fd.get('user'), pass: fd.get('pass') || '', fromName: fd.get('fromName'), host: fd.get('host') || '', port: fd.get('port') || '' });
       toast(mailCfg.ready ? 'Saved. Send yourself a test email to check it works.' : 'Saved'); render();
     } catch (err) { toast(err.message); }
     return;
@@ -7276,7 +7276,14 @@ function viewPeople() {
       <div class="people">${people.map(person).join('')}</div>`;
   return `<h1 class="greet">Admin</h1>${adminTabsHTML()}<div class="adm-body">${body}</div>`;
 }
-/* Admin → Email: the mail account PIN reset links are sent from (a Gmail address with an app password). */
+/* Admin → Email: the mail account PIN reset links are sent from. Any provider; the server fills in its mail server. */
+const MAIL_HELP = [
+  [/^(gmail|googlemail)\.com$/, 'Gmail', 'https://myaccount.google.com/apppasswords', 'Turn on 2-Step Verification, then make an app password called Murmur and paste its 16 letters.'],
+  [/^(outlook|hotmail|live|msn)\./, 'Outlook / Hotmail', 'https://account.live.com/proofs/AppPassword', 'Turn on two-step verification, then create an app password and paste it.'],
+  [/^(yahoo|ymail|rocketmail)\./, 'Yahoo', 'https://login.yahoo.com/account/security/app-passwords', 'Make an app password called Murmur and paste it.'],
+  [/^(icloud|me|mac)\.com$/, 'iCloud', 'https://account.apple.com/account/manage', 'Under Sign-In and Security, make an app-specific password and paste it.'],
+  [/^(aol|aim)\.com$/, 'AOL', 'https://login.aol.com/account/security/app-passwords', 'Make an app password called Murmur and paste it.']
+];
 let mailCfg = null;
 function mailSettingsHTML() {
   if (!mailCfg) { api('GET', 'api/mail/settings').then(r => { mailCfg = r; render(); }).catch(e => toast(e.message)); return '<h2 class="sub-head">Email</h2><p class="small">Loading…</p>'; }
@@ -7284,19 +7291,26 @@ function mailSettingsHTML() {
   return `<h2 class="sub-head">Email</h2>
     <p class="small" style="max-width:62ch">${c.ready ? `<b>On.</b> PIN reset links are sent from <b>${esc(c.user)}</b>.` : '<b>Off.</b> Set a mail account so people can reset a forgotten PIN by email.'}
       ${missing.length ? ` ${esc(missing.join(', '))} ${missing.length === 1 ? 'has' : 'have'} no email yet, so they can’t use it. Murmur asks each person for theirs.` : ''}</p>
-    <ol class="steps small" style="max-width:62ch">
-      <li>Use a Gmail account (a new one just for Murmur is fine). It needs <b>2-Step Verification</b> turned on.</li>
-      <li>Open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">Google app passwords</a>, make one called Murmur, and copy the 16 letters.</li>
-      <li>Type the Gmail address and paste the app password below. The password stays on your Murmur servers and is never shown again.</li>
-    </ol>
+    <p class="small" style="max-width:62ch">Use any email account you have (a new one just for Murmur is fine). Murmur sends the emails from it, so it needs that account’s password. Most providers want an <b>app password</b> for this instead of your normal one.</p>
+    <p class="small" id="mlHelp" style="max-width:62ch">${mailHelp(c.user)}</p>
     <form id="mailForm" class="person-add">
-      <div class="field"><label for="mlUser">Gmail address</label><input id="mlUser" name="user" type="email" required autocomplete="off" value="${esc(c.user)}" placeholder="you@gmail.com"></div>
-      <div class="field"><label for="mlPass">App password</label><input id="mlPass" name="pass" type="password" autocomplete="new-password" spellcheck="false" placeholder="${c.hasPass ? 'Saved. Paste a new one to replace it.' : 'xxxx xxxx xxxx xxxx'}" ${c.hasPass ? '' : 'required'}></div>
+      <div class="field"><label for="mlUser">Email address</label><input id="mlUser" name="user" type="email" required autocomplete="off" value="${esc(c.user)}" placeholder="you@example.com" data-mail-user></div>
+      <div class="field"><label for="mlPass">Password or app password</label><input id="mlPass" name="pass" type="password" autocomplete="new-password" spellcheck="false" placeholder="${c.hasPass ? 'Saved. Type a new one to replace it.' : ''}" ${c.hasPass ? '' : 'required'}></div>
       <div class="field"><label for="mlFrom">Sender name</label><input id="mlFrom" name="fromName" maxlength="60" value="${esc(c.fromName || 'Murmur')}"></div>
+      <details class="ml-adv"${c.custom ? ' open' : ''}><summary class="small">Mail server: <b>${esc(c.host || 'filled in from the address')}</b>${c.port ? `, port ${c.port}` : ''}. Change it</summary>
+        <p class="small">Only if your provider uses a different server. Leave the server empty to fill it in from the address. Port 465 or 587.</p>
+        <div class="field"><label for="mlHost">Mail server (SMTP)</label><input id="mlHost" name="host" autocomplete="off" spellcheck="false" value="${c.custom ? esc(c.host) : ''}" placeholder="${esc(c.host || 'smtp.example.com')}"></div>
+        <div class="field"><label for="mlPort">Port</label><input id="mlPort" name="port" inputmode="numeric" autocomplete="off" value="${c.custom ? esc(String(c.port)) : ''}" placeholder="${esc(String(c.port || 465))}"></div>
+      </details>
       <button class="m-ok" type="submit">Save</button>
       ${c.ready ? `<button type="button" class="text-btn" data-act="mail-test">${icon('share')}<span>Send me a test email</span></button>` : ''}
     </form>`;
 }
+function mailHelp(addr) {
+  const d = String(addr || '').split('@')[1] || '', h = MAIL_HELP.find(([re]) => re.test(d.toLowerCase()));
+  return h ? `<b>${h[1]}:</b> ${h[3]} <a href="${h[2]}" target="_blank" rel="noopener">Open ${h[1]} app passwords</a>.` : d ? `For ${esc(d)}, look in that account’s security settings for “app passwords”. If it has none, use your normal password.` : '';
+}
+document.addEventListener('input', e => { if (e.target.matches && e.target.matches('[data-mail-user]')) { const h = $('#mlHelp'); if (h) h.innerHTML = mailHelp(e.target.value); } });
 const adminLib = new Map();   // person id -> { data, imports } while the owner looks at their library
 const personName = uid => { const p = (people || []).find(u => u.id === uid); return p ? p.name : (me && me.id === uid ? me.name : 'This person'); };
 async function loadMemberLib(uid) {
