@@ -4554,7 +4554,7 @@ function updatePlayerUI() {
     $('#pTitle').textContent = t.title;
     $$('#pArtist,#fArtist').forEach(b => { b.textContent = t.artist; b.dataset.id = t.artist; });
     $$('.cur-like,.cur-down').forEach(b => b.dataset.tid = t.id);
-    $('#verBtn').hidden = !((t.sp || t.yt) && yt.enabled);   // catalog and YouTube songs: a YouTube upload you can swap
+    $('#verBtn').hidden = !(t.sp || t.yt || t.src);   // any real song: pick which YouTube upload plays
     $('#fCover').src = tCover(t.id); $('#fCover').alt = t.album;
     $('#fTitle').textContent = t.title;
     $('#fCtx').textContent = state.ctx ? state.ctx.title : t.album;
@@ -4648,11 +4648,12 @@ function renderMenu() {
       + b('sub', icon('plus') + 'Add to playlist')
       + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
       + b('genre', icon('list') + `<span class="ell">Genre: ${esc(genreFor(t.id) || 'add one')}</span>`)
-      + (t.yt ? (yt.enabled ? b('spver', icon('versions') + 'Choose a YouTube version') : '') + b('ytopen', icon('expand') + 'Open on YouTube') : '')
+      + (t.yt ? b('spver', icon('versions') + 'Choose a YouTube version') + b('ytopen', icon('expand') + 'Open on YouTube') : '')
       + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download or add to library…') : '')
       + (t.sp ? '<hr>' + (canEditMusic() ? b('bring', icon('upload') + (spStatus(t.id) === 'file' ? 'Replace the file in Murmur' : 'Bring into Murmur (upload your copy)')) : '')
         + (yt.enabled ? b('spver', icon('versions') + 'Choose a YouTube version') : '')
         + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
+      + (t.src && server.on ? b('spver', icon('versions') + 'Choose a YouTube version') : '')
       + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download to this device (offline)') : '')
         + (server.on ? b('save', icon('save') + 'Save file to device') : '')
         : canDownload(t.id) ? '<hr>' + (localPlayable(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download to this device (offline)') : '') : '')
@@ -5594,15 +5595,15 @@ async function bringUpload(file) {
 // Pick which YouTube upload plays for a song. Catalog songs: the choice is saved for everyone.
 // YouTube songs: the one you pick takes its place everywhere it is (Liked Songs, playlists, the queue).
 async function chooseVersion(id) {
-  const t = TRACKS[id]; if (!t || !(t.sp || t.yt)) return;
-  if (!yt.enabled) { toast('Connect YouTube in People & settings first.'); return; }
+  const t = TRACKS[id]; if (!t || !(t.sp || t.yt || t.src)) { toast('Play a song first.'); return; }
+  if (!server.on) { toast('Picking a version needs a connection to your Murmur server.'); return; }
   let ids;
-  try { ids = await ytSearch(t.sp ? `${t.artist.split(',')[0]} - ${t.title}` : t.title, ''); } catch (e) { toast(e.message); return; }
+  try { ids = await ytSearch(t.yt ? t.title : `${cleanArtist(t.artist)} - ${t.title}`, ''); } catch (e) { toast(e.message); return; }
   if (t.yt) ids = [id, ...ids.filter(x => x !== id)];
   ids = ids.filter(x => TRACKS[x]).slice(0, 10);
   if (!ids.length) { toast('YouTube found nothing for this song.'); return; }
   const cur = t.sp ? ((sp.matches[t.key] || {}).yt || {}).id : t.ytId;
-  openModal({ title: `Pick a version of “${esc(t.title)}”`, confirm: 'Use this version', html: `<p class="small">${t.duration ? `This one is <b>${fmt(t.duration)}</b> long. ` : ''}Tap ▶ to listen before you pick.${t.sp ? ' Your choice is saved for everyone.' : ''}</p>
+  openModal({ title: `Pick a version of “${esc(t.title)}”`, confirm: 'Use this version', html: `<p class="small">${t.duration ? `This one is <b>${fmt(t.duration)}</b> long. ` : ''}Tap ▶ to listen before you pick. ${t.sp ? 'Your choice is saved for everyone.' : 'The one you pick takes this song’s place in Liked Songs, your playlists and the queue.'}</p>
     <div class="ytp-frame" id="ytpFrame" hidden></div>
     <div class="ver-list">${ids.map((v, i) => { const y = TRACKS[v];
       return `<label class="ver ytp-ver"><input type="radio" name="v" value="${esc(y.ytId)}" ${(cur ? cur === y.ytId : i === 0) ? 'checked' : ''}>
@@ -7394,7 +7395,7 @@ setInterval(() => {
   if (mode === 'ok') {
     await connectServer();
     try { const ys = await api('GET', 'api/youtube/status'); yt.enabled = !!ys.enabled; yt.keys = ys.keys || []; yt.searchesLeft = ys.unlimited ? null : typeof ys.searchesLeft === 'number' ? ys.searchesLeft : null; } catch (e) {}
-    { const t = TRACKS[state.current], b = $('#verBtn'); if (b) b.hidden = !(t && (t.sp || t.yt) && yt.enabled); }   // the song from before the refresh
+    { const t = TRACKS[state.current], b = $('#verBtn'); if (b) b.hidden = !(t && (t.sp || t.yt || t.src)); }   // the song from before the refresh
     if (yt.enabled) YTEng.api().catch(() => {});   // load YouTube's player early so the first click starts instantly
     await loadSpotify();
     queueGenreGuess();
