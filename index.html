@@ -89,6 +89,9 @@ html.desktop-frame .app{padding-top:var(--tb-h)}
 html.desktop-frame{--tb-h:36px}
 html.desktop-frame body::before{content:'';position:fixed;top:0;left:0;right:0;height:var(--tb-h);background:var(--bg);-webkit-app-region:drag;app-region:drag;z-index:95}
 html.desktop-frame .topbar{-webkit-app-region:drag;app-region:drag}
+.soft-refresh{display:none}
+html.desktop-frame .soft-refresh{display:inline-grid;-webkit-app-region:no-drag;app-region:no-drag}
+.soft-refresh.spinning svg{animation:spin .8s linear infinite}
 html.desktop-frame .topbar>*{-webkit-app-region:no-drag;app-region:no-drag}
 html.desktop-frame .full,html.desktop-frame .modal-back{top:var(--tb-h)}
 html.desktop-frame .menu,html.desktop-frame .toast{-webkit-app-region:no-drag;app-region:no-drag}
@@ -623,6 +626,9 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
   body:not([data-view="search"]) .topbar .top-status:not([hidden])~.top-right{margin-left:0}}
 
 .job-card{position:relative}
+.rs-clear-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 10px;border:1px solid var(--line);border-radius:999px;background:var(--raise);color:var(--fg);font:600 12.5px var(--font-body);cursor:pointer;transition:background .15s,border-color .15s}
+.rs-clear-btn svg{width:13px;height:13px;opacity:.8}
+.rs-clear-btn:hover{background:var(--hover);border-color:color-mix(in srgb,var(--danger) 45%,var(--line));color:var(--danger)}
 .job-miss{position:relative;margin:0 0 14px;border-radius:12px;background:color-mix(in srgb,#f5a623 9%,var(--panel));border:1px solid color-mix(in srgb,#f5a623 30%,transparent)}
 .job-miss summary{display:flex;align-items:center;gap:10px;padding:10px 44px 10px 12px;cursor:pointer;list-style:none;font-size:13.5px}
 .job-miss summary::-webkit-details-marker{display:none}
@@ -944,7 +950,15 @@ body.in-radio .radio-only{display:grid!important}
 .act-chev{margin-left:auto;color:var(--muted);display:inline-flex;flex:none}
 .act-chev svg{width:16px;height:16px;transition:transform .15s}
 .adm-fold[open]>summary .act-chev svg{transform:rotate(90deg)}
-.adm-grid,.people.adm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:8px;align-items:start}
+.adm-grid,.people.adm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start;grid-auto-flow:row dense}
+@media (min-width:1300px){.adm-grid,.people.adm-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.adm-grid>*{min-width:0}
+.adm-grid>.adm-fold:not([open]){padding:10px 12px;gap:0}
+.adm-grid>.adm-fold:not([open])>summary{gap:10px}
+.adm-grid>.adm-fold:not([open]) .avatar{width:32px;height:32px;font-size:13px;flex:none}
+.adm-grid>.adm-fold:not([open]) .person-meta h3{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-grid>.adm-fold:not([open]) .person-meta .small{white-space:normal;font-size:11.5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.adm-grid>.adm-fold:not([open]) .act-chev{display:none}
 .adm-grid>.adm-fold[open]{grid-column:1/-1}
 .adm-grid>.yt-settings{margin:0}
 .act-idle{opacity:.7}
@@ -952,8 +966,8 @@ body.in-radio .radio-only{display:grid!important}
 .act-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
 .act-stats div{background:color-mix(in srgb,var(--fg) 5%,transparent);border-radius:10px;padding:10px 12px}
 .act-stats dt{font-size:12px;opacity:.7;margin-bottom:2px}
-.act-stats dd{margin:0;font:700 18px var(--font-display)}
-.act-stats dd .small{font:400 12px var(--font);opacity:.75}
+.act-stats dd{margin:0;font:700 17px/1.2 var(--font-display)}
+.act-stats dd .small{display:block;margin-top:2px;font:400 12px/1.3 var(--font-body);opacity:.75}
 .act-bars{display:flex;align-items:flex-end;gap:4px;height:56px;margin-top:6px}
 .act-bars span{flex:1;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
 .act-bars-l{display:flex;justify-content:space-between;opacity:.6;margin-top:2px}
@@ -4717,7 +4731,7 @@ function noteSearchSong(tid) {
 function recentSearchesHTML() {
   const list = store.get('recentSearches', []), songs = store.get('recentSearchSongs', []).filter(x => TRACKS[x.id]);
   if (!list.length && !songs.length) return `<div class="shelf-head"><h2>Recent searches</h2></div><p class="small">Nothing yet. What you search for and play shows up here.</p>`;
-  return `<div class="shelf-head"><h2>Recent searches</h2><div class="head-actions"><button class="link-btn small" data-act="rs-clear">Clear all</button></div></div>
+  return `<div class="shelf-head"><h2>Recent searches</h2><div class="head-actions"><button class="rs-clear-btn" data-act="rs-clear" title="Clear your recent searches">${icon('close')}<span>Clear all</span></button></div></div>
     <div class="rs-list">${songs.map(x => `<div class="rs-item"><button class="rs-q rs-song" data-act="rs-play" data-tid="${esc(x.id)}"><img src="${esc(x.cover)}" alt=""><span class="rs-tx"><b class="ell">${esc(x.title)}</b><span class="small ell">Song · ${esc(x.artist)}</span></span></button><button class="icon-btn" data-act="rs-del-song" data-tid="${esc(x.id)}" aria-label="Remove ${esc(x.title)}" title="Remove">${icon('close')}</button></div>`).join('')}${list.map(q => `<div class="rs-item"><button class="rs-q" data-act="rs-go" data-q="${esc(q)}">${icon('search')}<span class="ell">${esc(q)}</span></button><button class="icon-btn" data-act="rs-del" data-q="${esc(q)}" aria-label="Remove ${esc(q)}" title="Remove">${icon('close')}</button></div>`).join('')}</div>`;
 }
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
@@ -4955,6 +4969,7 @@ function buildShell() {
         <button class="text-btn up-btn" data-act="install" id="installBtn" hidden title="Install Murmur as an app on this device">${icon('download')}<span>Install app</span></button>
         <button class="text-btn up-btn" data-act="upload" id="upBtn" hidden>${icon('upload')}<span>Upload</span></button>
         <button class="text-btn up-btn" data-act="acct-people" id="adminBtn" hidden title="Manage people and server settings">${icon('shield')}<span>Admin</span></button>
+        <button class="icon-btn soft-refresh" data-act="soft-refresh" id="softRefresh" aria-label="Refresh Murmur" title="Refresh: load the newest version of Murmur (your song keeps its place)">${icon('repeat')}</button>
         <button class="avatar acct-btn" data-act="acct" id="acctBtn" aria-label="Your account" title="Your account" hidden></button>
       </div>
       <input type="file" id="fileBring" class="vh" accept="${FILE_ACCEPT}" tabindex="-1" aria-hidden="true">
@@ -5990,6 +6005,13 @@ function act(el, e) {
       else if (go) navigate({ name: 'library' });
       else if (me && server.on) navigate({ name: 'servers' });
       else { gateBack = 'app'; showGate('connect'); }
+      break;
+    }
+    case 'soft-refresh': {   // Windows app: get the newest page (past the saved copy), then reload where you were
+      el.classList.add('spinning');
+      Promise.all(['index.html', 'config.js', 'sw.js'].map(u => fetch(u, { cache: 'no-store' }).catch(() => {})))
+        .then(() => navigator.serviceWorker && navigator.serviceWorker.getRegistration ? navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {}) : null)
+        .finally(() => { try { saveResume(); } catch (e) {} location.reload(); });
       break;
     }
     case 'ts-cancel': stopWork((currentWork() || {}).kind); break;
