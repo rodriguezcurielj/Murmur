@@ -500,6 +500,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .drop>span{display:flex;flex-direction:column;gap:2px;min-width:0}
 .empty code,.drop code{font-size:13px;background:var(--raise);padding:1px 6px;border-radius:4px}
 .up-status{position:fixed;left:16px;bottom:96px;z-index:65;width:min(340px,calc(100vw - 32px));background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:8px;font-size:13px;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+body[data-view="people"] .up-status{display:none!important}   /* downloads keep going, the bar just stays off the Admin page */
 .up-track{height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .up-track span{display:block;height:100%;background:var(--accent);transition:width .2s}
 .drop-overlay{position:fixed;inset:0;z-index:80;background:color-mix(in srgb,var(--bg) 80%,transparent);display:grid;place-items:center;padding:16px;cursor:pointer}
