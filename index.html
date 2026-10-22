@@ -488,7 +488,14 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .dl-note{color:var(--muted);flex-basis:100%}
 .dl-note:empty{display:none}
 .dl-col svg{width:20px;height:20px}
-.dl-btn.busy{color:var(--accent);animation:dlpulse 1.1s ease-in-out infinite}
+.dl-btn.busy{color:var(--accent)}
+.spin{flex:none;display:inline-block;width:16px;height:16px;border-radius:50%;border:2.5px solid color-mix(in srgb,var(--accent) 25%,transparent);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.yt-btn-wrap{display:contents}
+.yt-add.busy{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.yt-add .pause-ic{display:none}
+.yt-add.busy:hover .pause-ic{display:inline-flex}.yt-add.busy:hover .spin{display:none}
+.yt-add .pause-ic svg{width:14px;height:14px}
 @keyframes dlpulse{50%{opacity:.35}}
 .dl-cover{background:linear-gradient(140deg,#1d6b5a 0%,#3a8f7a 50%,#ffb070 100%)}
 .dl-cover svg{fill:none}
@@ -1735,19 +1742,40 @@ async function pumpUploads() {
    kind: tells the X which thing it closes; pct null = still starting (moving line). */
 function currentWork() {
   const c = server.current, d = dlq.cur;
-  if (c) return { kind: 'up', ic: 'upload', title: esc(c.name), sub: c.pct < 100 ? `Uploading${server.queue.length ? ` · ${server.queue.length} more after this` : ''}` : 'Adding to your library…', pct: c.pct };
-  if (d && dlq.total) return { kind: 'dl', ic: 'download', title: esc(d.title || 'Saving songs'), sub: d.retry ? 'Connection dropped, trying again…' : `Saving to this device · ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`, pct: Math.round((dlq.done + (d.pct || 0) / 100) / dlq.total * 100) };
+  const UPL = { type: 'album', id: 'uploads' }, DL = { type: 'downloads', id: 'downloads' };
+  const ctxGo = k => { const i = (k || '').indexOf(':'); return i > 0 ? { type: k.slice(0, i), id: k.slice(i + 1) } : UPL; };
+  if (c) return { kind: 'up', go: UPL, ic: 'upload', title: esc(c.name), sub: c.pct < 100 ? `Uploading${server.queue.length ? ` · ${server.queue.length} more after this` : ''}` : 'Adding to your library…', pct: c.pct };
+  if (d && dlq.total) return { kind: 'dl', go: dlq.from || DL, ic: 'download', title: esc(d.title || 'Saving songs'), sub: d.retry ? 'Connection dropped, trying again…' : `Saving to this device · ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}`, pct: Math.round((dlq.done + (d.pct || 0) / 100) / dlq.total * 100) };
   const yj = typeof ytJobs !== 'undefined' ? ytJobs : null;
-  if (yj && yj.finding) { const f = yj.finding; return { kind: 'yt', ic: 'download', title: 'Finding the songs on YouTube', sub: `${f.done} of ${f.total}`, pct: Math.round(f.done / Math.max(1, f.total) * 100) }; }
-  const run = yj ? yj.list.filter(jobRunning) : [];
+  if (yj && yj.finding) { const f = yj.finding; return { kind: 'yt', go: ctxGo(f.ctx), ic: 'download', title: 'Finding the songs on YouTube', sub: `${f.done} of ${f.total}`, pct: Math.round(f.done / Math.max(1, f.total) * 100) }; }
+  const run = yj ? yj.list.filter(j => jobRunning(j) && !j.cancelled) : [];
   if (run.length) {
     const st = jobStats({ items: run.flatMap(j => j.items), startedAt: Math.min(...run.map(j => j.startedAt || Date.now())), finishedAt: null });
     const started = run.some(j => j.startedAt);
-    return { kind: 'yt', ic: 'download', title: st.cur ? esc(st.cur.title) : 'Getting songs from YouTube', sub: `Adding to Murmur · ${Math.min(st.n, st.fin + 1)} of ${st.n}${st.eta && started ? ` · ${st.eta}` : ''}`, pct: started ? st.pct : null };
+    return { kind: 'yt', go: ctxGo(run[0].ctx), ic: 'download', title: st.cur ? esc(st.cur.title) : 'Getting songs from YouTube', sub: `Adding to Murmur · ${Math.min(st.n, st.fin + 1)} of ${st.n}${st.eta && started ? ` · ${st.eta}` : ''}`, pct: started ? st.pct : null };
   }
   return null;
 }
-let topHidden = '';   // the X on the top card: that kind of work shows as the thin line only, until it's done
+let topHidden = '';
+/* Stop uploading / saving to this device / getting songs from YouTube (the X on the top card, or tapping a busy
+   download button). The song or file in progress finishes; the rest are dropped. */
+function stopWork(kind, ctx) {
+  if (kind === 'up') { const n = server.queue.length; server.queue = []; toast(n ? `Stopped. The file uploading now finishes, ${plural(n, 'other')} skipped.` : 'The file uploading now will finish.'); }
+  else if (kind === 'dl') {
+    const keep = ctx ? dlq.queue.filter(id => !ctx.includes(id)) : [];
+    const n = dlq.queue.length - keep.length; dlq.queue = keep; dlq.total -= n;
+    toast(`Paused saving to this device${n ? ` (${plural(n, 'song')} left)` : ''}. Tap download again to carry on.`);
+    syncDownloads();
+  } else if (kind === 'yt') {
+    if (ytJobs.finding && (!ctx || ytJobs.finding.ctx === ctx)) ytJobs.finding.stop = true;
+    const run = ytJobs.list.filter(j => jobRunning(j) && (!ctx || j.ctx === ctx));
+    run.forEach(j => { j.cancelled = true; api('DELETE', 'api/convert/jobs/' + j.id).catch(() => {}); });
+    toast('Paused getting songs from YouTube. The song downloading now finishes. Tap Add missing to carry on.');
+    setTimeout(() => pollYtJobs(), 1500);
+  }
+  topHidden = kind || '';   // the card closes right away (the one song finishing doesn't keep it open)
+  renderUploadStatus(); updateJobUI(); refreshYtButtons();
+}
 /* The card in the middle of the top bar (phones; on computers only while something is going on), and the thin
    progress line under the top bar. Tapping the card opens your account (where servers are switched). */
 function renderTopStatus() {
@@ -1759,7 +1787,7 @@ function renderTopStatus() {
     line.hidden = !w;
     if (w) { line.classList.toggle('busy', w.pct == null); line.firstElementChild.style.setProperty('--p', Math.max(3, Math.min(100, w.pct || 0)) + '%'); }
   }
-  const view = (ic, title, sub, end = '', pct = null, x = false) => `${pct == null ? '' : `<span class="ts-fill" style="--p:${Math.max(3, Math.min(100, pct))}%"></span>`}<span class="ts-ic">${icon(ic)}</span><span class="ts-txt"><b>${title}</b><small>${sub}</small></span>${end ? `<span class="ts-end">${end}</span>` : ''}${x ? `<button type="button" class="ts-x" data-act="ts-hide" aria-label="Close (it keeps going)" title="Close (it keeps going, the thin line shows how far along)">${icon('close')}</button>` : ''}`;
+  const view = (ic, title, sub, end = '', pct = null, x = false) => `${pct == null ? '' : `<span class="ts-fill" style="--p:${Math.max(3, Math.min(100, pct))}%"></span>`}<span class="ts-ic">${icon(ic)}</span><span class="ts-txt"><b>${title}</b><small>${sub}</small></span>${end ? `<span class="ts-end">${end}</span>` : ''}${x ? `<button type="button" class="ts-x" data-act="ts-cancel" aria-label="Cancel" title="Cancel (the song in progress finishes, the rest are skipped)">${icon('close')}</button>` : ''}`;
   let html = '', warn = false, label = '', busy = false;
   if (w && w.kind !== topHidden) {
     busy = true;
@@ -1775,7 +1803,7 @@ function renderTopStatus() {
     let ms = 0; try { ms = (ytAudio.status[normalizeServer(base)] || ytAudio.status[base] || {}).ms; } catch (e) {}
     const songs = Object.values(TRACKS).filter(t => t.src).length;
     html = view('server', esc(short), `<span class="ts-dot"></span>Online${ms ? ` · ${Math.round(ms)} ms` : ''}${offline.size ? ` · ${offline.size} saved here` : songs ? ` · ${plural(songs, 'song')}` : ''}`);
-    label = `Connected to ${name}. Tap for your account and servers.`;
+    label = `Connected to ${name}. Tap to see all servers.`;
   }
   el.hidden = !html; if (!html) return;
   el.classList.toggle('warn', warn); el.classList.toggle('busy', busy);
@@ -1998,7 +2026,7 @@ async function pumpDownloads() {
     dlq.done++;
     syncDownloads();
   }
-  dlq.busy = false; dlq.cur = null; dlq.done = 0; dlq.total = 0;
+  dlq.busy = false; dlq.cur = null; dlq.done = 0; dlq.total = 0; dlq.from = null;
   renderUploadStatus(); syncDownloads(); renderSidebar();
   if (state.view.name === 'collection' && state.view.type === 'downloads') render();
   if (saved) toast(`Downloaded ${plural(saved, 'song')} to this device. ${saved > 1 ? 'They' : 'It'} will play offline.`);
@@ -2037,9 +2065,9 @@ function syncDownloads() {
     const done = ups.length && have === ups.length, going = dlTargets(ups).some(id => busy.has(id)) || ups.some(id => busy.has(id));
     b.classList.toggle('on', !!done); b.classList.toggle('busy', going && !done);
     // Just the download symbol; while downloading it shows how far along it is.
-    b.innerHTML = icon(done ? 'dlFill' : 'download') + (going && !done ? `<span class="dl-count">${have}/${ups.length}</span>` : '');
+    b.innerHTML = (going && !done ? `<span class="spin" aria-hidden="true"></span>` : icon(done ? 'dlFill' : 'download')) + (going && !done ? `<span class="dl-count">${have}/${ups.length}</span>` : '');
     const skipped = dlSkipped(col);
-    b.title = (done ? 'On this device. Tap to remove the download.' : going ? `Downloading to this device: ${have} of ${ups.length}` : have ? `Download the other ${ups.length - have} songs to this device` : 'Download to this device to play with no connection. (It doesn’t change the Murmur library.)')
+    b.title = (done ? 'On this device. Tap to remove the download.' : going ? `Downloading to this device: ${have} of ${ups.length}. Tap to pause.` : have ? `Download the other ${ups.length - have} songs to this device` : 'Download to this device to play with no connection. (It doesn’t change the Murmur library.)')
       + (skipped ? ' ' + ytOnlyText(skipped) : '');
     b.setAttribute('aria-label', b.title);
     const note = b.parentElement && b.parentElement.querySelector('.dl-note');
@@ -4725,7 +4753,7 @@ function buildShell() {
       <button class="icon-btn" data-act="back" id="backBtn" aria-label="Go back">${icon('back')}</button>
       <button class="icon-btn" data-act="fwd" id="fwdBtn" aria-label="Go forward">${icon('fwd')}</button>
       <div class="m-brand" data-act="logo-home" role="link" tabindex="0" title="Home">${LOGO}<span>Murmur</span></div>
-      <div class="top-status" id="topStatus" data-act="acct" role="button" tabindex="0" hidden></div>
+      <div class="top-status" id="topStatus" data-act="ts-go" role="button" tabindex="0" hidden></div>
       <div class="top-line" id="topLine" hidden><i></i></div>
       <div class="top-search" role="search">
         ${icon('search')}
@@ -5757,10 +5785,19 @@ function act(el, e) {
     case 'sel-queue': addToQueue(selIds()); clearSel(); break;
     case 'sel-edit': openEdit(selIds()); break;
     case 'sel-yt': { const c = state.sel ? state.sel.type + ':' + state.sel.id : ''; const col = state.sel && getCollection(state.sel.type, state.sel.id); const b = ytBatch(selIds()); if (b.miss.length > b.pick.length && b.pick.length) toast(`Getting ${b.pick.length} of ${b.miss.length} now. Do the rest after.`); getManyFromYouTube(b.miss.length ? b.pick.map(t => t.id) : selIds(), c, col ? col.title : ''); clearSel(); break; }
+    case 'col-yt-stop': stopWork('yt', d.type + ':' + d.id); break;
     case 'col-yt': { const col = getCollection(d.type, d.id); if (col) getManyFromYouTube(ytBatch(col.allTracks).pick.map(t => t.id), d.type + ':' + d.id, col.title); break; }
     case 'job-cancel': ytJobs.list.filter(j => jobRunning(j) && j.id !== d.id && j.ctx === (ytJobs.list.find(x => x.id === d.id) || {}).ctx).forEach(j => api('DELETE', 'api/convert/jobs/' + j.id).catch(() => {}));
       api('DELETE', 'api/convert/jobs/' + d.id).then(() => { toast('Stopping after the song that’s downloading now'); pollYtJobs(); }).catch(e => toast(e.message)); break;
-    case 'ts-hide': { const w = currentWork(); topHidden = w ? w.kind : ''; renderTopStatus(); break; }
+    case 'ts-go': {   // the top bar's card: go to what it shows (that list, Downloaded, Uploads, or the servers)
+      const w = currentWork();
+      const go = w && w.kind !== topHidden ? w.go : (server.offlineMode || (me && !server.on)) ? { type: 'downloads', id: 'downloads' } : null;
+      if (go && getCollection(go.type, go.id)) { navigate({ name: 'collection', type: go.type, id: go.id }); $('#main').scrollTop = 0; }
+      else if (go) navigate({ name: 'library' });
+      else { gateBack = 'app'; showGate('connect'); }
+      break;
+    }
+    case 'ts-cancel': stopWork((currentWork() || {}).kind); break;
     case 'job-hide': ytJobs.hiddenCards.add(d.key); updateJobUI(); break;
     case 'job-dismiss': api('DELETE', 'api/convert/jobs/' + d.id).catch(() => {}); ytJobs.list = ytJobs.list.filter(j => j.id !== d.id); updateJobUI(); break;
     case 'sel-genre': openGenrePicker(selIds()); break;
@@ -5790,7 +5827,10 @@ function act(el, e) {
       const ids = dlTargets(col.tracks), skipped = dlSkipped(col);
       if (!ids.length) { toast('None of these songs can be downloaded.'); break; }
       if (ids.every(id => offline.has(id))) { confirmRemoveDownloads(ids); break; }
+      // Saving this list right now: tapping again pauses it (the song in progress finishes).
+      if (dlq.busy && (dlq.queue.some(id => ids.includes(id)) || (dlq.cur && ids.includes(dlq.cur.id)))) { stopWork('dl', ids); break; }
       downloadTracks(ids);
+      if (dlq.busy) dlq.from = { type: d.type, id: d.id };   // the top bar's card takes you back to this list
       if (skipped) toast(`Downloading ${plural(ids.filter(id => !offline.has(id)).length, 'song')}. ${ytOnlyText(skipped)}`);
       break;
     }
@@ -6756,7 +6796,7 @@ function syncLinkResult(tid) {
         if (todo.length > YT_JOB_MAX) { toast(`Murmur gets up to ${YT_JOB_MAX} songs from YouTube at a time. Select fewer, then do the rest after.`); return; }
         if (ytJobs.finding) { toast('Still finding videos for the last batch. Try again in a moment.'); return; }
         const items = [], missed = [];
-        ytJobs.finding = { done: 0, total: todo.length, ctx }; renderUploadStatus(); updateJobUI();
+        ytJobs.finding = { done: 0, total: todo.length, ctx }; renderUploadStatus(); updateJobUI(); refreshYtButtons();
         toast(`Adding ${plural(todo.length, 'song')} to the Murmur library. You can keep using Murmur.`);
         // Two songs at a time (the server searches two at once).
         let next = 0, stop = false;
@@ -6769,14 +6809,16 @@ function syncLinkResult(tid) {
                 try { const best = await bestYouTubeFor(t); if (best) items.push({ link: `https://www.youtube.com/watch?v=${best.ytId}`, title: t.title, key: t.sp ? t.key : '', song: { title: t.title, artist: t.artist } }); else missed.push(t.title); }
                 catch (e) { missed.push(t.title); if (/quota|daily/i.test(e.message)) { stop = true; toast(e.message); } }
             }
-            ytJobs.finding.done++; renderUploadStatus(); updateJobUI();
+            ytJobs.finding.done++; renderUploadStatus(); updateJobUI(); refreshYtButtons();
         };
-        const worker = async () => { while (!stop && next < todo.length) await one(todo[next++]); };
+        const worker = async () => { while (!stop && !(ytJobs.finding && ytJobs.finding.stop) && next < todo.length) await one(todo[next++]); };
         await Promise.all([worker(), worker()]);
         // Keep the playlist's order in the download.
         const order = new Map(todo.map((t, i) => [t.title, i]));
         items.sort((a, b) => (order.get(a.title) ?? 0) - (order.get(b.title) ?? 0));
-        ytJobs.finding = null; renderUploadStatus(); refreshYtAllowance();
+        const stopped = ytJobs.finding && ytJobs.finding.stop;
+        ytJobs.finding = null; renderUploadStatus(); refreshYtAllowance(); refreshYtButtons();
+        if (stopped) { updateJobUI(); return; }
         if (!items.length) { updateJobUI(); toast('Couldn’t find those songs on YouTube.'); return; }
         try { await startYtJob(items, label || plural(items.length, 'song'), ctx, missed); toast(`Getting ${plural(items.length, 'song')} from YouTube in the background${missed.length ? ` (${missed.length} not found)` : ''}.`); }
         catch (e) { toast(e.message); }
@@ -6803,7 +6845,22 @@ function syncLinkResult(tid) {
         return { miss, pick };
     }
     function ytBatchBtn(type, id, col) {
+        return `<span class="yt-btn-wrap" data-type="${type}" data-id="${esc(id)}">${ytBatchBtnInner(type, id, col)}</span>`;
+    }
+    // Redraw just the Add missing buttons (progress changes), leaving the rest of the page alone.
+    function refreshYtButtons() {
+        $$('.yt-btn-wrap').forEach(w => { const col = getCollection(w.dataset.type, w.dataset.id); if (!col) return; const h = ytBatchBtnInner(w.dataset.type, w.dataset.id, col); if (w.innerHTML !== h) w.innerHTML = h; });
+    }
+    function ytBatchBtnInner(type, id, col) {
         if (!yt.enabled || !canAddFromYouTube() || type === 'discover') return '';
+        // Getting this list's songs right now: a loading button; tapping it pauses (the song in progress finishes).
+        const key = type + ':' + id, f = ytJobs.finding && ytJobs.finding.ctx === key ? ytJobs.finding : null;
+        const run = ytJobs.list.filter(j => jobRunning(j) && !j.cancelled && j.ctx === key);
+        if (f || run.length) {
+            const st = run.length ? jobStats({ items: run.flatMap(j => j.items), startedAt: null, finishedAt: null }) : null;
+            const txt = f ? `Finding ${f.done}/${f.total}` : `Adding ${Math.min(st.n, st.fin + 1)}/${st.n}`;
+            return `<button class="text-btn yt-add busy" data-act="col-yt-stop" data-type="${type}" data-id="${esc(id)}" title="Getting these songs from YouTube. Tap to pause." aria-label="${txt}. Tap to pause."><span class="spin" aria-hidden="true"></span><span>${txt}</span><span class="pause-ic" aria-hidden="true">${icon('pause')}</span></button>`;
+        }
         const { miss, pick } = ytBatch(col.allTracks);
         if (!miss.length) return '';
         if (!pick.length) return `<span class="small yt-limit" title="YouTube’s daily limit is used up. More songs tomorrow.">${icon('download')} Limit hit</span>`;
@@ -6830,7 +6887,7 @@ function syncLinkResult(tid) {
         if (missed.length) ytJobs.missed[res.job.id] = missed;
         ytJobs.list = [res.job, ...ytJobs.list.filter(j => j.id !== res.job.id)];
         ytJobs.seen.set(res.job.id, 0);
-        renderUploadStatus(); updateJobUI(); pollYtJobs(1500);
+        renderUploadStatus(); updateJobUI(); refreshYtButtons(); pollYtJobs(1500);
         return res.job;
     }
     function jobRunning(j) { return !j.finishedAt; }
@@ -6866,7 +6923,7 @@ function syncLinkResult(tid) {
             }
             ytJobs.first = false;
             watchUpdate();
-            renderUploadStatus(); updateJobUI();
+            renderUploadStatus(); updateJobUI(); refreshYtButtons();
             // New songs: refresh the library now and then (not on every poll) so they show up while the rest download.
             if (refresh && (Date.now() - ytJobs.lastRefresh > 10e3 || !ytJobs.list.some(jobRunning))) {
                 ytJobs.lastRefresh = Date.now();
