@@ -183,7 +183,10 @@ ipcMain.on('murmur-frame', (e, c) => {
 app.on('second-instance', show);
 app.on('before-quit', () => { quitting = true; });
 app.whenReady().then(() => {
-    session.defaultSession.webRequest.onBeforeRequest((d, cb) => cb({ cancel: isAd(d.url) }));
+    // Only ad and YouTube addresses go through the check. Without a filter every request did, uploads too, and
+    // Electron copied each song file into this process first, so uploading froze the app.
+    const adUrls = [...AD_HOSTS, 'youtube.com', 'youtube-nocookie.com'].flatMap(h => [`*://${h}/*`, `*://*.${h}/*`]);
+    session.defaultSession.webRequest.onBeforeRequest({ urls: adUrls }, (d, cb) => cb({ cancel: isAd(d.url) }));
     createWindow();
     createTray();
     win.once('show', thumbButtons);

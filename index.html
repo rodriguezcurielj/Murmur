@@ -126,7 +126,23 @@ body.drag-selecting .tracks{touch-action:none}
 @media (pointer:coarse){input:not([type=range]):not([type=file]):not([type=checkbox]):not([type=radio]),textarea,select{font-size:max(16px,1em)}}
 /* Song rows never select text: on Android a press-and-hold would start text selection (~400ms) and take the touch away from drag-to-select. */
 .tracks .row{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
-.genre-chips{padding:2px 0 14px}
+.genre-chips{padding:2px 0 14px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;scroll-snap-type:x proximity;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+.genre-chips::-webkit-scrollbar{display:none}
+.st-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.st-head .greet{margin-right:auto}
+.st-btn{padding:3px 9px;font-size:12px;gap:4px;display:inline-flex;align-items:center}
+.st-btn svg{width:13px;height:13px}
+.rs-list{display:flex;flex-direction:column;gap:2px;margin:0 0 18px;max-width:640px}
+.rs-item{display:flex;align-items:center;gap:4px;border-radius:8px}
+.rs-item:hover{background:var(--raise)}
+.rs-q{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 8px;background:none;border:0;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.rs-q svg{width:16px;height:16px;color:var(--muted);flex:none}
+.rs-item .icon-btn{width:30px;height:30px}
+.sort-sel{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:13px;position:relative}
+.sort-sel svg{width:16px;height:16px}
+.sort-sel select{background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:5px 8px;font:inherit;cursor:pointer;max-width:140px}
+.sort-sel select option{background:var(--bg);color:var(--fg)}
+.genre-chips>*{flex:none;scroll-snap-align:start}
 .chip-n{margin-left:6px;opacity:.6;font-weight:500}
 .genre-btn{margin-top:8px}
 .genre-pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -205,12 +221,18 @@ body.drag-selecting .tracks{touch-action:none}
 .ly-msg{margin:10px 0}
 .ly-src{margin-top:18px}
 #lyBtn.on{color:var(--accent)}
-.gp-sug{margin:6px 0 18px}
-.gp-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
-.gp-item{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 8px;border-radius:10px;background:var(--raise);min-width:0}
-.gp-item .gp-cover{width:52px;height:52px;flex:none;border-radius:6px}
-.gp-meta{display:flex;flex-direction:column;min-width:0;flex:1}
-.gp-meta b{font-size:15px}
+.gp-sug{margin:2px 0 10px}
+.gp-head{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;font-size:13px}
+.gp-head b{color:var(--muted);font-weight:600}
+.gp-list{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.gp-list::-webkit-scrollbar{display:none}
+.gp-item{display:flex;align-items:center;gap:8px;padding:4px 2px 4px 4px;border-radius:8px;background:var(--raise);min-width:0;flex:none;max-width:230px}
+.gp-item .gp-cover{width:32px;height:32px;flex:none;border-radius:4px}
+.gp-item .icon-btn{width:26px;height:26px}
+.gp-item .icon-btn svg{width:14px;height:14px}
+.gp-meta{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.2}
+.gp-meta b{font-size:13px}
+.gp-meta .small{font-size:11px}
 .gp-item{cursor:pointer}
 .gp-item:hover{background:var(--hover)}
 .gp-create{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -278,6 +300,8 @@ body.drag-selecting .tracks{touch-action:none}
 .row .num{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;display:flex;justify-content:flex-end}
 .row .eq{display:none}
 .row.is-current .t{color:var(--accent)}
+.row.is-current{background:color-mix(in srgb,var(--accent) 12%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
+.row.is-current:hover{background:color-mix(in srgb,var(--accent) 18%,transparent)}
 .row.is-current.is-playing .n{display:none}
 .row.is-current.is-playing .eq{display:inline-flex}
 .ti{display:flex;gap:12px;align-items:center;min-width:0}
@@ -309,7 +333,10 @@ body.drag-selecting .tracks{touch-action:none}
 .search-box:focus-within{border-color:var(--fg)}
 .search-box input{flex:1;background:none;border:0;color:var(--fg);font:inherit;font-size:16px;padding:13px 0;outline:none;min-width:0}
 .search-box svg{color:var(--muted)}
-.genres{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
+/* Browse all: two rows you swipe left and right through, instead of a tall stack. */
+.genres{display:grid;grid-template-rows:repeat(2,auto);grid-auto-flow:column;grid-auto-columns:180px;gap:14px;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;scroll-snap-type:x proximity;padding-bottom:4px}
+.genres::-webkit-scrollbar{display:none}
+.genres>*{scroll-snap-align:start}
 .gt{aspect-ratio:1.55;border-radius:10px;padding:14px 16px;font:800 21px/1.1 var(--font-display);position:relative;overflow:hidden;cursor:pointer;color:#fff;display:flex;flex-direction:column;justify-content:space-between}
 .gt small{font:600 12px var(--font-body);opacity:.8;letter-spacing:.02em}
 .gt img{position:absolute;width:44%;right:-6%;bottom:-6%;transform:rotate(18deg);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
@@ -640,7 +667,10 @@ body.in-radio .radio-only{display:grid!important}
 .dls-opt b{display:block}
 .ytp-frame{aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#000;margin:8px 0}
 .ytp-frame iframe{width:100%;height:100%;border:0}
-.ytp-ver{align-items:center;min-width:0}
+.ytp-ver{align-items:center;min-width:0;position:relative}
+.ytp-ver.ytp-on{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.ytp-bar{position:absolute;left:10px;right:10px;bottom:3px;height:3px;border-radius:2px;background:var(--line);overflow:hidden;pointer-events:none}
+.ytp-bar>span{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
 .ytp-ver>span{flex:1;min-width:0}
 .ytp-ver b,.ytp-ver .small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ver-list:has(.ytp-ver){overflow-x:hidden}
@@ -701,6 +731,12 @@ body.in-radio .radio-only{display:grid!important}
 .adm-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 22px}
 .adm-tab{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;border:1px solid color-mix(in srgb,var(--fg) 14%,transparent);background:transparent;color:var(--fg);font:600 14px var(--font);cursor:pointer}
 .adm-tab svg{width:17px;height:17px}
+@media (max-width:760px){
+  .adm-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px;margin:0 -16px 14px;padding:0 16px}
+  .adm-tabs::-webkit-scrollbar{display:none}
+  .adm-tab{flex:none;padding:6px 12px;font-size:13px;gap:6px}
+  .adm-tab svg{width:14px;height:14px}
+}
 .adm-tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .share-preview{white-space:pre-wrap;font:14px/1.5 var(--font);background:color-mix(in srgb,var(--fg) 6%,transparent);border-radius:10px;padding:12px 14px;margin:12px 0;max-height:40vh;overflow:auto}
 .share-btns{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
@@ -721,7 +757,17 @@ body.in-radio .radio-only{display:grid!important}
 @media (prefers-reduced-motion:reduce){.wel-steps li.on .wel-n{animation:none}.wel-steps li{transition:none}}
 .wel-nav{display:flex;gap:10px;justify-content:flex-end;margin-bottom:8px}
 .wel-or{margin:12px 0 0}
-.act-list{display:grid;gap:16px;margin-bottom:16px}
+.act-list{display:grid;gap:8px;margin-bottom:16px}
+.adm-fold>summary{list-style:none;cursor:pointer;user-select:none}
+.adm-fold>summary::-webkit-details-marker{display:none}
+.adm-fold:not([open]){padding-top:10px;padding-bottom:10px}
+.adm-fold>summary .person-meta{min-width:0;flex:1}
+.act-chev{margin-left:auto;color:var(--muted);display:inline-flex;flex:none}
+.act-chev svg{width:16px;height:16px;transition:transform .15s}
+.adm-fold[open]>summary .act-chev svg{transform:rotate(90deg)}
+.adm-grid,.people.adm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:8px;align-items:start}
+.adm-grid>.adm-fold[open]{grid-column:1/-1}
+.adm-grid>.yt-settings{margin:0}
 .act-idle{opacity:.7}
 .act-warn{color:var(--danger,#e5677a);margin:4px 0 0}
 .act-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
@@ -890,6 +936,18 @@ body.in-radio .radio-only{display:grid!important}
 
 /* ---------- modal ---------- */
 .modal-back{position:fixed;inset:0;z-index:90;background:rgba(8,5,12,.62);display:grid;place-items:center;padding:16px}
+.page-top{display:none}
+.m-back{display:none}
+@media (max-width:760px){
+  body.page-only .topbar,body.page-only .player,body.page-only .bottom-nav{display:none}
+  body.page-only .page-top{display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:6;margin:-4px -16px 6px;padding:10px 12px;background:var(--bg);border-bottom:1px solid var(--line);font-size:18px}
+  body.page-only .adm-title{display:none}
+  .modal-back.m-page{padding:0;place-items:stretch;background:var(--bg)}
+  .m-page .modal{width:100%;max-height:none;height:100%;border:0;border-radius:0;box-shadow:none;padding:12px 16px calc(16px + env(safe-area-inset-bottom))}
+  .m-page .m-back{display:inline-grid;margin:0 0 4px -8px}
+  .m-page #mTitle{display:inline;vertical-align:middle}
+  .m-page .m-actions{display:none}
+}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(460px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.6)}
 .modal h2{font:800 22px/1.2 var(--font-display);margin:0 0 10px;text-wrap:balance;overflow-wrap:anywhere}
 .m-body{color:var(--muted);display:flex;flex-direction:column;gap:12px;font-size:14px}
@@ -944,7 +1002,7 @@ body.in-radio .radio-only{display:grid!important}
   .row .num,.row .alb,.row .dur{display:none}
   .row .like,.row .more{opacity:1}
   .row.plain{grid-template-columns:minmax(0,1fr) auto}
-  .genres{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .genres{grid-auto-columns:42vw;gap:10px}
   .gt{font-size:17px;padding:12px}
   .player{grid-column:1;grid-template-columns:minmax(0,1fr) auto;margin:0 8px 6px;padding:6px;border-radius:8px;background:color-mix(in srgb,var(--tint,#5a3478) 45%,var(--raise));min-height:0;gap:8px;overflow:hidden}
   .p-center,.p-right{display:none}
@@ -2230,7 +2288,13 @@ async function fetchRadio(fallback) {
   const exclude = fallback
     ? [...keys(state.order.slice(state.pos).map(i => state.list[i])), ...hist.slice(0, 40), ...radio.down]
     : [...radio.down, ...hist, ...keys(store.get('history', [])), ...keys(radio.ids.slice().reverse())];   // newest first: the server reads the first 5000
-  const r = await api('POST', 'api/radio', { artist: radio.seed.artist, exclude: [...new Set(exclude)], also: radio.more.slice(-3) });
+  // What it learns from: artists you gave thumbs up on this station, the ones you listen to most anywhere,
+  // and artists you keep giving thumbs down (played less, not banned).
+  const count = list => { const m = {}; list.forEach(a => { a = cleanArtist(a || ''); if (a) m[a] = (m[a] || 0) + 1; }); return m; };
+  const up = count([...(st.upArtists || []), ...(st.upList || []).map(x => x && x.artist)]);
+  const downA = count((st.downList || []).map(x => x && x.artist));
+  const r = await api('POST', 'api/radio', { artist: radio.seed.artist, exclude: [...new Set(exclude)], also: radio.more.slice(-3),
+    up, down: downA, taste: (typeof topArtists === 'function' ? topArtists() : []).slice(0, 12), banned: [...radio.banned] });
   if (r.picture && !radio.seed.cover) radio.seed.cover = r.picture;
   radio.seed.artist = r.artist || radio.seed.artist;
   return (r.items || []).filter(x => !radio.banned.has(normKey(cleanArtist(x.artist))) && !radio.down.has(radioKey(x)))
@@ -2538,9 +2602,9 @@ async function importPandora(name, upText, downText) {
 }
 function viewStations() {
   const list = stations();
-  return `<h1 class="greet">Your radio stations</h1>
-    <button class="radio-cta" data-act="new-station">${icon('plus')}<span><b>Create a radio station</b><small>Pick an artist or song. Murmur keeps playing music like it, and your likes steer it.</small></span></button>
-    ${server.on ? `<button class="radio-cta" data-act="pandora-import">${icon('thumbUp')}<span><b>Import from Pandora</b><small>Paste a station’s thumbs up and thumbs down. They become a Murmur station that already knows what you like.</small></span></button>` : ''}
+  return `<div class="st-head"><h1 class="greet">Your radio stations</h1>
+    <button class="chip st-btn" data-act="new-station" title="Pick an artist or song. Murmur keeps playing music like it, and your likes steer it.">${icon('plus')}Create</button>
+    ${server.on ? `<button class="chip st-btn" data-act="pandora-import" title="Paste a Pandora station’s thumbs up and thumbs down. They become a Murmur station that already knows what you like.">${icon('thumbUp')}Pandora</button>` : ''}</div>
     ${list.length ? `<div class="lib-list st-page">${list.map(stationItem).join('')}</div>` : '<p class="small">No stations yet. Every radio you start shows up here.</p>'}
     ${radioChipsHTML()}`;
 }
@@ -3297,8 +3361,33 @@ function getCollection(type, id) {
   col.allTracks = col.tracks;
   const g = type !== 'discover' && state.gf[type + ':' + id];
   if (g) col.tracks = col.tracks.filter(t => (genreFor(t) || NO_GENRE) === g);
+  const so = SORTABLE.has(type) && store.get('sorts', {})[type + ':' + id];
+  if (so) col.tracks = sortTracks(col.tracks, so, !!col.liked);
+  col.sort = so || '';
   return col;
 }
+/* Sorting songs in a list (saved per list on this device). Liked Songs already show newest first. */
+const SORTABLE = new Set(['liked', 'playlist', 'album', 'import', 'downloads', 'mygenre']);
+const SORTS = { '': 'Default order', title: 'Title A–Z', artist: 'Artist A–Z', new: 'Newest first', old: 'Oldest first' };
+function sortTracks(ids, so, newestFirst) {
+  const name = id => normKey((TRACKS[id] || {}).title || ''), by = id => normKey(cleanArtist((TRACKS[id] || {}).artist || ''));
+  if (so === 'title') return [...ids].sort((a, b) => name(a).localeCompare(name(b)) || by(a).localeCompare(by(b)));
+  if (so === 'artist') return [...ids].sort((a, b) => by(a).localeCompare(by(b)) || name(a).localeCompare(name(b)));
+  if (so === 'new') return newestFirst ? ids : [...ids].reverse();
+  if (so === 'old') return newestFirst ? [...ids].reverse() : ids;
+  return ids;
+}
+function sortSelHTML(type, id, col) {
+  if (!SORTABLE.has(type) || col.tracks.length < 2) return '';
+  return `<label class="sort-sel" title="Sort songs">${icon('list')}<select data-sort="${esc(type + ':' + id)}" aria-label="Sort songs">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}"${k === col.sort ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`;
+}
+document.addEventListener('change', e => {
+  const s = e.target.closest && e.target.closest('select[data-sort]'); if (!s) return;
+  const all = store.get('sorts', {});
+  if (s.value) all[s.dataset.sort] = s.value; else delete all[s.dataset.sort];
+  store.set('sorts', all);
+  const y = $('#main').scrollTop; render(); $('#main').scrollTop = y;
+});
 function collectionOf(type, id) {
   if (type === 'album') {
     const a = ALBUM_MAP[id]; if (!a) return null;
@@ -4001,7 +4090,7 @@ function searchResultsHTML() {
       return `<div class="gt" style="background:${a.colors[1]}" data-act="open" data-type="genre" data-id="${k}" role="button" tabindex="0"><span>${g.label}</span><small>${g.blurb}</small><img src="${a.cover}" alt=""></div>`;
     }).join('');
     return `<h1 class="greet">Search</h1><p class="small" style="margin:-8px 0 8px">Use the search bar at the top to find songs in your library${yt.enabled ? ' and on YouTube' : ''}.</p>`
-      + radioChipsHTML() + (tiles ? `<div class="shelf-head"><h2>Browse all</h2></div><div class="genres">${tiles}</div>` : '');
+      + recentSearchesHTML() + (tiles ? `<div class="shelf-head"><h2>Browse all</h2></div><div class="genres">${tiles}</div>` : '');
   }
   const ql = q.toLowerCase();
   const tracks = searchTracks(q).filter(id => !id.startsWith('yt-'));   // YouTube songs are listed in their own section
@@ -4084,7 +4173,21 @@ function submitSearch(value) {
   closeDrop();
   state.search = q;
   if (state.view.name !== 'search') navigate({ name: 'search' }); else { state.sel = null; refreshSearch(); histSave(); }
-  if (q) runCatalogSearch(q);
+  if (q) { runCatalogSearch(q); noteSearch(q); }
+}
+/* Song/video files people can pick. On Windows, "audio/*,video/*" makes the file window list every registered
+   media type before it opens (slow, looks frozen), so there only the extensions are given. */
+const FILE_ACCEPT = (/Windows/.test(navigator.userAgent) ? '' : 'audio/*,video/*,') + '.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.wma,.aiff,.aif,.mp4,.m4v,.mov,.mkv,.webm,.avi';
+/* Recent searches, newest first, shown on the empty Search page (this device only). */
+function noteSearch(q) {
+  const k = q.toLowerCase();
+  store.set('recentSearches', [q, ...store.get('recentSearches', []).filter(x => x.toLowerCase() !== k)].slice(0, 15));
+}
+function recentSearchesHTML() {
+  const list = store.get('recentSearches', []);
+  if (!list.length) return '';
+  return `<div class="shelf-head"><h2>Recent searches</h2><div class="head-actions"><button class="link-btn small" data-act="rs-clear">Clear all</button></div></div>
+    <div class="rs-list">${list.map(q => `<div class="rs-item"><button class="rs-q" data-act="rs-go" data-q="${esc(q)}">${icon('search')}<span class="ell">${esc(q)}</span></button><button class="icon-btn" data-act="rs-del" data-q="${esc(q)}" aria-label="Remove ${esc(q)}" title="Remove">${icon('close')}</button></div>`).join('')}</div>`;
 }
 function refreshSearch() { const r = $('#results'); if (r && state.view.name === 'search') { r.innerHTML = searchResultsHTML(); highlight(); syncSel(); syncDownloads(); } }
 function viewCollection(type, id) {
@@ -4147,7 +4250,7 @@ function viewCollection(type, id) {
     <button class="icon-btn${state.shuffle ? ' on' : ''}" data-act="shuffle" aria-label="Shuffle" aria-pressed="${state.shuffle}">${icon('shuffle')}</button>
     ${col.gpreview ? `<button class="text-btn gp-create" data-act="gp-make" data-g="${esc(id)}">${icon('plus')}<span>Create playlist</span></button><button class="text-btn" data-act="gp-skip" data-g="${esc(id)}" data-back="1">${icon('close')}<span>Don’t suggest</span></button>` : ''}
     ${col.radio ? `<button class="text-btn" data-act="radio-not" ${sameCtx('radio', 'station') ? '' : 'disabled'}>${icon('thumbDown')}<span>Not this artist</span></button>` : ''}
-    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) : ''}${type === 'artist' && server.on ? `<button class="text-btn" data-act="artist-radio" data-id="${esc(col.artistName || id)}">${icon('radio')}<span>Artist radio</span></button>` : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
+    ${col.gpreview ? '' : dlBtn}${n && !col.gpreview ? selBtn(type, id) + sortSelHTML(type, id, col) : ''}${type === 'artist' && server.on ? `<button class="text-btn" data-act="artist-radio" data-id="${esc(col.artistName || id)}">${icon('radio')}<span>Artist radio</span></button>` : ''}${col.discover ? `<button class="text-btn" data-act="disc-refresh">${icon('repeat')}<span>${disc.loading ? 'Finding songs…' : 'Get new suggestions'}</span></button>` : ''}${col.imported ? `<button class="text-btn" data-act="sp-sync" data-id="${esc(id)}">${icon('repeat')}<span>Sync from Spotify</span></button>` : ''}${ytBatchBtn(type, id, col)}${editAlbum}${del}${clearDl}
   </div>
   ${server.on ? jobPanelsHTML(type, id) : ''}
   ${col.liked ? genrePlaylistsHTML() : ''}
@@ -4306,8 +4409,8 @@ function buildShell() {
         <button class="text-btn up-btn" data-act="acct-people" id="adminBtn" hidden title="Manage people and server settings">${icon('shield')}<span>Admin</span></button>
         <button class="avatar acct-btn" data-act="acct" id="acctBtn" aria-label="Your account" title="Your account" hidden></button>
       </div>
-      <input type="file" id="fileBring" class="vh" accept="audio/*,video/*,.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.wma,.aiff,.aif,.mp4,.m4v,.mov,.mkv,.webm,.avi" tabindex="-1" aria-hidden="true">
-      <input type="file" id="fileGlobal" class="vh" multiple accept="audio/*,video/*,.mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.wma,.aiff,.aif,.mp4,.m4v,.mov,.mkv,.webm,.avi" tabindex="-1" aria-hidden="true">
+      <input type="file" id="fileBring" class="vh" accept="${FILE_ACCEPT}" tabindex="-1" aria-hidden="true">
+      <input type="file" id="fileGlobal" class="vh" multiple accept="${FILE_ACCEPT}" tabindex="-1" aria-hidden="true">
     </div>
     <div class="view" id="view"></div>
   </main>
@@ -4392,6 +4495,7 @@ function render() {
   }
   syncDownloads();
   $$('[data-act="nav"]').forEach(b => b.classList.toggle('on', b.dataset.to === v.name));
+  document.body.classList.toggle('page-only', v.name === 'people');   // phones: Admin is a page of its own
   $('#backBtn').disabled = hist.i <= 0; $('#fwdBtn').disabled = hist.i >= hist.top;
   renderSidebar(); highlight(); updateToggles(); syncSel();
 }
@@ -4676,15 +4780,15 @@ function renderMenu() {
       + (t.yt ? b('spver', icon('versions') + 'Choose a YouTube version') + b('ytopen', icon('expand') + 'Open on YouTube') : '')
       + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download or add to library…') : '')
       + (t.sp ? '<hr>' + (canEditMusic() ? b('bring', icon('upload') + (spStatus(t.id) === 'file' ? 'Replace the file in Murmur' : 'Bring into Murmur (upload your copy)')) : '')
-        + (yt.enabled ? b('spver', icon('versions') + 'Choose a YouTube version') : '')
-        + (t.url ? b('spopen', icon('expand') + 'Open in Spotify') : '') : '')
+        + (yt.enabled ? b('spver', icon('versions') + 'Choose a YouTube version') : '') : '')
       + (t.src && server.on ? b('spver', icon('versions') + 'Choose a YouTube version') : '')
       + (t.src ? '<hr>' + (offline.has(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download to this device (offline)') : '')
         + (server.on ? b('save', icon('save') + 'Save file to device') : '')
         : canDownload(t.id) ? '<hr>' + (localPlayable(t.id) ? b('undl', icon('dlFill') + 'Remove download') : server.on ? b('dl', icon('download') + 'Download to this device (offline)') : '') : '')
       + (t.src && canChange(t.id) ? b('edit', icon('edit') + 'Edit details') : '')
       + (editable ? '<hr>' + b('remove', icon('list') + 'Remove from this playlist') : '')
-      + (t.src && !canChange(t.id) ? '' : '<hr>' + (t.src
+      // Inside your own playlist, only take the song off the playlist; deleting it from the library is done elsewhere.
+      + (editable || (t.src && !canChange(t.id)) ? '' : '<hr>' + (t.src
         ? b('delete', icon('trash') + (m.confirm ? '<b class="danger-text">Click again to delete the file</b>' : 'Delete from server'))
         : b('hide', icon('trash') + 'Remove from library')));
   } else {
@@ -4701,6 +4805,73 @@ function renderMenu() {
   const first = menuEl.querySelector('button'); if (first) first.focus({ preventScroll: true });
 }
 function closeMenu() { menuEl.hidden = true; menuState = null; }
+/* Options for a playlist, album or artist (Your Library, Home cards): right-click on a computer, press and hold on a phone. */
+function openColMenu(rect, type, id) {
+  const col = getCollection(type, id); if (!col) return;
+  closeMenu();
+  const key = type + ':' + id, n = col.tracks.length;
+  const b = (op, label) => `<button role="menuitem" data-act="cm" data-op="${op}" data-type="${esc(type)}" data-id="${esc(id)}">${label}</button>`;
+  const userPl = type === 'playlist' && state.playlists.some(p => p.id === id);
+  const canDelete = type === 'import' || type === 'playlist' || (type === 'album' && ALBUM_MAP[id] && !['uploads', 'youtube', 'shared'].includes(id));
+  const artist = type === 'artist' ? (col.artistName || id) : type === 'album' || type === 'calbum' ? col.artist : '';
+  menuEl.innerHTML = `<div class="menu-title ell">${esc(col.title)}</div>`
+    + (n ? b('play', icon('play') + 'Play') + b('shuffle', icon('shuffle') + 'Shuffle play') + b('queue', icon('queue') + 'Add to queue') + b('playlist', icon('plus') + 'Add to playlist') : '')
+    + (server.on && artist ? b('radio', icon('radio') + `<span class="ell">${esc(cleanArtist(artist))} radio</span>`) : '')
+    + (artist && type !== 'artist' ? b('artist', icon('user') + 'Go to artist') : '')
+    + (n && server.on && type !== 'downloads' ? '<hr>' + b('dl', icon('download') + 'Download to this device') : '')
+    + (userPl ? '<hr>' + b('rename', icon('edit') + 'Rename') : '')
+    + (canDelete ? (userPl ? '' : '<hr>') + b('del', icon('trash') + (type === 'import' || userPl ? 'Delete' : 'Remove from library')) : '');
+  menuEl.hidden = false;
+  const mw = menuEl.offsetWidth, mh = menuEl.offsetHeight;
+  menuEl.style.left = clamp(rect.left, 8, innerWidth - mw - 8) + 'px';
+  menuEl.style.top = clamp(rect.bottom + 4 + mh > innerHeight - 8 ? rect.top - mh - 4 : rect.bottom + 4, 8, innerHeight - mh - 8) + 'px';
+  const first = menuEl.querySelector('button'); if (first) first.focus({ preventScroll: true });
+}
+function colMenuAct(op, type, id, el) {
+  const col = getCollection(type, id); if (!col) return;
+  const rect = el.getBoundingClientRect();
+  closeMenu();
+  if (op === 'play') playFrom(type, id, null);
+  else if (op === 'shuffle') { if (!state.shuffle) { state.shuffle = true; store.set('shuffle', true); updateToggles(); } playFrom(type, id, null); }
+  else if (op === 'queue') { addToQueue(col.tracks); }
+  else if (op === 'playlist') { menuState = { tids: col.tracks, sub: true, multi: true, anchor: rect }; renderMenu(); }
+  else if (op === 'radio') startRadio(type === 'artist' ? (col.artistName || id) : col.artist);
+  else if (op === 'artist') navigate({ name: 'collection', type: 'artist', id: cleanArtist(col.artist) });
+  else if (op === 'dl') downloadTracks(col.tracks);
+  else if (op === 'rename') { navigate({ name: 'collection', type: 'playlist', id }); setTimeout(() => { const i = $('#plName'); if (i) { i.focus(); i.select(); } }, 0); }
+  else if (op === 'del') confirmDeleteCollections([type + ':' + id]);
+}
+/* Press and hold (phones) or right-click (computers) on a library item or card opens its options, like the ⋯ button. */
+const hold = { timer: null, el: null, x: 0, y: 0, fired: false };
+function holdTarget(t) { const el = t.closest && t.closest('.lib-item[data-type], .card[data-type]'); return el && el.dataset.id != null && el.dataset.type !== 'radio' ? el : null; }
+document.addEventListener('pointerdown', e => {
+  if (e.button > 0 || e.pointerType === 'mouse') return;
+  const el = holdTarget(e.target); if (!el || state.libSel) return;
+  clearTimeout(hold.timer); hold.el = el; hold.x = e.clientX; hold.y = e.clientY; hold.fired = false;
+  hold.timer = setTimeout(() => {
+    if (hold.el !== el) return;
+    hold.fired = true; if (navigator.vibrate) try { navigator.vibrate(12); } catch (er) {}
+    openColMenu(el.getBoundingClientRect(), el.dataset.type, el.dataset.id);
+  }, 450);
+});
+document.addEventListener('pointermove', e => { if (hold.el && (Math.abs(e.clientX - hold.x) > 10 || Math.abs(e.clientY - hold.y) > 10)) { clearTimeout(hold.timer); hold.el = null; } });
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => { clearTimeout(hold.timer); hold.el = null; }));
+// The tap that ends a hold shouldn't also open the playlist.
+document.addEventListener('click', e => { if (hold.fired && holdTarget(e.target)) { e.stopPropagation(); e.preventDefault(); hold.fired = false; } }, true);
+document.addEventListener('contextmenu', e => {
+  if (e.target.closest('input, textarea, a[href]')) return;
+  const el = holdTarget(e.target);
+  if (el) { e.preventDefault(); if (!hold.fired) openColMenu({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY }, el.dataset.type, el.dataset.id); return; }
+  // A song row: the same menu as its ⋯ button.
+  const row = e.target.closest('.row[data-tid]');
+  if (row && !drag.on) {
+    e.preventDefault();
+    const list = row.closest('[data-ctx-type]');
+    menuState = null;
+    openMenu({ getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX + 1, top: e.clientY, bottom: e.clientY }) }, [row.dataset.tid],
+      { ctxType: list ? list.dataset.ctxType : null, ctxId: list ? list.dataset.ctxId : null, idx: +row.dataset.i });
+  }
+});
 let toastTimer;
 let lastToast = { msg: '', at: 0 };
 function toast(msg) {
@@ -4714,10 +4885,12 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, msg.length > 70 ? 4500 : 2600);
 }
 let modalSubmit = null, modalReturn = null;
-function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit }) {
+// page: on phones it fills the screen like its own page, with a back arrow (the account page).
+function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit, page = false }) {
   modalReturn = document.activeElement;
+  $('#modal').classList.toggle('m-page', !!page);
   $('#modal').innerHTML = `<form class="modal" id="mForm" role="dialog" aria-modal="true" aria-labelledby="mTitle">
-    <h2 id="mTitle">${title}</h2><div class="m-body">${html}</div>
+    ${page ? `<button type="button" class="icon-btn m-back" data-act="modal-close" aria-label="Back">${icon('back')}</button>` : ''}<h2 id="mTitle">${title}</h2><div class="m-body">${html}</div>
     <div class="m-actions"><button type="button" class="text-btn" data-act="modal-close">${cancel}</button>${confirm ? `<button type="submit" class="m-ok${danger ? ' danger' : ''}">${confirm}</button>` : ''}</div></form>`;
   modalSubmit = onSubmit; $('#modal').hidden = false; closeMenu();
   const f = $('#mForm input') || $('#mForm .m-ok'); if (f) { f.focus(); if (f.select) f.select(); }
@@ -4725,6 +4898,7 @@ function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = fa
 function closeModal() {
   $('#modal').hidden = true; modalSubmit = null;
   $$('#modal iframe').forEach(f => f.remove());   // stop a YouTube preview
+  if (typeof ytpStop === 'function') ytpStop();
   if (modalReturn && modalReturn.focus && document.contains(modalReturn)) modalReturn.focus({ preventScroll: true });
 }
 
@@ -4776,8 +4950,17 @@ function dragBegin() {
     if (dy) { main.scrollTop += dy; dragTo(dragRowAt(drag.x, drag.y)); }
   }, 30);
 }
-function dragEnd() {
+function dragEnd(e) {
   clearTimeout(drag.timer); clearInterval(drag.scroll);
+  // Held without sliding: open this song's options, like its ⋯ button.
+  if (drag.held && !drag.on && drag.list && e && e.type === 'pointerup') {
+    const row = drag.list.querySelector(`.row[data-i="${drag.start}"]`), more = row && row.querySelector('[data-act="more"]');
+    if (row) {
+      drag.swallowClick = true; setTimeout(() => { drag.swallowClick = false; }, 400);
+      openMenu(more || row, [row.dataset.tid], { ctxType: drag.list.dataset.ctxType, ctxId: drag.list.dataset.ctxId, idx: +row.dataset.i });
+    }
+  }
+  drag.held = false;
   if (drag.on) { document.body.classList.remove('drag-selecting'); setTimeout(() => { drag.swallowClick = false; }, 50); }
   drag.on = false; drag.pointer = null; drag.list = null;
 }
@@ -4791,7 +4974,13 @@ document.addEventListener('pointerdown', e => {
   clearTimeout(drag.timer);
   // A mouse already in select mode starts right away (once it moves); otherwise wait for a press and hold.
   // 350ms: shorter than Android's own press-and-hold (about 400ms), which would otherwise take over the touch.
-  if (!(selecting && e.pointerType === 'mouse')) drag.timer = setTimeout(() => { if (drag.pointer === e.pointerId && !drag.moved) dragBegin(); }, e.pointerType === 'touch' ? 350 : 450);
+  // A finger: hold and let go opens the song's options; hold and slide selects songs.
+  drag.held = false; drag.touch = e.pointerType !== 'mouse';
+  if (!(selecting && e.pointerType === 'mouse')) drag.timer = setTimeout(() => {
+    if (drag.pointer !== e.pointerId || drag.moved) return;
+    if (drag.touch && !selecting) { drag.held = true; if (navigator.vibrate) try { navigator.vibrate(12); } catch (er) {} }
+    else dragBegin();
+  }, e.pointerType === 'touch' ? 350 : 450);
 });
 document.addEventListener('pointermove', e => {
   if (drag.pointer !== e.pointerId) return;
@@ -4801,6 +4990,7 @@ document.addEventListener('pointermove', e => {
   drag.x = e.clientX; drag.y = e.clientY;
   if (!drag.on) {
     if (!far) return;
+    if (drag.held) { drag.held = false; dragBegin(); dragTo(dragRowAt(e.clientX, e.clientY)); return; }
     // Moved before the hold finished: it's a scroll (or a mouse drag that should start selecting).
     if (e.pointerType === 'mouse' && drag.list && selMatches(drag.list.dataset.ctxType, drag.list.dataset.ctxId)) { clearTimeout(drag.timer); dragBegin(); }
     else { drag.moved = true; clearTimeout(drag.timer); drag.pointer = null; return; }
@@ -4865,7 +5055,7 @@ function renderSelBar() {
       <button class="sb" data-act="sel-genre"${dis}>${icon('list')}<span>Set genre</span></button>
       ${yt.enabled && canAddFromYouTube() && ids.some(id => !TRACKS[id].src) ? `<button class="sb" data-act="sel-yt"${dis}>${icon('download')}<span>Add to Murmur library</span></button>` : ''}
       ${allFiles && ids.every(canChange) ? `<button class="sb" data-act="sel-edit"${dis}>${icon('edit')}<span>Edit details</span></button>` : ''}
-      ${anyFile && !ids.filter(id => TRACKS[id].src).every(canChange) ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
+      ${(col && col.editable) || (anyFile && !ids.filter(id => TRACKS[id].src).every(canChange)) ? '' : `<button class="sb danger" data-act="sel-delete"${dis}>${icon('trash')}<span>${anyFile ? 'Delete' : 'Remove'}</span></button>`}
       <button class="sb done" data-act="sel-done">Done</button>`;
     bar.hidden = false; return;
   }
@@ -4920,12 +5110,12 @@ function likedGenreSuggestions() {
 function genrePlaylistsHTML() {
   const list = likedGenreSuggestions();
   if (!list.length) return '';
-  return `<section class="gp-sug"><div class="shelf-head"><h2>Make playlists from your likes</h2><p>Your Liked Songs sorted by genre. Tap one to see its songs, then create it if you like it.</p></div>
-    <div class="gp-list">${list.slice(0, 8).map(x => `<div class="gp-item" data-act="open" data-type="gpreview" data-id="${esc(x.genre)}" role="button" tabindex="0" aria-label="See the songs for ${esc(x.genre)}">${coverHTML({ mosaic: mosaicFor(x.ids) }, 'gp-cover')}
-      <div class="gp-meta"><b class="ell">${esc(x.genre)}</b><span class="small">${plural(x.ids.length, 'liked song')} · tap to see them</span></div>
-      <button class="text-btn" data-act="gp-make" data-g="${esc(x.genre)}">${icon('plus')}<span>Create</span></button>
-      <button class="icon-btn" data-act="gp-skip" data-g="${esc(x.genre)}" aria-label="Don’t suggest ${esc(x.genre)}">${icon('close')}</button></div>`).join('')}</div>
-    ${list.length > 1 ? `<p><button class="text-btn" data-act="gp-all">${icon('list')}<span>Create all ${Math.min(list.length, 8)}</span></button></p>` : ''}</section>`;
+  return `<section class="gp-sug"><div class="gp-head"><b>Playlists from your likes</b>
+      ${list.length > 1 ? `<button class="link-btn small" data-act="gp-all">Create all ${Math.min(list.length, 8)}</button>` : ''}</div>
+    <div class="gp-list">${list.slice(0, 8).map(x => `<div class="gp-item" data-act="open" data-type="gpreview" data-id="${esc(x.genre)}" role="button" tabindex="0" aria-label="See the songs for ${esc(x.genre)}" title="Tap to see the songs">${coverHTML({ mosaic: mosaicFor(x.ids) }, 'gp-cover')}
+      <div class="gp-meta"><b class="ell">${esc(x.genre)}</b><span class="small">${x.ids.length} songs</span></div>
+      <button class="icon-btn" data-act="gp-make" data-g="${esc(x.genre)}" aria-label="Create ${esc(x.genre)} playlist" title="Create playlist">${icon('plus')}</button>
+      <button class="icon-btn" data-act="gp-skip" data-g="${esc(x.genre)}" aria-label="Don’t suggest ${esc(x.genre)}" title="Don’t suggest">${icon('close')}</button></div>`).join('')}</div></section>`;
 }
 function makeGenrePlaylist(genre, open) {
   const x = likedGenreSuggestions().find(v => v.genre === genre); if (!x) return null;
@@ -5167,6 +5357,7 @@ function act(el, e) {
       state.repeat = { off: 'all', all: 'one', one: 'off' }[state.repeat]; store.set('repeat', state.repeat);
       updateToggles(); renderNP(); break;
     case 'like': toggleLike(d.tid); break;
+    case 'cm': colMenuAct(d.op, d.type, d.id, el); break;
     case 'more': {
       const list = el.closest('[data-ctx-type]');
       if (list && selMatches(list.dataset.ctxType, list.dataset.ctxId)) { toggleSel(+d.i, false); return; }
@@ -5183,7 +5374,6 @@ function act(el, e) {
       else if (op === 'dlpick') pickDownloadSource(tids[0]);
       else if (op === 'genre') openGenrePicker(tids);
       else if (op === 'spver') chooseVersion(tids[0]);
-      else if (op === 'spopen') { const a = document.createElement('a'); a.href = TRACKS[tids[0]].url; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
       else if (op === 'ytopen') { const a = document.createElement('a'); a.href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(TRACKS[tids[0]].ytId); a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
       else if (op === 'dl') downloadTracks(tids);
       else if (op === 'radio') startRadio('', tids[0]);
@@ -5205,7 +5395,9 @@ function act(el, e) {
       else if (op === 'add') { addToPlaylist(d.pid, tids); if (m.multi) clearSel(); }
       else if (op === 'remove') {
         const p = state.playlists.find(x => x.id === m.ctxId);
-        if (p) { p.tracks.splice(m.idx, 1); savePlaylists(); toast(`Removed from ${p.name}`); render(); }
+        // The row's position can be off when the list is sorted differently, so check it's really this song.
+        const at = p && p.tracks[m.idx] === tids[0] ? m.idx : p ? p.tracks.indexOf(tids[0]) : -1;
+        if (p && at >= 0) { p.tracks.splice(at, 1); savePlaylists(); toast(`Removed from ${p.name}`); render(); }
       }
       break;
     }
@@ -5364,6 +5556,9 @@ function act(el, e) {
       api('DELETE', 'api/settings/spotify').then(() => { sp.clientId = ''; sp.fullLinks = false; toast('Spotify setup removed. Imported playlists stay.'); render(); }).catch(err => toast(err.message));
       break;
     case 'yt-search': runYtSearch(d.q); break;
+    case 'rs-go': { const q = $('#tq'); if (q) { q.value = d.q; const c = $('#tqClear'); if (c) c.hidden = false; } submitSearch(d.q); break; }
+    case 'rs-del': store.set('recentSearches', store.get('recentSearches', []).filter(x => x !== d.q)); refreshSearch(); break;
+    case 'rs-clear': store.set('recentSearches', []); refreshSearch(); break;
     case 'tq-clear': { const q = $('#tq'); q.value = ''; onSearchInput(''); q.focus(); if (state.view.name === 'search') { state.search = ''; refreshSearch(); } break; }
     case 'drop-pick': pickDrop(+d.k); break;
     case 'go-settings': people = null; navigate({ name: 'people' }); break;
@@ -5428,8 +5623,9 @@ function act(el, e) {
     case 'sel-delete': confirmRemoveTracks(selIds()); break;
     case 'sel-remove': {
       const p = state.playlists.find(x => x.id === state.sel.id); if (!p) return;
-      const idx = [...state.sel.idx].sort((a, b) => b - a), n = idx.length;
-      idx.forEach(i => p.tracks.splice(i, 1)); savePlaylists();
+      // By song, not by row number: the list on screen may be sorted or filtered by genre.
+      const gone = new Set(selIds()), n = gone.size;
+      p.tracks = p.tracks.filter(t => !gone.has(t)); savePlaylists();
       state.sel = null; render(); toast(`Removed ${plural(n, 'song')} from ${p.name}`); break;
     }
     /* library selection */
@@ -5457,6 +5653,7 @@ function act(el, e) {
     case 'pl-add': addToPlaylist(state.view.id, [d.tid]); break;
     case 'lib-filter': state.libFilter = d.k; if (state.view.name === 'library') render(); else renderSidebar(); break;
     case 'back': if (hist.i > 0) history.back(); break;
+    case 'page-back': if (hist.i > 0) history.back(); else navigate({ name: 'home' }); break;
     case 'fwd': if (hist.i < hist.top) history.forward(); break;
     case 'q-jump': {
       const i = +d.i;
@@ -5742,9 +5939,22 @@ async function chooseVersion(id) {
     onSubmit: async fd => {
       const v = fd.get('v'); if (!v || v === cur) return;
       if (t.sp) {
-        await saveMatch(t.key, { yt: ytMeta('yt-' + v) });
-        toast('Saved. This version plays from now on.');
-        syncSpChips(); if (state.current === id) loadAndPlay(id, true);
+        const old = sp.matches[t.key] || {}, oldYt = old.yt && old.yt.id ? 'yt-' + old.yt.id : '';
+        const hadFile = !!(old.file && TRACKS['f-' + old.file]), wasOffline = localPlayable(id);
+        await saveMatch(t.key, { yt: ytMeta('yt-' + v), version: true });
+        // The copy saved on this device was the old version: swap it for the new one.
+        if (wasOffline) {
+          if (oldYt && oldYt !== 'yt-' + v) await dropDownload(oldYt);
+          if (hadFile) await dropDownload('f-' + old.file);
+          downloadTracks([id]);
+        }
+        // The Murmur library had the old version: bring the new one in, so it's "In Murmur" again.
+        const here = SERVERS.find(x => normalizeServer(x.url) === normalizeServer(remote.base || location.origin));
+        if (hadFile && canAddFromYouTube() && (!here || here.downloads)) {
+          startYtJob([{ link: `https://www.youtube.com/watch?v=${v}`, title: t.title, key: t.key, song: { title: t.title, artist: t.artist } }], t.title, '').catch(() => {});
+          toast('Saved. This version plays from now on, and Murmur is getting it for the library.');
+        } else toast('Saved. This version plays from now on.');
+        syncSpChips(); render(); if (state.current === id) loadAndPlay(id, true);
         return;
       }
       swapTrack(id, 'yt-' + v);
@@ -6095,12 +6305,62 @@ function syncLinkResult(tid) {
         });
     }
 
+    /* Version previews: a 30-second sample from the middle of the song (where the chorus usually is), audio only.
+       The server streams just that part, so nothing waits for the whole video. ▶ again pauses / goes on. */
+    var ytp = { v: null, audio: null, start: 0, timer: null };
+    const YTP_LEN = 30;
+    function ytpStop() {
+        if (ytp.audio) { ytp.audio.pause(); ytp.audio.removeAttribute('src'); ytp.audio.load(); }
+        clearInterval(ytp.timer); ytp = { v: null, audio: null, start: 0, timer: null };
+        ytpButtons();
+    }
+    function ytpButtons() {
+        $$('.ytp-play').forEach(b => {
+            const on = b.dataset.v === ytp.v, playing = on && ytp.audio && !ytp.audio.paused;
+            b.innerHTML = icon(playing ? 'pause' : 'play');
+            b.setAttribute('aria-label', playing ? 'Pause the sample' : 'Listen to a sample');
+            const row = b.closest('.ytp-ver'); if (!row) return;
+            row.classList.toggle('ytp-on', on);
+            let bar = row.querySelector('.ytp-bar');
+            if (on && !bar) { bar = document.createElement('span'); bar.className = 'ytp-bar'; bar.innerHTML = '<span></span>'; row.appendChild(bar); }
+            if (!on && bar) bar.remove();
+            if (on && ytp.audio) bar.firstChild.style.width = Math.min(100, Math.max(0, (ytp.audio.currentTime - ytp.start) / YTP_LEN * 100)) + '%';
+        });
+    }
     function previewYouTube(v) {
-        const box = $('#ytpFrame'); if (!box) return;
-        if (Engine.playing) Engine.pause();   // one thing playing at a time
-        box.hidden = false;
-        box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}?autoplay=1&playsinline=1&rel=0" title="Preview" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
         const r = document.querySelector(`input[name="v"][value="${CSS.escape(v)}"]`); if (r) r.checked = true;
+        if (Engine.playing) Engine.pause();   // one thing playing at a time
+        // The same one again: pause, or go on where it was.
+        if (ytp.v === v && ytp.audio) {
+            if (ytp.audio.paused) { if (ytp.audio.currentTime >= ytp.start + YTP_LEN) ytp.audio.currentTime = ytp.start; ytp.audio.play().catch(() => {}); }
+            else ytp.audio.pause();
+            ytpButtons(); return;
+        }
+        ytpStop();
+        const y = TRACKS['yt-' + v] || { ytId: v }, src = server.on ? ytAudioSrc(y) : null;
+        if (!src) return previewFrame(v, y);
+        const a = new Audio(); a.preload = 'auto';
+        ytp = { v, audio: a, start: 0, timer: null };
+        const dur = y.duration || 0;
+        ytp.start = dur > 75 ? Math.round(Math.min(dur * 0.35, dur - YTP_LEN - 5)) : 0;
+        a.src = src + (dur ? '#t=' + ytp.start : '');
+        a.addEventListener('loadedmetadata', () => { if (ytp.audio === a && Math.abs(a.currentTime - ytp.start) > 2) { try { a.currentTime = ytp.start; } catch (e) {} } });
+        a.addEventListener('play', ytpButtons); a.addEventListener('pause', ytpButtons);
+        a.addEventListener('error', () => { if (ytp.audio === a) { ytpStop(); previewFrame(v, y); } });
+        ytp.timer = setInterval(() => {
+            if (ytp.audio !== a) return;
+            if (a.currentTime >= ytp.start + YTP_LEN) { a.pause(); a.currentTime = ytp.start; }
+            ytpButtons();
+        }, 250);
+        a.play().catch(() => {});
+        ytpButtons();
+    }
+    // No Murmur server for the sample: YouTube's own player, cut to the same 30 seconds.
+    function previewFrame(v, y) {
+        const box = $('#ytpFrame'); if (!box) return;
+        const dur = y.duration || 0, st = dur > 75 ? Math.round(Math.min(dur * 0.35, dur - YTP_LEN - 5)) : 0;
+        box.hidden = false;
+        box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v)}?autoplay=1&playsinline=1&rel=0&start=${st}&end=${st + YTP_LEN}" title="Preview" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
     }
 
     /**
@@ -6192,10 +6452,10 @@ function syncLinkResult(tid) {
         if (!yt.enabled || !canAddFromYouTube() || type === 'discover') return '';
         const { miss, pick } = ytBatch(col.allTracks);
         if (!miss.length) return '';
-        if (!pick.length) return `<span class="small yt-limit">${icon('download')} YouTube’s daily limit is used up. More songs tomorrow.</span>`;
+        if (!pick.length) return `<span class="small yt-limit" title="YouTube’s daily limit is used up. More songs tomorrow.">${icon('download')} Limit hit</span>`;
         const all = pick.length === miss.length;
         const why = all ? '' : miss.length - pick.length > 0 && pick.length >= YT_JOB_MAX ? ' (100 at a time)' : ' (today’s YouTube limit)';
-        return `<button class="text-btn" data-act="col-yt" data-type="${type}" data-id="${esc(id)}" title="Your Murmur server gets these songs from YouTube and keeps them in the library for everyone${why}. To play them offline, use Download to device.">${icon('download')}<span>${all ? `Add ${plural(pick.length, 'missing song')} to Murmur library` : `Add ${pick.length} of ${miss.length} to Murmur library now${why}`}</span></button>`;
+        return `<button class="text-btn yt-add" data-act="col-yt" data-type="${type}" data-id="${esc(id)}" title="Add ${all ? plural(pick.length, 'missing song') : `${pick.length} of ${miss.length} missing songs`} to the Murmur library${why}. Your Murmur server gets them from YouTube and keeps them for everyone. To play them offline, use Download to device.">${icon('download')}<span>Add ${all ? pick.length : `${pick.length}/${miss.length}`} missing</span></button>`;
     }
     async function refreshYtAllowance() {
         try {
@@ -6507,9 +6767,10 @@ function viewMySources() {
 }
 function sourcesSettingsHTML() {
   if (!srcs.list.length) return '';
-  return `<section class="person yt-settings" aria-labelledby="srcSetTitle">
-    <header class="person-head"><span class="avatar">${icon('download')}</span>
-      <div class="person-meta"><h3 id="srcSetTitle">Download sources</h3><span class="small">Switch sources on for everyone, and add shared keys. Each person can also add their own key under My download sources (account menu).</span></div></header>
+  return `<details class="person yt-settings adm-fold" data-fk="media:src"${admOpen.has('media:src') ? ' open' : ''}>
+    <summary class="person-head"><span class="avatar">${icon('download')}</span>
+      <div class="person-meta"><h3 id="srcSetTitle">Download sources</h3><span class="small ell">${srcs.list.filter(x => x.enabled).length} of ${srcs.list.length} on</span></div><span class="act-chev">${icon('chev')}</span></summary>
+    <p class="small">Switch sources on for everyone, and add shared keys. Each person can also add their own key under My download sources (account menu).</p>
     ${srcs.list.map(x => `<div class="src-set">
       <label class="switch"><input type="checkbox" data-act="src-toggle" data-id="${esc(x.id)}" ${x.enabled ? 'checked' : ''}><span><b>${esc(x.name)}</b>${x.paid ? ' (paid)' : ''}: ${esc(x.about || '')} <a href="${esc(x.site)}" target="_blank" rel="noopener">Site</a></span></label>
       ${x.needsKey && x.paid && x.hasKey ? `<label class="switch"><input type="checkbox" data-act="src-share" data-id="${esc(x.id)}" ${x.shareKey ? 'checked' : ''}><span>Let everyone use my key (purchases go on my account)</span></label>` : ''}
@@ -6518,13 +6779,14 @@ function sourcesSettingsHTML() {
           <p class="small">${esc(x.keyHelp || '')}${x.keyUrl ? ` <a href="${esc(x.keyUrl)}" target="_blank" rel="noopener">Open</a>` : ''}</p>`) : ''}
     </div>`).join('')}
     <p class="small">To add a store or licensed catalog you pay for, see <b>sources/README.md</b> in the Murmur folder.</p>
-  </section>`;
+  </details>`;
 }
 function spotifySettingsHTML() {
   const uris = [...new Set([cfg && cfg.pagesUrl, 'https://rodriguezcurielj.github.io/Murmur/', 'http://127.0.0.1:8080/', /^https:|^http:\/\/127\.0\.0\.1/.test(spRedirect()) ? spRedirect() : null].filter(Boolean))];
-  return `<section class="person yt-settings" aria-labelledby="spSetTitle">
-    <header class="person-head"><span class="avatar sp-av">${icon('list')}</span>
-      <div class="person-meta"><h3 id="spSetTitle">Spotify import</h3><span class="small">Everyone can import public playlists and albums by pasting a link (Your Library → Import from Spotify). Nothing to set up.</span></div></header>
+  return `<details class="person yt-settings adm-fold" data-fk="media:sp"${admOpen.has('media:sp') ? ' open' : ''}>
+    <summary class="person-head"><span class="avatar sp-av">${icon('list')}</span>
+      <div class="person-meta"><h3 id="spSetTitle">Spotify import</h3><span class="small ell">${sp.fullLinks ? 'On · whole playlists' : sp.clientId ? 'On · first 100 songs per playlist' : 'Links work · no app key'}</span></div><span class="act-chev">${icon('chev')}</span></summary>
+    <p class="small">Everyone can import public playlists and albums by pasting a link (Your Library → Import from Spotify).</p>
     <p class="small">${sp.fullLinks ? '<b>Whole playlists:</b> on. Links bring in every song.' : 'Without a Spotify app key, links bring in the first 100 songs of a playlist. Add your app’s Client ID and Client Secret below to get every song.'}</p>
     ${sp.clientId ? `<div class="person-actions"><button class="text-btn" data-act="sp-import">${icon('plus')}<span>Import a playlist</span></button><button class="text-btn danger" data-act="sp-key-remove">Remove Spotify app key</button></div>
       ${sp.fullLinks ? '' : `<form id="spKeyForm" class="person-add yt-key-form"><input type="hidden" name="clientId" value="${esc(sp.clientId)}">
@@ -6544,7 +6806,7 @@ function spotifySettingsHTML() {
       <div class="field"><label for="spSecret">Client Secret</label><input id="spSecret" name="clientSecret" autocomplete="off" spellcheck="false" placeholder="Settings → View client secret"></div>
       <button class="m-ok" type="submit">Save</button>
     </form>`}
-  </section>`;
+  </details>`;
 }
 
 /* ================= Discover: new songs from similar artists ================= */
@@ -7074,7 +7336,7 @@ function openAccount() {
       <div class="acct-who"><b class="ell">${esc(me.name)}</b><span class="small">${esc(roleLabel(me))} · ${until}</span>
         ${server.on ? `<span class="acct-photo-links small"><label class="link-btn" tabindex="0">${me.avatar ? 'Change photo' : 'Add a photo'}<input type="file" accept="image/*" hidden data-avatar></label>${me.avatar ? ` · <button type="button" class="link-btn" data-act="avatar-remove">Remove</button>` : ''}</span>` : ''}</div>
     </div>`;
-  openModal({ title: 'Account', confirm: false, cancel: 'Done', html: head
+  openModal({ title: 'Account', confirm: false, cancel: 'Done', page: true, html: head
     + group('Listening', [
         row('pb-open', 'eq', 'Playback & equalizer', eqState().on && eqState().preset !== 'Flat' ? esc(eqState().preset) : ''),
         row('acct-theme', 'palette', 'Theme', esc(themeName)),
@@ -7241,10 +7503,12 @@ function viewPeople() {
         <span class="small">${s.remember ? `Remembered until ${when(s.expiresAt)}` : 'This visit only'} · last used ${ago(s.lastSeen)}</span></div>
         <button class="text-btn dev-out" data-act="dev-out" data-id="${s.id}" data-cur="${s.current ? 1 : 0}">Sign out</button></li>`).join('');
     const lastSeen = u.sessions.reduce((a, s) => Math.max(a, s.lastSeen || 0), 0);
-    return `<article class="person person-sm">
-      <header class="person-head">${avatarHTML(u)}
-        <div class="person-meta"><h3>${esc(u.name)}</h3><span class="small">${esc(roleLabel(u))} · added ${when(u.createdAt)}${lastSeen ? ` · last seen ${ago(lastSeen)}` : ''}</span>
-          <span class="small ell">${u.email ? esc(u.email) : 'No email: can’t reset a forgotten PIN'}</span></div></header>
+    // One line per person until opened.
+    return `<details class="person person-sm adm-fold" data-fk="acct:${esc(u.id)}"${admOpen.has('acct:' + u.id) ? ' open' : ''}>
+      <summary class="person-head">${avatarHTML(u)}
+        <div class="person-meta"><h3>${esc(u.name)}</h3><span class="small ell">${esc(roleLabel(u))}${lastSeen ? ` · seen ${ago(lastSeen)}` : ''}${u.sessions.length ? ` · ${plural(u.sessions.length, 'device')}` : ''}${u.email ? '' : ' · no email'}</span></div>
+        <span class="act-chev">${icon('chev')}</span></summary>
+      <p class="small ell">Added ${when(u.createdAt)} · ${u.email ? esc(u.email) : 'No email: can’t reset a forgotten PIN'}</p>
       <div class="person-actions">
         <button class="text-btn" data-act="p-lib" data-id="${u.id}">${icon('library')}<span>${u.id === me.id ? 'My library (admin view)' : 'View library'}</span></button>
         <button class="text-btn" data-act="p-pin" data-id="${u.id}">${icon('edit')}<span>${u.id === me.id ? 'Change my PIN' : 'Set new PIN'}</span></button>
@@ -7256,10 +7520,10 @@ function viewPeople() {
       </div>
       ${u.sessions.length ? `<details class="dev-drop" data-uid="${u.id}"${openDevices === u.id ? ' open' : ''}>
         <summary>${icon('chev')}<span>Signed in on ${plural(u.sessions.length, 'device')}</span></summary>
-        <ul class="devices" aria-label="Signed-in devices">${devices}</ul></details>` : '<p class="small dev-none">Not signed in anywhere.</p>'}</article>`;
+        <ul class="devices" aria-label="Signed-in devices">${devices}</ul></details>` : '<p class="small dev-none">Not signed in anywhere.</p>'}</details>`;
   };
   const tab = adminTab();
-  const body = tab === 'media' ? `${ytSettingsHTML()}${spotifySettingsHTML()}${sourcesSettingsHTML()}`
+  const body = tab === 'media' ? `<div class="adm-grid">${ytSettingsHTML()}${spotifySettingsHTML()}${sourcesSettingsHTML()}</div>`
     : tab === 'new' ? `<h2 class="sub-head">New account</h2>
       <p class="small" style="max-width:60ch">They sign in with this name and 4-digit PIN. After you create it, you can share a link that opens Murmur with their name filled in and shows them how to install it on their phone.</p>
       <form id="addPerson" class="person-add">
@@ -7272,10 +7536,10 @@ function viewPeople() {
     : tab === 'email' ? mailSettingsHTML()
     : tab === 'activity' ? `<h2 class="sub-head">Activity</h2>${activityHTML()}`
     : tab === 'servers' ? `<h2 class="sub-head">Servers</h2>${serversHTML()}`
-    : `<h2 class="sub-head">Accounts</h2>
-      <p class="small" style="max-width:60ch">When someone chooses “Remember this computer” they stay signed in there for 90 days, then need their PIN again. Deleting someone signs them out everywhere.</p>
-      <div class="people">${people.map(person).join('')}</div>`;
-  return `<h1 class="greet">Admin</h1>${adminTabsHTML()}<div class="adm-body">${body}</div>`;
+    : `<h2 class="sub-head">Accounts <span class="small">${people.length}</span></h2>
+      <div class="people adm-grid">${people.map(person).join('')}</div>
+      <p class="small" style="max-width:60ch">Tap someone to see their options. “Remember this computer” keeps them signed in there for 90 days. Deleting someone signs them out everywhere.</p>`;
+  return `<div class="page-top"><button class="icon-btn" data-act="page-back" aria-label="Back">${icon('back')}</button><b>Admin</b></div><h1 class="greet adm-title">Admin</h1>${adminTabsHTML()}<div class="adm-body">${body}</div>`;
 }
 /* Admin → Email: the mail account PIN reset links are sent from. Any provider; the server fills in its mail server. */
 const MAIL_HELP = [
@@ -7366,9 +7630,11 @@ function viewMember(uid) {
 }
 function ytSettingsHTML() {
   const status = yt.enabled ? 'Connected. YouTube search and suggestions are on for everyone who signs in.' : 'Not connected yet.';
-  return `<section class="person yt-settings" aria-labelledby="ytSetTitle">
-    <header class="person-head"><span class="avatar yt-av">${icon('play')}</span>
-      <div class="person-meta"><h3 id="ytSetTitle">YouTube</h3><span class="small">${status}</span></div></header>
+  const left = (yt.keys || []).reduce((n, k) => n + (k.left || 0), 0);
+  return `<details class="person yt-settings adm-fold" data-fk="media:yt"${admOpen.has('media:yt') ? ' open' : ''}>
+    <summary class="person-head"><span class="avatar yt-av">${icon('play')}</span>
+      <div class="person-meta"><h3 id="ytSetTitle">YouTube</h3><span class="small ell">${yt.enabled ? `On · ${plural((yt.keys || []).length, 'key')} · ${left} searches left today` : 'Not connected yet'}</span></div><span class="act-chev">${icon('chev')}</span></summary>
+    <p class="small">${status}</p>
     ${yt.enabled ? `<div class="acct-list yt-keys">${(yt.keys || []).map((k, i) => `<div class="acct-row static"><span class="ar-ic">${icon('play')}</span><span class="ar-label">Key ${i + 1} <span class="small">…${esc(k.tail)}</span></span><span class="ar-val">${k.left ? `${k.left} searches left today` : 'Used up today'}</span><button type="button" class="link-btn danger" data-act="yt-key-del" data-k="${esc(k.tail)}">Remove</button></div>`).join('')}</div>
     <p class="small">Murmur uses the keys in order: when one key’s searches for the day are used up, it moves to the next. After all of them, it keeps searching YouTube without a key (a little slower).</p>
     <form id="ytKeyForm" class="person-add yt-key-form">
@@ -7386,7 +7652,7 @@ function ytSettingsHTML() {
       <div class="field"><label for="ytKey">YouTube API key</label><input id="ytKey" name="key" required autocomplete="off" spellcheck="false" placeholder="AIza…"></div>
       <button class="m-ok" type="submit">Connect YouTube</button>
     </form>`}
-  </section>`;
+  </details>`;
 }
 async function addPerson(form) {
   const fd = new FormData(form);
@@ -7502,8 +7768,7 @@ function loadServers() {
 const upFor = ms => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : m < 2880 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} days`; };
 function serversHTML() {
   if (!srvInfo) loadServers();
-  const intro = `<p class="small" style="max-width:62ch">Every Murmur server, whether it’s up, how full it is, and its backups. Each server backs up the song list, accounts, libraries and settings once a day and keeps 14 days (the music itself is already copied between servers).</p>
-    <p><button class="text-btn" data-act="srv-refresh">${icon('repeat')}<span>Check again</span></button></p>`;
+  const intro = `<p class="small srv-intro">Tap a server for its details and backups. Each one backs up once a day and keeps 14 days. <button class="link-btn" data-act="srv-refresh">Check again</button></p>`;
   if (srvInfo.loading) return intro + '<p class="small">Checking every server… (up to 10 seconds)</p>';
   if (srvInfo.error) return intro + `<p class="gate-err">${esc(srvInfo.error)}</p>`;
   const newest = srvInfo.version;
@@ -7527,11 +7792,13 @@ function serversHTML() {
           ${i.lastBackup ? `<button class="text-btn" data-act="srv-dl" data-url="${esc(x.url)}" data-self="${x.self ? 1 : 0}" data-date="${esc(i.lastBackup.date)}" data-name="${esc(x.name)}">${icon('download')}<span>Download backup</span></button>` : ''}</div>`;
     } else if (x.state === 'old') body = '<p class="small">It answers, but it runs older code (or isn’t linked to the other servers by sync), so it can’t show its details. Update it: git pull, then restart it.</p>';
     else body = '<p class="small">Didn’t answer. It may be switched off, asleep, or offline.</p>';
-    return `<article class="person srv-card"><header class="person-head"><span class="srv-ic">${icon('server')}</span>
-        <div class="person-meta"><h3>${esc(x.name)}${x.self ? ' <span class="badge">You’re on this one</span>' : ''}</h3><span class="small">${esc((x.url || '').replace(/^https?:\/\//, ''))}</span></div>
-        <span class="srv-badge ${badge[1]}">${badge[0]}</span></header>${body}</article>`;
+    const line = x.state === 'ok' ? `${i.songs.toLocaleString()} songs · ${i.disk ? fmtSize(i.disk.free) + ' free' : ''} · up ${upFor(i.now - i.startedAt)}` : esc((x.url || '').replace(/^https?:\/\//, ''));
+    return `<details class="person srv-card adm-fold" data-fk="srv:${esc(x.url || x.name)}"${admOpen.has('srv:' + (x.url || x.name)) ? ' open' : ''}><summary class="person-head"><span class="srv-ic">${icon('server')}</span>
+        <div class="person-meta"><h3>${esc(x.name)}${x.self ? ' <span class="badge">This one</span>' : ''}</h3><span class="small ell">${line}</span></div>
+        <span class="srv-badge ${badge[1]}">${badge[0]}</span><span class="act-chev">${icon('chev')}</span></summary>
+        ${x.state === 'ok' ? `<p class="small ell">${esc((x.url || '').replace(/^https?:\/\//, ''))}</p>` : ''}${body}</details>`;
   };
-  return intro + `<div class="people">${srvInfo.servers.map(card).join('')}</div>`;
+  return intro + `<div class="people adm-grid">${srvInfo.servers.map(card).join('')}</div>`;
 }
 async function backupNow(url, self, btn) {
   if (btn) btn.disabled = true;
@@ -7573,6 +7840,9 @@ async function loadActivity() {
   if (state.view.name === 'people' && adminTab() === 'activity') render();
 }
 const hm = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} h ${m} min` : `${m} min`; };
+// Admin cards fold to one line; the open ones stay open when the page redraws.
+const admOpen = new Set();
+document.addEventListener('toggle', e => { const d = e.target; if (d.classList && d.classList.contains('adm-fold') && d.dataset.fk) { if (d.open) admOpen.add(d.dataset.fk); else admOpen.delete(d.dataset.fk); } }, true);
 function activityHTML() {
   if (!activityData) { loadActivity(); return `<p class="small">Loading…</p>`; }
   if (activityData.error) return `<p class="small">${esc(activityData.error)}</p>`;
@@ -7588,12 +7858,14 @@ function activityHTML() {
     return e.slice(0, n).map(([k, v]) => `<span class="act-chip">${esc(k)} <b>${Math.round(v / t * 100)}%</b></span>`).join('') || '<span class="small">Nothing yet</span>'; };
   const max = Math.max(60, ...rows.flatMap(r => days.map(d => (r.p.days[d] || {}).play || 0)));
   return `${activityData.from ? `<p class="small act-from">This server is on an older version, so this is from <b>${esc(activityData.from)}</b>.</p>` : ''}<p class="small" style="max-width:62ch">For each person: the days they opened Murmur, how long it was open, and how long music actually played. Counted from now on (once a minute while Murmur is open), on every server.</p>
-  <div class="act-list">${rows.map(({ u, p, play30 }) => {
+  <div class="act-list adm-grid">${rows.map(({ u, p, play30 }) => {
     const on30 = Object.keys(p.days).filter(d => d >= since(30) && (p.days[d].on || p.days[d].play)).length;
     const idle = !p.last ? 'Hasn’t used Murmur since this started' : Date.now() - p.last > 14 * 864e5 ? `Not used in ${Math.floor((Date.now() - p.last) / 864e5)} days` : '';
-    return `<article class="person act-card${idle ? ' act-idle' : ''}">
-      <header class="person-head">${avatarHTML(u)}<div class="person-meta"><h3>${esc(u.name)}</h3>
-        <span class="small">${p.last ? `Last online ${ago(p.last)}` : 'Never seen yet'}${p.lastPlay ? ` · last played music ${ago(p.lastPlay)}` : ''}</span></div></header>
+    // Folded to one line per person until opened, so the list stays short.
+    return `<details class="person act-card adm-fold${idle ? ' act-idle' : ''}" data-fk="act:${esc(u.id)}"${admOpen.has('act:' + u.id) ? ' open' : ''}>
+      <summary class="person-head">${avatarHTML(u)}<div class="person-meta"><h3>${esc(u.name)}</h3>
+        <span class="small">${hm(sum(p, 7, 'play'))} music this week · ${p.last ? `online ${ago(p.last)}` : 'never seen yet'}</span></div><span class="act-chev">${icon('chev')}</span></summary>
+      <p class="small">${p.last ? `Last online ${ago(p.last)}` : 'Never seen yet'}${p.lastPlay ? ` · last played music ${ago(p.lastPlay)}` : ''}</p>
       ${idle ? `<p class="act-warn small">${idle}</p>` : ''}
       <dl class="act-stats">
         <div><dt>Days online</dt><dd>${on30}<span class="small"> of the last 30</span></dd></div>
@@ -7605,7 +7877,7 @@ function activityHTML() {
       <div class="act-bars-l small"><span>2 weeks ago</span><span>today</span></div>
       <div class="act-top"><span class="small">Genres</span>${top(p.genres, 5)}</div>
       <div class="act-top"><span class="small">Artists</span>${top(p.artists, 5)}</div>
-    </article>`; }).join('')}</div>
+    </details>`; }).join('')}</div>
   <button type="button" class="text-btn" data-act="act-refresh">${icon('repeat')}<span>Refresh</span></button>`;
 }
 

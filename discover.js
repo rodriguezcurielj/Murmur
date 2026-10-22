@@ -120,6 +120,46 @@ module.exports = function createDiscover(dataDir) {
     return items.filter(t => { const k = keyOf(t); if (!t.title || seen.has(k) || exclude.has(k)) return false; seen.add(k); return true; }).slice(0, want);
   }
 
+  /* Radio's main pick: the best-known songs of the artists closest to the station's artist, plus the hits of its
+     genre. Artists rank by how close the catalog says they are, how much the person listens to them anywhere
+     (taste), and the station's thumbs up / down, with a little chance so batches differ. */
+  async function bestOfSimilar(a, more, L) {
+    const okArtist = n => !L.banned.has(norm(n)) && norm(n) !== norm(a.name);
+    const related = ((await dz(`artist/${a.id}/related?limit=25`).catch(() => ({ data: [] }))).data || []).filter(r => okArtist(r.name));
+    const score = (name, i) => 30 - i + (L.taste.has(norm(name)) ? 12 : 0) + 6 * (L.up.get(norm(name)) || 0) - 8 * (L.down.get(norm(name)) || 0) + Math.random() * 10;
+    const sources = related.map((r, i) => ({ id: r.id, name: r.name, s: score(r.name, i) }));
+    // Artists you thumbed up here (or added for variety) count as sources too, high up.
+    const liked = [...new Set([...more, ...[...L.up.keys()]])].slice(0, 4);
+    for (const name of liked) {
+      if (sources.some(x => norm(x.name) === norm(name))) continue;
+      const f = await dz('search/artist?limit=1&q=' + encodeURIComponent(name)).catch(() => ({}));
+      const r = f.data && f.data[0];
+      if (r && okArtist(r.name)) sources.push({ id: r.id, name: r.name, s: 32 + 6 * (L.up.get(norm(name)) || 0) + Math.random() * 10 });
+    }
+    const pick = sources.filter(x => x.s > 0).sort((x, y) => y.s - x.s).slice(0, 8);
+    const tops = await Promise.all(pick.map(r => dz(`artist/${r.id}/top?limit=20`).catch(() => ({ data: [] }))));
+    // Each artist's most popular songs you haven't heard on this station: 3 of their top 5.
+    const groups = tops.map(t => shuffle((t.data || []).filter(x => !L.exclude.has(keyOf(toTrack(x, ''))))
+      .sort((x, y) => (y.rank || 0) - (x.rank || 0)).slice(0, 5)).slice(0, 3).map(x => toTrack(x, a.name)));
+    // The genre's biggest songs right now, artists near the station first.
+    let genre = [];
+    try {
+      const hit = ((await dz(`artist/${a.id}/top?limit=5`)).data || []).find(t => t.album && t.album.id);
+      const album = hit ? await dz('album/' + hit.album.id).catch(() => null) : null;
+      if (album && album.genre_id > 0) {
+        const near = new Set([...related.map(r => norm(r.name)), ...L.taste]);
+        const chart = ((await dz(`chart/${album.genre_id}/tracks?limit=100`).catch(() => ({ data: [] }))).data || [])
+          .filter(x => x.artist && okArtist(x.artist.name) && !L.exclude.has(keyOf(toTrack(x, ''))));
+        genre = shuffle([...chart.filter(x => near.has(norm(x.artist.name))).slice(0, 6), ...chart.slice(0, 6)]).slice(0, 4).map(x => toTrack(x, a.name));
+      }
+    } catch { /* the station works without them */ }
+    const items = [];
+    for (let i = 0; groups.some(g => i < g.length); i++) groups.forEach(g => { if (g[i]) items.push(g[i]); });
+    genre.forEach((t, i) => items.splice(Math.min(items.length, 3 + i * 5), 0, t));
+    const seen = new Set();
+    return items.filter(t => { const k = keyOf(t); if (!t.title || seen.has(k)) return false; seen.add(k); return true; });
+  }
+
   function routes(app) {
     // Song search for the search bar (free; YouTube is only used when a song is first played).
     app.get('/api/catalog/search', async (req, res) => {
@@ -206,12 +246,24 @@ module.exports = function createDiscover(dataDir) {
       const exclude = new Set((Array.isArray(b.exclude) ? b.exclude : []).slice(0, 5000).map(k => norm(k)));
       const more = (Array.isArray(b.also) ? b.also : []).map(s => String(s).trim()).filter(Boolean).slice(0, 3);
       if (!artist) return res.status(400).json({ error: 'Pick a song or an artist for the radio.' });
+      // What the station learned: { artist: count } of thumbs up / down, the person's most played artists, banned artists.
+      const tally = o => { const m = new Map(); if (o && typeof o === 'object' && !Array.isArray(o)) Object.entries(o).slice(0, 60).forEach(([k, n]) => { const v = Math.min(20, Number(n) || 0); if (v > 0) m.set(norm(k), v); }); return m; };
+      const up = tally(b.up), down = tally(b.down);
+      const taste = new Set((Array.isArray(b.taste) ? b.taste : []).slice(0, 20).map(norm));
+      const banned = new Set((Array.isArray(b.banned) ? b.banned : []).slice(0, 100).map(norm));
       try {
         const found = await dz('search/artist?limit=1&q=' + encodeURIComponent(artist));
         const a = found.data && found.data[0];
         if (!a) return res.status(404).json({ error: `Couldn’t find ${artist} in the music catalog.` });
-        const own = shuffle(((await dz(`artist/${a.id}/top?limit=50`)).data || []).map(x => toTrack(x, a.name)).filter(x => !exclude.has(keyOf(x)))).slice(0, 6);
-        let similar = await freshSuggestions([a.name, ...more], exclude, 24, []);
+        const fresh = x => !exclude.has(keyOf(x));
+        // The artist's biggest songs first (the catalog lists them most popular first); a little mixing among the top ones.
+        const ownAll = ((await dz(`artist/${a.id}/top?limit=50`)).data || []).map(x => toTrack(x, a.name)).filter(fresh);
+        const own = shuffle(ownAll.slice(0, 8)).slice(0, 6);
+        let similar = await bestOfSimilar(a, more, { up, down, taste, banned, exclude });
+        if (similar.length < 15) {
+          const skip = new Set([...exclude, ...similar.map(keyOf)]);
+          similar.push(...await freshSuggestions([a.name, ...more], skip, 24 - similar.length, []));
+        }
         // A long station runs out of the close artists' hits: reach out to artists similar to those,
         // then to the charts, so it keeps finding new songs instead of running dry (and looping).
         if (similar.length < 15) {

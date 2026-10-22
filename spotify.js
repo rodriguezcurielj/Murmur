@@ -244,6 +244,8 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
         if (y && /^[\w-]{6,20}$/.test(y.id || '')) {
           m.yt = { id: y.id, title: str(y.title), channel: str(y.channel), thumb: /^https:\/\//.test(y.thumb || '') ? str(y.thumb, 500) : '', duration: Number(y.duration) || 0 };
           delete m.none;
+          // A new version was picked: the Murmur copy of the old one stops standing in for it.
+          if (b.version && m.file && !(opts.fileYtId && opts.fileYtId(m.file) === y.id)) delete m.file;
         } else delete m.yt;
       }
       if (b.none) { m.none = true; delete m.yt; }

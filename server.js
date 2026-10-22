@@ -98,7 +98,7 @@ app.use(sync.middleware);
 app.use('/api', express.json({ limit: '10mb' }));
 app.use('/api', auth.requireUser);
 
-const spotify = createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id) });
+const spotify = createSpotify(DATA, auth, { hasFile: id => library.some(t => t.id === id), fileYtId: id => (library.find(t => t.id === id) || {}).ytId });
 const userData = createUserData(DATA, auth, { importsFor: spotify.importsFor });
 
 app.delete('/api/users/:id', auth.requireOwner, (req, res, next) => {
