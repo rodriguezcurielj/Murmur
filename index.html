@@ -1881,6 +1881,11 @@ function renderTopStatus() {
     busy = true;
     html = view(w.ic, w.title, w.sub, w.pct == null ? '' : `${w.pct}%`, w.pct, true);
     label = w.sub;
+  } else if ((() => { try { return updateWaiting; } catch (e) { return false; } })() && server.on) {
+    // A newer Murmur is out, but music is playing so it didn't reload by itself: one tap loads it.
+    busy = true;
+    html = view('repeat', 'Murmur update ready', 'Tap to load it · your song keeps its place');
+    label = 'A new version of Murmur is ready. Tap to load it.';
   } else if (server.offlineMode || (me && !server.on)) {
     warn = true;
     html = view('cloudOff', 'Offline', `<span class="ts-dot"></span>${offline.size ? `${plural(offline.size, 'song')} saved on this device` : 'Nothing saved on this device yet'}`);
@@ -2541,7 +2546,7 @@ async function checkForUpdate() {
     let tried = ''; try { tried = sessionStorage.getItem('murmur:reloadedFor') || ''; } catch (e) {}
     if (fresh !== ownCode && String(fresh) !== tried) {
       try { sessionStorage.setItem('murmur:reloadedFor', String(fresh)); } catch (e) {}
-      updateWaiting = true; applyUpdateIfIdle();
+      updateWaiting = true; applyUpdateIfIdle(); renderTopStatus();
     }
   } catch (e) {}
 }
@@ -5996,6 +6001,7 @@ function act(el, e) {
     case 'job-cancel': ytJobs.list.filter(j => jobRunning(j) && j.id !== d.id && j.ctx === (ytJobs.list.find(x => x.id === d.id) || {}).ctx).forEach(j => api('DELETE', 'api/convert/jobs/' + j.id).catch(() => {}));
       api('DELETE', 'api/convert/jobs/' + d.id).then(() => { toast('Stopping after the song that’s downloading now'); pollYtJobs(); }).catch(e => toast(e.message)); break;
     case 'ts-go': {   // the top bar's card: go to what it shows (that list, Downloaded, Uploads, or the servers)
+      if (updateWaiting && !currentWork()) { try { saveResume(); } catch (e) {} location.reload(); break; }
       // Already there (tapped a second time): back to where you were.
       const w0 = currentWork(), g0 = w0 && w0.kind !== topHidden ? w0.go : null, v0 = state.view;
       if ((v0.name === 'servers' && !g0) || (g0 && v0.name === 'collection' && v0.type === g0.type && v0.id === g0.id)) { if (hist.i > 0) history.back(); else navigate({ name: 'home' }); break; }
