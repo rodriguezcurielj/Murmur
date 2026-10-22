@@ -623,6 +623,18 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
   body:not([data-view="search"]) .topbar .top-status:not([hidden])~.top-right{margin-left:0}}
 
 .job-card{position:relative}
+.job-miss{position:relative;margin:0 0 14px;border-radius:12px;background:color-mix(in srgb,#f5a623 9%,var(--panel));border:1px solid color-mix(in srgb,#f5a623 30%,transparent)}
+.job-miss summary{display:flex;align-items:center;gap:10px;padding:10px 44px 10px 12px;cursor:pointer;list-style:none;font-size:13.5px}
+.job-miss summary::-webkit-details-marker{display:none}
+.job-miss .jm-ic{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:color-mix(in srgb,#f5a623 22%,transparent);color:#f5a623;font:800 14px var(--font-display)}
+.job-miss summary>span:nth-child(2){flex:1;min-width:0}
+.job-miss .act-chev{display:inline-flex;color:var(--muted);transition:transform .2s}.job-miss .act-chev svg{width:16px;height:16px}
+.job-miss details[open] .act-chev{transform:rotate(90deg)}
+.job-miss ul{list-style:none;margin:0;padding:0 12px 12px 46px;display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto}
+.job-miss li{display:flex;flex-direction:column;gap:1px;font-size:13px}
+.job-miss li .small{color:var(--muted)}
+.job-miss .job-x{position:absolute;top:6px;right:6px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.job-miss .job-x:hover{background:var(--hover);color:var(--fg)}.job-miss .job-x svg{width:14px;height:14px}
 .job-card .job-x{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .job-card .job-x:hover{background:var(--hover);color:var(--fg)}
 .job-card .job-x svg{width:14px;height:14px}
@@ -5981,6 +5993,7 @@ function act(el, e) {
       break;
     }
     case 'ts-cancel': stopWork((currentWork() || {}).kind); break;
+    case 'job-miss-x': d.ids.split(',').forEach(id => api('DELETE', 'api/convert/jobs/' + id).catch(() => {})); ytJobs.list = ytJobs.list.filter(j => !d.ids.split(',').includes(j.id)); updateJobUI(); break;
     case 'job-hide': ytJobs.hiddenCards.add(d.key); updateJobUI(); break;
     case 'job-dismiss': api('DELETE', 'api/convert/jobs/' + d.id).catch(() => {}); ytJobs.list = ytJobs.list.filter(j => j.id !== d.id); updateJobUI(); break;
     case 'sel-genre': openGenrePicker(selIds()); break;
@@ -7155,7 +7168,7 @@ function syncLinkResult(tid) {
     function jobPanelsHTML(type, id) {
         const key = type + ':' + id, f = ytJobs.finding;
         const finding = f && f.ctx === key ? `<div class="job-card"><div class="job-top"><b>Finding the songs on YouTube</b><span class="small">${f.done} of ${f.total}</span></div><div class="ytdl-bar"><span style="width:${Math.round(f.done / f.total * 100)}%"></span></div></div>` : '';
-        if (ytJobs.hiddenCards.has(key)) return `<div id="jobPanels" data-key="${esc(key)}"></div>`;
+        if (ytJobs.hiddenCards.has(key) && (f || ytJobs.list.some(j => j.ctx === key && jobRunning(j)))) return `<div id="jobPanels" data-key="${esc(key)}"></div>`;
         const x = `<button type="button" class="job-x" data-act="job-hide" data-key="${esc(key)}" aria-label="Close (downloading keeps going)" title="Close (downloading keeps going; the thin line at the top shows how far along)">${icon('close')}</button>`;
         // Everything for this list in one card: running jobs together (the newest finished one only when nothing runs).
         const mine = ytJobs.list.filter(j => j.ctx === key), run = mine.filter(jobRunning);
@@ -7164,8 +7177,11 @@ function syncLinkResult(tid) {
             const merged = { ...run[0], items: run.flatMap(j => j.items), startedAt: run.find(j => j.startedAt) ? Math.min(...run.filter(j => j.startedAt).map(j => j.startedAt)) : null, finishedAt: null };
             card = `<div class="job-card" data-job="${run[0].id}">${x}${jobCardInner(merged)}</div>`;
         } else if (mine.length) {
-            const last = mine.sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0))[0];
-            card = `<div class="job-card" data-job="${last.id}">${x}${jobCardInner(last)}</div>`;
+            // Done: no "done" box. Only if some songs couldn't be gotten, a small box that opens to show which and why.
+            const probs = mine.flatMap(j => [...jobStats(j).failed.map(it => [it.title, it.msg || 'couldn’t be downloaded']), ...(ytJobs.missed[j.id] || []).map(t => [t, 'not found on YouTube'])]);
+            if (probs.length) card = `<div class="job-miss"><details><summary><span class="jm-ic" aria-hidden="true">!</span><span><b>${plural(probs.length, 'song')} couldn’t be gotten from YouTube</b></span><span class="act-chev">${icon('chev')}</span></summary>
+                <ul>${probs.map(([t, why]) => `<li><b>${esc(t)}</b><span class="small">${esc(why)}</span></li>`).join('')}</ul></details>
+                <button type="button" class="job-x" data-act="job-miss-x" data-ids="${mine.map(j => j.id).join(',')}" aria-label="Dismiss" title="Dismiss">${icon('close')}</button></div>`;
         }
         return `<div id="jobPanels" data-key="${esc(key)}">${finding ? finding.replace('<div class="job-card">', '<div class="job-card">' + x) : card}</div>`;
     }
