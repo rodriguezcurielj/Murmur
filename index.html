@@ -522,7 +522,18 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
 @media (max-width:420px){.lib-sp .l-long{display:none}.lib-sp .l-short{display:inline}}
 @media (max-width:360px){.adm-tab svg{display:none}.lib-top .head-actions .text-btn svg{display:none}.lib-top .head-actions .text-btn{padding:0 10px}}
 /* Phones: your profile button on the left, the Murmur logo on the right (like Spotify). */
-@media (max-width:760px){.topbar .top-right{order:1;margin-left:0!important}.topbar .top-search{order:2}.topbar .m-brand{order:3;margin-left:auto}}
+@media (max-width:760px){.topbar .top-right{order:1;margin-left:0!important}.topbar .top-search{order:2}.topbar .m-brand{order:3;margin-left:auto}
+  /* Phones: a small status pill in the middle of the top bar (which server, downloads, offline) */
+  .topbar .top-status:not([hidden]){order:2;margin:0 auto;display:inline-flex}
+  body[data-view="search"] .topbar .top-status{display:none!important}
+  .topbar .top-status:not([hidden])~.m-brand{margin-left:0}}
+.top-status{display:none;align-items:center;gap:7px;max-width:52vw;height:30px;padding:0 12px;border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);border-radius:999px;background:color-mix(in srgb,var(--fg) 5%,transparent);color:var(--muted);font:600 12.5px var(--font-body);white-space:nowrap;cursor:pointer}
+.top-status>span:last-child{overflow:hidden;text-overflow:ellipsis}
+.top-status .ts-dot{flex:none;width:7px;height:7px;border-radius:50%;background:#3ddc84;box-shadow:0 0 0 3px color-mix(in srgb,#3ddc84 22%,transparent)}
+.top-status.warn .ts-dot{background:#f5a623;box-shadow:0 0 0 3px color-mix(in srgb,#f5a623 22%,transparent)}
+.top-status .ts-bar{flex:none;width:34px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--fg) 14%,transparent);overflow:hidden}
+.top-status .ts-bar i{display:block;height:100%;background:var(--accent);border-radius:2px}
+@media (max-height:560px) and (max-width:760px){.topbar .top-status{display:none!important}}
 .lib-top .head-actions .text-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lib-top .head-actions svg{width:15px;height:15px;flex:none}
 .lib-top .head-actions .icon-btn{width:34px;height:34px;flex:none}
@@ -1691,7 +1702,28 @@ async function pumpUploads() {
   if (server.done) toast(`Added ${plural(server.done, 'file')} to Uploads${server.failed ? ` · ${server.failed} failed` : ''}`);
   if (!state.sel) render(); else renderSidebar();
 }
+/* Phones: the pill in the middle of the top bar. Uploading or downloading shows how far along; otherwise which
+   server you're on, or that you're offline. Tapping it opens your account (where servers are switched). */
+function renderTopStatus() {
+  const el = $('#topStatus'); if (!el) return;
+  const c = server.current, d = dlq.cur;
+  const bar = pct => `<span class="ts-bar"><i style="width:${Math.max(4, Math.min(100, pct || 0))}%"></i></span>`;
+  let html = '', warn = false, label = '';
+  if (c) { html = bar(c.pct) + `<span>Uploading${server.queue.length ? ` · ${server.queue.length + 1} left` : ''}</span>`; label = 'Uploading songs'; }
+  else if (d && dlq.total) { html = bar(dlq.done / dlq.total * 100) + `<span>Saving ${Math.min(dlq.done + 1, dlq.total)} of ${dlq.total}</span>`; label = 'Downloading to this device'; }
+  else if (server.offlineMode || (me && !server.on)) { warn = true; html = `<span class="ts-dot"></span><span>Offline${offline.size ? ` · ${offline.size} saved` : ''}</span>`; label = 'Offline: only downloaded songs play'; }
+  else if (server.on) {
+    const base = remote.base || location.origin, name = serverLabel(base);
+    let short = name; try { if (name === base) short = new URL(base).hostname.split('.')[0]; } catch (e) {}
+    html = `<span class="ts-dot"></span><span>${esc(short)}</span>`; label = `Connected to ${name}`;
+  }
+  el.hidden = !html; if (!html) return;
+  el.classList.toggle('warn', warn);
+  if (el.innerHTML !== html) el.innerHTML = html;
+  el.title = label; el.setAttribute('aria-label', label);
+}
 function renderUploadStatus() {
+  renderTopStatus();
   const el = $('#upStatus'); if (!el) return;
   const c = server.current, d = dlq.cur;
   if (c) {
@@ -4648,6 +4680,7 @@ function buildShell() {
       <button class="icon-btn" data-act="back" id="backBtn" aria-label="Go back">${icon('back')}</button>
       <button class="icon-btn" data-act="fwd" id="fwdBtn" aria-label="Go forward">${icon('fwd')}</button>
       <div class="m-brand" data-act="logo-home" role="link" tabindex="0" title="Home">${LOGO}<span>Murmur</span></div>
+      <button type="button" class="top-status" id="topStatus" data-act="acct" hidden></button>
       <div class="top-search" role="search">
         ${icon('search')}
         <label class="vh" for="tq">Search your music and YouTube</label>
@@ -4751,7 +4784,7 @@ function render() {
   document.body.dataset.view = v.name;   // the search bar only shows on the Search page
   if (v.name === 'collection' && ytAudioOn()) prepVisible(v.type, v.id);   // phones: Admin is a page of its own
   $('#backBtn').disabled = hist.i <= 0; $('#fwdBtn').disabled = hist.i >= hist.top;
-  renderSidebar(); highlight(); updateToggles(); syncSel();
+  renderSidebar(); highlight(); updateToggles(); syncSel(); renderTopStatus();
 }
 function renderSidebar() {
   $('#libChips').innerHTML = chipsHTML();
