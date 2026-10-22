@@ -562,8 +562,9 @@ body[data-view="people"] .up-status{display:none!important}   /* downloads keep 
 .top-status .ts-x{flex:none;display:grid;place-items:center;width:26px;height:26px;margin-right:-4px;border:0;border-radius:50%;background:color-mix(in srgb,var(--fg) 10%,transparent);color:var(--fg);cursor:pointer}
 .top-status .ts-x svg{width:13px;height:13px}
 .top-status .ts-x:hover{background:color-mix(in srgb,var(--fg) 18%,transparent)}
-/* Computers: the card shows in the top bar only while something is downloading or uploading */
-@media (min-width:761px){.top-status.busy:not([hidden]){display:flex;flex:0 1 420px;margin:0 auto}body[data-view="search"] .top-status{display:none!important}}
+/* Computers and the web version: the card sits in the middle of the top bar too */
+@media (min-width:761px){.top-status:not([hidden]){display:flex;flex:0 1 440px;margin:0 auto}body[data-view="search"] .top-status{display:none!important}
+  body:not([data-view="search"]) .topbar .top-status:not([hidden])~.top-right{margin-left:0}}
 /* The thin line under the top bar: how far along downloads/uploads are, always (also when the card is closed) */
 .topbar{position:sticky}
 .top-line{position:absolute;left:0;right:0;bottom:0;height:3px;background:color-mix(in srgb,var(--accent) 14%,transparent);overflow:hidden;pointer-events:none}
