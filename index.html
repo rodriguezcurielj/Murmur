@@ -530,7 +530,21 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .srv-copy{flex:none;width:32px;height:32px;margin-right:-6px}
 .srv-copy svg{width:16px;height:16px}
 .srv-foot{margin:22px 0 8px;max-width:64ch}
-@media (max-width:760px){.srv-hero{padding:16px;gap:12px}.srv-hero-ic{width:46px;height:46px}.srv-grid{grid-template-columns:1fr}}
+@media (max-width:760px){
+  .srv-hero{padding:14px;gap:12px;margin-bottom:20px;border-radius:16px}.srv-hero-ic{width:44px;height:44px;border-radius:13px}.srv-hero-ic svg{width:22px;height:22px}
+  .srv-hero-txt b{font-size:20px}.srv-h2{font-size:17px;margin-bottom:10px}
+  .srv-grid{grid-template-columns:1fr;gap:8px}
+  .srv-card{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 12px;border-radius:12px}
+  .srv-card-top{flex:1 1 0;min-width:0;gap:10px}
+  .srv-ic{width:34px;height:34px;border-radius:10px}.srv-ic svg{width:17px;height:17px}
+  .srv-card-name b{font-size:14px}.srv-st{font-size:12px}
+  .srv-tags{order:3;flex:1 1 100%;gap:4px;padding-left:44px}.srv-tag{padding:2px 8px;font-size:11px}
+  .srv-card-acts{margin:0}
+  .srv-hero-txt .small{font-size:12px}
+  .srv-switch{flex:none;height:30px;padding:0 14px;font-size:13px}
+  .srv-copy{width:28px;height:28px}
+  .srv-head .st-btn{padding:5px 10px;font-size:12.5px}
+}
 .dl-ring{width:32px!important;height:32px!important;fill:currentColor}
 .dl-ring circle{fill:none;stroke-width:3;transform:rotate(-90deg);transform-origin:50% 50%}
 .dl-ring-bg{stroke:color-mix(in srgb,var(--accent) 22%,transparent)}
@@ -1702,8 +1716,13 @@ const canAddFromYouTube = () => server.on && !!me;   // anyone signed in can bri
 const ownsUpload = r => !!me && !!r && (r.uploadedBy ? r.uploadedBy === me.id : me.role === 'owner');
 // Only the person who uploaded a song (or the owner) can edit or delete it. Everyone can play and download it.
 const canChange = id => canEditMusic() && !!TRACKS[id] && !!TRACKS[id].raw && (me.role === 'owner' || ownsUpload(TRACKS[id].raw));
+/* YouTube songs that are also in Murmur as a file (someone used Add missing / Get from YouTube): video id ->
+   that file's track. Such a song counts as in Murmur, plays from the file and downloads the file. */
+const ytFile = new Map();
+const ytFileTrack = t => t && t.yt && ytFile.has(t.ytId) ? TRACKS[ytFile.get(t.ytId)] : null;
 function addServerTrack(r) {
   const id = 'f-' + r.id;
+  if (r.ytId) ytFile.set(r.ytId, id);
   TRACKS[id] = { id, sid: r.id, title: r.title || 'Untitled', artist: r.artist || 'Unknown artist', albumTag: r.album || '', genreTag: r.genre || '',album: r.album || (ownsUpload(r) ? 'Uploads' : 'Uploaded by ' + (r.uploaderName || 'someone')),
     albumId: ownsUpload(r) ? 'uploads' : 'shared', trackNo: r.trackNo || 0, genre: 'upload', duration: r.duration || 0, src: fileUrl('media/' + encodeURIComponent(r.file)),
     cover: r.cover ? fileUrl('covers/' + encodeURIComponent(r.cover)) : null, size: r.size || 0, format: r.format || '', fromVideo: !!r.fromVideo,
@@ -2068,7 +2087,7 @@ async function pumpDownloads() {
         spKey = t.key; id = addYtTrack(m.yt); t = TRACKS[id];
         if (offline.has(id)) { dlq.done++; continue; }
       }
-      const src = t.src || ytAudioSrc(t);
+      const src = t.src || (ytFileTrack(t) || {}).src || ytAudioSrc(t);
       if (!src) throw new Error('No Murmur server can get it right now.');
       // This server first, then the others: a server that's restarting or that YouTube blocks doesn't stop it.
       const sources = dlSources(t, src), order = [sources[0], ...sources];   // a quick second try here before moving on
@@ -2994,7 +3013,7 @@ function viewServers() {
     return `<div class="srv-card${on ? ' here' : ''}${i.at && !i.up ? ' down' : ''}">
       <div class="srv-card-top"><span class="srv-ic">${icon('server')}</span><div class="srv-card-name"><b>${esc(x.name)}</b>${status(i)}</div>${i.up ? srvBars(i.ms) : ''}<button class="icon-btn srv-copy" data-act="srv-copy" data-url="${esc(x.url || x.b)}" aria-label="Copy address" title="Copy this server’s address">${icon('copy')}</button></div>
       <div class="srv-tags">${on ? `<span class="srv-tag here">${icon('check')}You’re here</span>` : ''}${x.downloads ? `<span class="srv-tag">${icon('download')}YouTube downloads</span>` : ''}${i.up && i.yt === false ? `<span class="srv-tag warn">YouTube blocked</span>` : ''}${i.up && !on ? `<span class="srv-tag">${i.signedIn ? 'Signed in' : 'Asks for your PIN'}</span>` : ''}</div>
-      ${on ? '' : `<div class="srv-card-acts"><button class="m-ok srv-switch" data-act="pick-server" data-name="${esc(x.name)}"${i.at && !i.up ? ' disabled' : ''}>${i.at && !i.up ? 'Off right now' : 'Switch'}</button></div>`}
+      ${on ? '' : `<div class="srv-card-acts"><button class="m-ok srv-switch" data-act="pick-server" data-name="${esc(x.name)}"${i.at && !i.up ? ' disabled' : ''}>${i.at && !i.up ? 'Off' : 'Switch'}</button></div>`}
     </div>`;
   };
   return `<div class="st-head srv-head"><h1 class="greet">Servers</h1>
@@ -3783,6 +3802,8 @@ const Engine = {
   load(t) {
     // Downloaded on this device: always from the saved file (no signal needed).
     if (t.yt && offline.has(t.id)) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t); return; }
+    const asFile = ytFileTrack(t);
+    if (asFile && asFile.src) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t, asFile.src); return; }
     const ya = t.yt && (ytAudioOn() || (ytKept.has(t.ytId) && server.on)) ? (nextBlob.id === t.ytId && nextBlob.url) || ytAudioSrc(t) : null;
     if (ya) { Synth.unload(); YTEng.unload(); this.mode = 'file'; FileEng.load(t, ya); return; }
     if (t.yt) { Synth.unload(); FileEng.unload(); this.mode = 'yt'; YTEng.load(t); return; }
@@ -5948,6 +5969,9 @@ function act(el, e) {
     case 'job-cancel': ytJobs.list.filter(j => jobRunning(j) && j.id !== d.id && j.ctx === (ytJobs.list.find(x => x.id === d.id) || {}).ctx).forEach(j => api('DELETE', 'api/convert/jobs/' + j.id).catch(() => {}));
       api('DELETE', 'api/convert/jobs/' + d.id).then(() => { toast('Stopping after the song that’s downloading now'); pollYtJobs(); }).catch(e => toast(e.message)); break;
     case 'ts-go': {   // the top bar's card: go to what it shows (that list, Downloaded, Uploads, or the servers)
+      // Already there (tapped a second time): back to where you were.
+      const w0 = currentWork(), g0 = w0 && w0.kind !== topHidden ? w0.go : null, v0 = state.view;
+      if ((v0.name === 'servers' && !g0) || (g0 && v0.name === 'collection' && v0.type === g0.type && v0.id === g0.id)) { if (hist.i > 0) history.back(); else navigate({ name: 'home' }); break; }
       const w = currentWork();
       const go = w && w.kind !== topHidden ? w.go : (server.offlineMode || (me && !server.on)) ? { type: 'downloads', id: 'downloads' } : null;
       if (go && getCollection(go.type, go.id)) { navigate({ name: 'collection', type: go.type, id: go.id }); $('#main').scrollTop = 0; }
@@ -6407,6 +6431,7 @@ function spStatus(id) {
   const t = TRACKS[id]; if (!t || !t.sp) return '';
   const m = sp.matches[t.key] || {};
   if (m.file && TRACKS['f-' + m.file]) return 'file';
+  if (m.yt && ytFile.has(m.yt.id)) return 'file';   // its YouTube match was brought into Murmur
   if (m.yt) return 'yt';
   return m.none ? 'none' : 'new';
 }
@@ -6995,7 +7020,7 @@ function syncLinkResult(tid) {
         const queued = new Set();
         ytJobs.list.filter(jobRunning).forEach(j => j.items.forEach(x => { if (x.key) queued.add(x.key); if (x.link) queued.add(x.link); }));
         return ids.map(id => TRACKS[id]).filter(t => t && !t.src && !(t.sp && spStatus(t.id) === 'file')
-            && !(t.sp && queued.has(t.key)) && !(t.yt && queued.has(ytLink(t.ytId))));
+            && !(t.sp && queued.has(t.key)) && !(t.yt && queued.has(ytLink(t.ytId))) && !ytFileTrack(t));
     }
     const ytFree = t => !!(t.yt || (t.sp && sp.matches[t.key] && sp.matches[t.key].yt));
     function ytBatch(ids) {
