@@ -355,6 +355,14 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radiu
 .np-cover{width:100%;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
 .np-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .np-meta h3{margin:0;font:800 22px/1.15 var(--font-display);letter-spacing:-.01em}
+.np-btns{display:flex;flex:none}
+.rn-sug{margin-top:10px}
+.rn-list{display:flex;flex-direction:column;gap:4px;max-height:40vh;overflow-y:auto;overflow-x:hidden;margin:6px -4px 0}
+.rn-item{display:flex;align-items:center;gap:10px;padding:6px;border-radius:8px;text-align:left;min-width:0;border:1px solid transparent}
+.rn-item:hover{background:var(--raise)}
+.rn-item.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.rn-item img{width:40px;height:40px;border-radius:4px;object-fit:cover;flex:none}
+.rn-item>span{display:flex;flex-direction:column;min-width:0}
 .np-card{background:var(--raise);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .np-card-head{display:flex;justify-content:space-between;align-items:center}
 .np-card-head button{font-size:13px;font-weight:700;color:var(--muted)}
@@ -1114,7 +1122,7 @@ body.in-radio .radio-only{display:grid!important}
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 /* Things that belong to a person (not a device): saved per account on the server, cached here per account. */
-const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home', 'stations'];
+const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home', 'stations', 'names'];
 const store = {
   uid: '',          // the signed-in account (and its server) once known
   onChange: null,   // called when a synced value changes, so it can be sent to the server
@@ -1313,11 +1321,23 @@ const YTALBUM = { id: 'youtube', title: 'From YouTube', artist: 'YouTube', year:
 YTALBUM.cover = makeCover(YTALBUM);
 ALBUM_MAP.youtube = YTALBUM;
 const yt = { enabled: false, shelves: [], results: new Map(), loading: new Set(), error: '', searchesLeft: null, keys: [] };
+/* Your own title and artist for a song (YouTube, catalog, or someone else's upload). Saved with your library
+   on every device: { key: { title, artist, was: { title, artist } } }. Your own uploads are renamed for everyone instead. */
+function nameKey(t) { return t.sp ? 'sp:' + t.key : t.id; }
+function userNames() { return store.get('names', {}) || {}; }
+function applyName(id, names) {
+  const t = TRACKS[id]; if (!t) return;
+  const n = (names || userNames())[nameKey(t)];
+  if (n && n.title) t.title = n.title;
+  if (n && n.artist) t.artist = n.artist;
+}
+function applyNames() { const names = userNames(); if (Object.keys(names).length) Object.keys(TRACKS).forEach(id => applyName(id, names)); }
 function addYtTrack(v, genreTag) {
   const id = 'yt-' + v.id;
   const old = TRACKS[id];
   TRACKS[id] = { id, ytId: v.id, yt: true, title: v.title, artist: v.channel || 'YouTube', album: 'YouTube', albumId: 'youtube',
     genre: 'youtube', genreTag: genreTag || (old && old.genreTag) || '', duration: v.duration || 0, cover: v.thumb, seed: hashStr(id) };
+  applyName(id);
   return id;
 }
 const ytMeta = id => { const t = TRACKS[id]; return { id: t.ytId, title: t.title, channel: t.artist, thumb: t.cover, duration: t.duration, genre: t.genreTag }; };
@@ -1418,6 +1438,7 @@ function addServerTrack(r) {
     addedAt: r.addedAt, seed: hashStr(id), raw: r };
   const pool = ownsUpload(r) ? UPLOADS : SHARED;
   if (!pool.trackIds.includes(id)) pool.trackIds.unshift(id);
+  if (!ownsUpload(r)) applyName(id);
   return id;
 }
 /* Uploaded songs that share an album tag become their own album. */
@@ -1823,7 +1844,7 @@ store.onChange = k => {
   userSync.dirty.add(k); savePending();
   clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 800);
 };
-const SYNC_EMPTY = k => k === 'plays' || k === 'genres' || k === 'home' ? {} : [];
+const SYNC_EMPTY = k => k === 'plays' || k === 'genres' || k === 'names' || k === 'home' ? {} : [];
 /* Another device may have saved since this one last looked. Instead of replacing its changes, combine them:
    start from what both saw last time (base), keep what each side added or removed. */
 function merge3(k, base, local, srv) {
@@ -1849,7 +1870,7 @@ function merge3(k, base, local, srv) {
       return { ...s, ...p, tracks: setMerge(b.tracks || [], p.tracks || [], s.tracks || []) };
     });
   }
-  if (k === 'plays' || k === 'genres') {
+  if (k === 'plays' || k === 'genres' || k === 'names') {
     const out = { ...srv };
     Object.keys(local).forEach(x => { if (!sameJSON(local[x], base[x])) out[x] = local[x]; });
     Object.keys(base).forEach(x => { if (!(x in local)) delete out[x]; });
@@ -1919,7 +1940,7 @@ function mergeKey(k, server, local) {
     });
     return [...m.values()];
   }
-  if (k === 'plays' || k === 'genres') return { ...local, ...server };
+  if (k === 'plays' || k === 'genres' || k === 'names') return { ...local, ...server };
   return server;   // recent / ytRecent: the server's (most recent) copy
 }
 const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -1932,6 +1953,7 @@ function applyLibrary() {
   state.playlists = store.get('playlists', []).filter(p => p && p.id && Array.isArray(p.tracks));
   state.hidden = new Set(store.get('hidden', [])); state.hiddenCols = new Set(store.get('hiddenCols', []));
   state.recent = store.get('recent', []);
+  applyNames();
 }
 async function loadUserData() {
   userSync.ready = false;
@@ -1949,7 +1971,7 @@ async function loadUserData() {
     userSync.seen = data.updatedAt || 0;
     /* Keep what this device changed but couldn't send. Once per device and account, also merge in likes, songs and
        playlists this device has that the server lacks (saving from the Android app and GitHub Pages used to fail). */
-    const MERGE = ['liked', 'spTracks', 'ytTracks', 'playlists', 'plays', 'genres', 'stations'];
+    const MERGE = ['liked', 'spTracks', 'ytTracks', 'playlists', 'plays', 'genres', 'stations', 'names'];
     const mergedKey = 'murmur:merged1:' + store.uid;
     let firstMerge = false; try { firstMerge = !localStorage.getItem(mergedKey); } catch (e) {}
     const up = new Set();
@@ -4340,7 +4362,7 @@ function buildShell() {
     </div>
     <canvas id="viz" aria-hidden="true"></canvas>
     <div class="full-meta"><div><div class="full-title" id="fTitle"></div><button class="full-artist ell" id="fArtist" data-act="open" data-type="artist"></button></div>
-      <span class="full-likes"><button class="icon-btn radio-only cur-down" data-act="radio-down" aria-label="Thumbs down">${icon('thumbDown')}</button><button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></span></div>
+      <span class="full-likes"><button class="icon-btn" data-act="rename" aria-label="Edit title and artist" title="Edit title and artist">${icon('edit')}</button><button class="icon-btn radio-only cur-down" data-act="radio-down" aria-label="Thumbs down">${icon('thumbDown')}</button><button class="icon-btn like cur-like" data-act="like" aria-label="Save to Liked Songs">${icon('heart')}</button></span></div>
     <div class="full-seek"><input type="range" data-seek id="fSeek" min="0" max="1000" value="0" aria-label="Seek"><div class="times"><span data-pos>0:00</span><span data-dur>0:00</span></div></div>
     <div class="controls big">${ctrls()}</div>
     <button class="text-btn full-radio" data-act="radio-cur">${icon('radio')}<span>Start radio from this song</span></button>
@@ -4574,7 +4596,7 @@ function renderNP() {
   $('#np').innerHTML = `<div class="np-head"><span class="ell">${esc(state.ctx ? state.ctx.title : t.album)}</span><button class="icon-btn" data-act="np-toggle" aria-label="Close now playing panel">${icon('close')}</button></div>
   <img class="cover np-cover" src="${tCover(t.id)}" alt="${esc(t.album)}">
   <div class="np-meta"><div style="min-width:0"><h3>${esc(t.title)}</h3><button class="np-artist ell" data-act="open" data-type="artist" data-id="${esc(t.artist)}">${esc(t.artist)}</button></div>
-    <button class="icon-btn like${state.liked.has(t.id) ? ' on' : ''}" data-act="like" data-tid="${t.id}" aria-label="Save to Liked Songs">${icon('heart')}</button></div>
+    <span class="np-btns">${t.src || t.yt || t.sp ? `<button class="icon-btn" data-act="rename" data-tid="${t.id}" aria-label="Edit title and artist" title="Edit title and artist">${icon('edit')}</button>` : ''}<button class="icon-btn like${state.liked.has(t.id) ? ' on' : ''}" data-act="like" data-tid="${t.id}" aria-label="Save to Liked Songs">${icon('heart')}</button></span></div>
   ${t.sp ? `<div class="np-card"><span class="eyebrow">${t.disc ? 'Suggested for you' : 'From your Spotify import'}</span>${t.disc && t.because ? `<p class="small">Because you listen to ${esc(t.because)}</p>` : ''}
     <dl class="facts"><dt>Album</dt><dd>${esc(t.album)}</dd><dt>Length</dt><dd>${fmt(t.duration)}</dd><dt>Playing from</dt><dd>${{ file: 'Your file in Murmur', yt: 'YouTube', none: 'Nothing found yet', new: 'Looking it up…' }[spStatus(t.id)]}</dd></dl>
     <div class="acct-actions">${server.on ? `<button class="text-btn" data-act="m-dlpick" data-tid="${t.id}">${icon('download')}<span>Download or add to library…</span></button>` : ''}${canEditMusic() && srcs.ready && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-getcopy" data-tid="${t.id}">${icon('download')}<span>Find a downloadable copy</span></button>` : ''}${canEditMusic() && spStatus(t.id) !== 'file' ? `<button class="text-btn" data-act="m-bring" data-tid="${t.id}">${icon('upload')}<span>Bring into Murmur</span></button>` : ''}
@@ -4647,6 +4669,7 @@ function renderMenu() {
       + b('like', icon('heart') + (state.liked.has(t.id) ? 'Remove from Liked Songs' : 'Save to Liked Songs'))
       + b('sub', icon('plus') + 'Add to playlist')
       + '<hr>' + b('album', icon('album') + (t.yt ? 'Go to From YouTube' : 'Go to album')) + b('artist', icon('user') + 'Go to artist')
+      + ((t.src || t.yt || t.sp) && !m.multi ? b('rename', icon('edit') + 'Edit title and artist') : '')
       + b('genre', icon('list') + `<span class="ell">Genre: ${esc(genreFor(t.id) || 'add one')}</span>`)
       + (t.yt ? b('spver', icon('versions') + 'Choose a YouTube version') + b('ytopen', icon('expand') + 'Open on YouTube') : '')
       + (server.on ? '<hr>' + b('dlpick', icon('download') + 'Download or add to library…') : '')
@@ -4992,6 +5015,75 @@ async function deleteCollections(keys) {
   render();
   toast(keys.length > 1 ? `Done · ${plural(keys.length, 'item')} removed` : 'Done');
 }
+/* Edit title and artist, for any song. Suggestions come from the music catalog; for YouTube songs and files
+   (whose names are often "Song ft. X (Official Video)") the best match is filled in right away. */
+function cleanSongTitle(s) {
+  return String(s || '').replace(/[(\[【{][^)\]】}]*[)\]】}]/g, ' ').replace(/\s[|｜•]\s.*$/, ' ')
+    .replace(/\b(official|oficial)\b.*$/i, ' ').replace(/\b(video|audio|lyrics?|letra|visualizer|en vivo|live|hd|4k)\b/gi, ' ')
+    .replace(/\s+(ft|feat)\.?\s.*$/i, ' ').replace(/\s+/g, ' ').trim();
+}
+async function nameSuggestions(t) {
+  const title = cleanSongTitle(t.title), artist = cleanArtist(t.artist);
+  const qs = [...new Set([`${title} ${artist}`, title].map(q => q.trim().toLowerCase().slice(0, 100)).filter(Boolean))];
+  const lists = await Promise.all(qs.map(q => api('GET', 'api/catalog/search?q=' + encodeURIComponent(q)).then(r => r.items || []).catch(() => [])));
+  const seen = new Set(), all = [], said = normKey(t.title + ' ' + t.artist);
+  lists.flat().forEach(x => { const k = normKey(x.artist) + '|' + normKey(x.title); if (x.title && !seen.has(k)) { seen.add(k); all.push(x); } });
+  // Ones whose title (and artist) appear in what the song is called now come first.
+  const has = v => !!v && said.includes(v);
+  const score = x => (has(normKey(x.title)) ? 2 : 0) + (has(normKey(cleanArtist(x.artist))) ? 1 : 0);
+  return all.map((x, i) => ({ x, s: score(x), i })).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, 6);
+}
+function openRename(id) {
+  const t = TRACKS[id]; if (!t || !(t.src || t.yt || t.sp)) { toast('Play a song first.'); return; }
+  const shared = !!(t.src && canChange(id)), had = userNames()[nameKey(t)];
+  const art = t.artist === 'Unknown artist' ? '' : t.artist;
+  openModal({ title: 'Edit title and artist', confirm: 'Save', html: `
+    <div class="field"><label for="rnTitle">Title</label><input id="rnTitle" name="title" value="${esc(t.title)}" maxlength="200" autocomplete="off" required></div>
+    <div class="field"><label for="rnArtist">Artist</label><input id="rnArtist" name="artist" value="${esc(art)}" maxlength="200" autocomplete="off" placeholder="Unknown artist"></div>
+    <p class="small" id="rnNote">${shared ? 'This is your upload, so the new name shows for everyone.' : 'Only you see the new name, on all your devices.'}${had && !shared ? ` <button type="button" class="link-btn" data-act="rn-reset" data-tid="${esc(id)}">Go back to “${esc(had.was.title)}”</button>` : ''}</p>
+    <div class="rn-sug" id="rnSug">${server.on ? '<p class="small">Looking for this song in the music catalog…</p>' : ''}</div>`,
+    onSubmit: fd => saveName(id, String(fd.get('title') || '').trim(), String(fd.get('artist') || '').trim()) });
+  if (!server.on) return;
+  nameSuggestions(t).then(list => {
+    const el = $('#rnSug'), ti = $('#rnTitle'), ar = $('#rnArtist'); if (!el || !ti) return;
+    if (!list.length) { el.innerHTML = '<p class="small">No suggestions found in the music catalog.</p>'; return; }
+    el.innerHTML = `<p class="small">Suggestions. Tap one to use it:</p><div class="rn-list">${list.map(({ x }, i) => `<button type="button" class="rn-item${i === 0 ? ' on' : ''}" data-act="rn-pick" data-title="${esc(x.title)}" data-artist="${esc(x.artist)}">
+      ${x.cover ? `<img src="${esc(x.cover)}" alt="" loading="lazy">` : ''}<span><b class="ell">${esc(x.title)}</b><span class="small ell">${esc(x.artist)}${i === 0 ? ' · best match' : ''}</span></span></button>`).join('')}</div>`;
+    // Not a catalog song, not renamed yet, and a convincing match: fill it in.
+    if (!t.sp && !had && list[0].s >= 2 && ti.value === t.title && ar.value === art) {
+      ti.value = list[0].x.title; ar.value = list[0].x.artist;
+      const note = $('#rnNote'); if (note) note.insertAdjacentHTML('afterbegin', `<b>Filled in the best match.</b> It was “${esc(t.title)}”${art ? ' by ' + esc(art) : ''}. `);
+    }
+  });
+}
+function rnPick(b) {
+  const ti = $('#rnTitle'), ar = $('#rnArtist'); if (!ti) return;
+  ti.value = b.dataset.title; ar.value = b.dataset.artist;
+  $$('.rn-item').forEach(x => x.classList.toggle('on', x === b));
+}
+async function saveName(id, title, artist) {
+  const t = TRACKS[id]; if (!t || !title) return;
+  if (t.src && canChange(id)) {
+    try { const res = await api('PATCH', 'api/tracks', { ids: [t.sid], title, artist, album: t.albumTag || '' }); res.tracks.forEach(addServerTrack); rebuildUploadAlbums(); }
+    catch (e) { toast(e.message); return; }
+  } else {
+    const names = { ...userNames() }, k = nameKey(t), was = (names[k] && names[k].was) || { title: t.title, artist: t.artist };
+    artist = artist || was.artist;
+    if (title === was.title && artist === was.artist) delete names[k]; else names[k] = { title, artist, was };
+    store.set('names', names);
+    t.title = title; t.artist = artist;
+    if (t.yt) saveYtCache(); if (t.sp) saveSpCache();
+  }
+  render(); renderSidebar(); updatePlayerUI(); toast('Saved');
+}
+function resetName(id) {
+  const t = TRACKS[id]; if (!t) return;
+  const names = { ...userNames() }, n = names[nameKey(t)]; if (!n) return;
+  delete names[nameKey(t)]; store.set('names', names);
+  t.title = n.was.title; t.artist = n.was.artist;
+  if (t.yt) saveYtCache(); if (t.sp) saveSpCache();
+  closeModal(); render(); renderSidebar(); updatePlayerUI(); toast('Back to the original name');
+}
 function openEdit(tids, o = {}) {
   const ts = tids.map(id => TRACKS[id]).filter(t => t && t.src);
   if (!ts.length) return;
@@ -5098,6 +5190,7 @@ function act(el, e) {
       else if (op === 'delete') removeTracks(tids);
       else if (op === 'hide') removeTracks(tids);
       else if (op === 'edit') openEdit(tids);
+      else if (op === 'rename') openRename(tids[0]);
       else if (op === 'queue') addToQueue(tids);
       else if (op === 'like') { const on = !tids.every(t => state.liked.has(t)); setLiked(tids, on); toast(on ? 'Added to Liked Songs' : 'Removed from Liked Songs'); }
       else if (op === 'album') navigate({ name: 'collection', type: 'album', id: TRACKS[tids[0]].albumId });
@@ -5328,6 +5421,9 @@ function act(el, e) {
     case 'col-delete': confirmDeleteCollections([d.type + ':' + d.id]); break;
     case 'album-edit': openEdit(ALBUM_MAP[d.id].trackIds, { album: d.id }); break;
     case 'edit-one': openEdit([d.tid]); break;
+    case 'rename': openRename(d.tid || state.current); break;
+    case 'rn-pick': rnPick(el); break;
+    case 'rn-reset': resetName(d.tid); break;
     case 'restore':
       state.hidden.clear(); state.hiddenCols = new Set([...state.hiddenCols].filter(k => k.startsWith('album:'))); store.set('hidden', []); store.set('hiddenCols', [...state.hiddenCols]);
       render(); toast('Demo music restored'); break;
@@ -5506,6 +5602,7 @@ function addSpTrack(x, source = 'spotify') {
   TRACKS[id] = { id, sp: true, disc: isDisc, key: x.key, title: x.title, artist: x.artist || 'Unknown artist', album: x.album || (isDisc ? 'Discover' : 'Spotify'),
     albumId: isDisc ? 'discover' : 'spotify', genre: isDisc ? 'discover' : 'spotify', duration: x.duration || 0, cover: x.cover || (isDisc ? DISCALBUM.cover : SPALBUM.cover),
     isrc: x.isrc, url: x.url, because: x.because || '', seed: hashStr(id) };
+  applyName(id);
   return id;
 }
 function hydrateImports() {
