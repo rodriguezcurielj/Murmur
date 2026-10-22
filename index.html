@@ -241,8 +241,14 @@ body.tq-focus .rs-wrap{display:block}
 .ly-src{margin-top:18px}
 #lyBtn.on{color:var(--accent)}
 .gp-sug{margin:2px 0 10px}
-.gp-head{display:flex;align-items:baseline;gap:10px;margin:0 0 6px;font-size:13px}
-.gp-head b{color:var(--muted);font-weight:600}
+.gp-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--raise);font-size:13px;cursor:pointer;list-style:none;user-select:none}
+.gp-head::-webkit-details-marker{display:none}
+.gp-head svg{width:15px;height:15px;color:var(--muted);flex:none}
+.gp-head b{font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gp-n{font-size:11px;font-weight:700;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:1px 7px}
+.gp-head svg:last-child{transition:transform .15s}
+.gp-sug[open] .gp-head svg:last-child{transform:rotate(90deg)}
+.gp-sug[open] .gp-list{margin-top:6px}
 .gp-list{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
 .gp-list::-webkit-scrollbar{display:none}
 .gp-item{display:flex;align-items:center;gap:8px;padding:4px 2px 4px 4px;border-radius:8px;background:var(--raise);min-width:0;flex:none;max-width:230px}
@@ -828,6 +834,11 @@ body.in-radio .radio-only{display:grid!important}
 .acct-av:hover .avatar-lg{filter:brightness(1.1)}
 .acct-who{display:flex;flex-direction:column;gap:2px;min-width:0}
 .acct-who b{font:800 20px/1.2 var(--font-display);color:var(--fg)}
+.acct-photo-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.photo-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--raise);color:var(--fg);font:600 13px/1 var(--font-body);cursor:pointer}
+.photo-btn:hover{background:var(--hover)}
+.photo-btn svg{width:14px;height:14px}
+.photo-rm{color:var(--danger);background:transparent}
 .acct-photo-links{margin-top:2px}
 .acct-photo-links label{cursor:pointer}
 .acct-group h3{margin:6px 0 6px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -958,6 +969,17 @@ body.in-radio .radio-only{display:grid!important}
 
 /* ---------- modal ---------- */
 .modal-back{position:fixed;inset:0;z-index:90;background:rgba(8,5,12,.62);display:grid;place-items:center;padding:16px}
+.modal-back.m-drawer{padding:0;place-items:stretch;justify-items:end}
+.m-drawer .modal{width:min(380px,92vw);max-height:none;height:100%;border:0;border-left:1px solid var(--line);border-radius:0;box-shadow:-20px 0 50px rgba(0,0,0,.5);animation:drawerR .2s ease-out;padding:16px 18px calc(16px + env(safe-area-inset-bottom))}
+.m-drawer .m-back{display:inline-grid;margin:0 6px 4px -8px}
+.m-drawer #mTitle{display:inline;vertical-align:middle}
+.m-drawer .m-actions{display:none}
+@keyframes drawerR{from{transform:translateX(40px);opacity:.4}}
+@keyframes drawerL{from{transform:translateX(-40px);opacity:.4}}
+@media (max-width:760px){
+  .modal-back.m-drawer{justify-items:start}
+  .m-drawer .modal{width:min(340px,86vw);border-left:0;border-right:1px solid var(--line);box-shadow:20px 0 50px rgba(0,0,0,.5);animation-name:drawerL}
+}
 .page-top{display:none}
 .m-back{display:none}
 @media (max-width:760px){
@@ -3424,6 +3446,7 @@ function pickSort(key, k) {
   store.set('sorts', all); closeMenu();
   const y = $('#main').scrollTop; render(); $('#main').scrollTop = y;
 }
+document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('gp-sug')) store.set('gpOpen', e.target.open); }, true);
 // Recent searches show while the search bar is in use.
 document.addEventListener('focusin', e => { if (e.target.id === 'tq') { clearTimeout(window._tqBlur); document.body.classList.add('tq-focus'); } });
 document.addEventListener('focusout', e => { if (e.target.id === 'tq') window._tqBlur = setTimeout(() => document.body.classList.remove('tq-focus'), 250); });
@@ -4332,8 +4355,7 @@ function chipsHTML() {
 function viewLibrary() {
   const selecting = !!state.libSel;
   const hidAlb = [...state.hiddenCols].filter(k => k.startsWith('album:') && ALBUM_MAP[k.slice(6)]).length, hidPl = [...state.hiddenCols].filter(k => !k.startsWith('album:')).length;
-  const restore = (state.hidden.size || hidPl ? `<div class="restore"><p class="small">You removed ${[state.hidden.size ? plural(state.hidden.size, 'demo song') : '', hidPl ? plural(hidPl, 'Murmur playlist') : ''].filter(Boolean).join(' and ')}.</p><button class="text-btn" data-act="restore">Restore removed demo music</button></div>` : '')
-    + (hidAlb ? `<div class="restore"><p class="small">${plural(hidAlb, 'album')} hidden from your library. The songs are still in Uploads.</p><button class="text-btn" data-act="albums-unhide">Show hidden albums</button></div>` : '');
+  const restore = (hidAlb ? `<div class="restore"><p class="small">${plural(hidAlb, 'album')} hidden from your library. The songs are still in Uploads.</p><button class="text-btn" data-act="albums-unhide">Show hidden albums</button></div>` : '');
   return `<div class="shelf-head" style="margin-top:8px"><h2>Your Library</h2><div class="head-actions">
       <button class="text-btn sel-btn" data-act="lib-sel">${icon('check')}<span>${selecting ? 'Done' : 'Select'}</span></button>
       ${canEditMusic() ? `<button class="text-btn" data-act="upload">${icon('upload')}<span>Upload</span></button>` : ''}
@@ -4931,11 +4953,13 @@ function toast(msg) {
 }
 let modalSubmit = null, modalReturn = null;
 // page: on phones it fills the screen like its own page, with a back arrow (the account page).
-function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit, page = false }) {
+// drawer: slides in from the side like Spotify's account menu.
+function openModal({ title, html, confirm = 'OK', cancel = 'Cancel', danger = false, onSubmit, page = false, drawer = false }) {
   modalReturn = document.activeElement;
   $('#modal').classList.toggle('m-page', !!page);
+  $('#modal').classList.toggle('m-drawer', !!drawer);
   $('#modal').innerHTML = `<form class="modal" id="mForm" role="dialog" aria-modal="true" aria-labelledby="mTitle">
-    ${page ? `<button type="button" class="icon-btn m-back" data-act="modal-close" aria-label="Back">${icon('back')}</button>` : ''}<h2 id="mTitle">${title}</h2><div class="m-body">${html}</div>
+    ${page || drawer ? `<button type="button" class="icon-btn m-back" data-act="modal-close" aria-label="Back">${icon('back')}</button>` : ''}<h2 id="mTitle">${title}</h2><div class="m-body">${html}</div>
     <div class="m-actions"><button type="button" class="text-btn" data-act="modal-close">${cancel}</button>${confirm ? `<button type="submit" class="m-ok${danger ? ' danger' : ''}">${confirm}</button>` : ''}</div></form>`;
   modalSubmit = onSubmit; $('#modal').hidden = false; closeMenu();
   const f = $('#mForm input') || $('#mForm .m-ok'); if (f) { f.focus(); if (f.select) f.select(); }
@@ -5155,12 +5179,12 @@ function likedGenreSuggestions() {
 function genrePlaylistsHTML() {
   const list = likedGenreSuggestions();
   if (!list.length) return '';
-  return `<section class="gp-sug"><div class="gp-head"><b>Playlists from your likes</b>
-      ${list.length > 1 ? `<button class="link-btn small" data-act="gp-all">Create all ${Math.min(list.length, 8)}</button>` : ''}</div>
+  // One bar; the suggestions stay folded under it until it's opened.
+  return `<details class="gp-sug"${store.get('gpOpen', false) ? ' open' : ''}><summary class="gp-head">${icon('list')}<b>Playlists you can make from your likes</b><span class="gp-n">${Math.min(list.length, 8)}</span>${icon('chev')}</summary>
     <div class="gp-list">${list.slice(0, 8).map(x => `<div class="gp-item" data-act="open" data-type="gpreview" data-id="${esc(x.genre)}" role="button" tabindex="0" aria-label="See the songs for ${esc(x.genre)}" title="Tap to see the songs">${coverHTML({ mosaic: mosaicFor(x.ids) }, 'gp-cover')}
       <div class="gp-meta"><b class="ell">${esc(x.genre)}</b><span class="small">${x.ids.length} songs</span></div>
       <button class="icon-btn" data-act="gp-make" data-g="${esc(x.genre)}" aria-label="Create ${esc(x.genre)} playlist" title="Create playlist">${icon('plus')}</button>
-      <button class="icon-btn" data-act="gp-skip" data-g="${esc(x.genre)}" aria-label="Don’t suggest ${esc(x.genre)}" title="Don’t suggest">${icon('close')}</button></div>`).join('')}</div></section>`;
+      <button class="icon-btn" data-act="gp-skip" data-g="${esc(x.genre)}" aria-label="Don’t suggest ${esc(x.genre)}" title="Don’t suggest">${icon('close')}</button></div>`).join('')}</div></details>`;
 }
 function makeGenrePlaylist(genre, open) {
   const x = likedGenreSuggestions().find(v => v.genre === genre); if (!x) return null;
@@ -7382,9 +7406,9 @@ function openAccount() {
   const head = `<div class="acct-head">
       ${server.on ? `<label class="acct-av" title="Change profile picture">${avatarHTML(me, 'avatar avatar-lg')}<span class="acct-cam">${icon('camera')}</span><input type="file" accept="image/*" id="avatarFile" hidden></label>` : avatarHTML(me, 'avatar avatar-lg')}
       <div class="acct-who"><b class="ell">${esc(me.name)}</b><span class="small">${esc(roleLabel(me))} · ${until}</span>
-        ${server.on ? `<span class="acct-photo-links small"><label class="link-btn" tabindex="0">${me.avatar ? 'Change photo' : 'Add a photo'}<input type="file" accept="image/*" hidden data-avatar></label>${me.avatar ? ` · <button type="button" class="link-btn" data-act="avatar-remove">Remove</button>` : ''}</span>` : ''}</div>
+        ${server.on ? `<span class="acct-photo-btns"><label class="photo-btn" tabindex="0">${icon('camera')}<span>${me.avatar ? 'Change photo' : 'Add a photo'}</span><input type="file" accept="image/*" hidden data-avatar></label>${me.avatar ? `<button type="button" class="photo-btn photo-rm" data-act="avatar-remove" aria-label="Remove photo">${icon('trash')}<span>Remove</span></button>` : ''}</span>` : ''}</div>
     </div>`;
-  openModal({ title: 'Account', confirm: false, cancel: 'Done', page: true, html: head
+  openModal({ title: 'Account', confirm: false, cancel: 'Done', drawer: true, html: head
     + group('Listening', [
         row('pb-open', 'eq', 'Playback & equalizer', eqState().on && eqState().preset !== 'Flat' ? esc(eqState().preset) : ''),
         row('acct-theme', 'palette', 'Theme', esc(themeName)),
