@@ -135,6 +135,7 @@ public class MainActivity extends Activity {
         });
 
         restoreLauncherIcon();
+        updateThemedIcon(this, getSharedPreferences("murmur", Context.MODE_PRIVATE).getString("iconWant", "murmur"));
         boolean freshPage = keptWeb == null;
         if (keptWeb == null) {
             keptContext = new MutableContextWrapper(this);
@@ -325,11 +326,16 @@ public class MainActivity extends Activity {
         for (android.content.pm.ShortcutInfo s : sm.getPinnedShortcuts()) if (THEMED_ID.equals(s.getId())) return true;
         return false;
     }
-    /** New theme: the home-screen icon (if it's there) changes colour where it is. */
+    /** New icon colours: the home-screen icon (if it's there) changes colour where it is. */
     static void updateThemedIcon(Context c, String theme) {
         try {
             android.content.pm.ShortcutManager sm = c.getSystemService(android.content.pm.ShortcutManager.class);
-            if (sm != null && themedPinned(c)) sm.updateShortcuts(java.util.Collections.singletonList(themedShortcut(c, theme)));
+            if (sm == null) return;
+            if (themedPinned(c)) sm.updateShortcuts(java.util.Collections.singletonList(themedShortcut(c, theme)));
+            // One Home (Pepe's launcher) draws Murmur's own icon with this one, so the real app icon recolours in place.
+            Intent i = new Intent(c, MainActivity.class).setAction(Intent.ACTION_MAIN).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            sm.addDynamicShortcuts(java.util.Collections.singletonList(new android.content.pm.ShortcutInfo.Builder(c, "app_icon")
+                    .setShortLabel("Murmur").setLongLabel("Open Murmur").setIcon(themedIcon(c, theme)).setIntent(i).setRank(99).build()));
         } catch (Exception ignored) {}
     }
 

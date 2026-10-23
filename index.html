@@ -8139,10 +8139,10 @@ function themedIconHTML() {
   const sw = t => `<button type="button" class="theme-sw${t.id === cur ? ' on' : ''}" data-act="icon-theme" data-k="${t.id}" aria-pressed="${t.id === cur}">
     <i style="background:${(t.light ? t.c : window.murmurSpotifyGreys(t.c))[1]};--sw-fg:${t.c[5]};--sw-accent:${t.c[7]}"></i>${esc(t.name)}</button>`;
   return `<section class="icon-colors" aria-label="App icon colours"><h3 class="sub-head" style="margin:20px 0 4px">App icon colours</h3>
-    <p class="small" style="margin:0 0 8px">${has ? 'Your home-screen Murmur icon uses these colours. Pick any; it changes right where it is.' : 'Pick colours for a Murmur icon on your home screen (separate from the theme above).'}</p>
+    <p class="small" style="margin:0 0 8px">Pick colours for the Murmur icon (separate from the theme above). With the One Home launcher, Murmur’s own icon changes colour right where it is.${has ? ' Your extra home-screen Murmur icon changes too.' : ''}</p>
     <div class="theme-grid">${all.map(sw).join('')}</div>
-    ${has ? '' : `<button type="button" class="photo-btn themed-ic-btn" data-act="pin-themed-icon">${icon('plus')}<span>Add this Murmur icon to your home screen</span></button>
-    <p class="small">It stays where you put it and changes colour when you pick new icon colours here. (Android can’t recolour the app’s own icon, so you can remove the plain one.)</p>`}</section>`;
+    ${has ? '' : `<button type="button" class="photo-btn themed-ic-btn" data-act="pin-themed-icon">${icon('plus')}<span>Using another launcher? Add a Murmur icon in these colours</span></button>
+    <p class="small">Other launchers can’t recolour an app’s own icon, so this adds one that can. It stays where you put it.</p>`}</section>`;
 }
 function setTheme(id) {
   const applied = window.murmurApplyTheme ? window.murmurApplyTheme(id) : id;
@@ -8156,8 +8156,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.5';
-const ANDROID_NEW = 'Your app icon stays put now: add a home-screen Murmur icon that changes colour with your theme (Account → Theme).';
+const ANDROID_LATEST = '3.6';
+const ANDROID_NEW = 'Pick app icon colours in Account → Theme: with the One Home launcher the Murmur icon itself changes colour right where it is.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;
