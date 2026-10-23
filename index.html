@@ -51,7 +51,6 @@ window.murmurApplyTheme = function (id) {
   var d = window.MurmurDesktop; if (d && d.setFrame) { document.documentElement.classList.add('desktop-frame'); d.setFrame(c[0], c[6]); }
   // The Android app colours the phone's status bar and navigation bar to match.
   var an = window.MurmurAndroid; if (an && an.setBars) try { an.setBars(c[0], !!t.light); } catch (e) {}
-  if (an && an.setIcon) try { an.setIcon(t.id); } catch (e) {}   // the app icon takes the theme's colours too
   return t.id;
 };
 try { window.murmurApplyTheme(JSON.parse(localStorage.getItem('murmur:theme') || '"murmur"')); } catch (e) {}
@@ -6064,6 +6063,7 @@ function act(el, e) {
       break;
     }
     case 'ts-cancel': stopWork((currentWork() || {}).kind); break;
+    case 'icon-theme': store.set('iconTheme', d.k); try { window.MurmurAndroid.setIcon(d.k); } catch (e) {} if (!$('#modal').hidden) $('.m-body').innerHTML = themePickerHTML(); break;
     case 'pin-themed-icon': try { window.MurmurAndroid.pinIcon(); } catch (e) {} setTimeout(() => { if (!$('#modal').hidden) $('.m-body').innerHTML = themePickerHTML(); }, 4000); break;
     case 'invite-share': shareJoin(d.t); break;
     case 'invite-del': api('DELETE', 'api/invites/' + d.t).then(() => { invitesList = null; render(); toast('That link no longer works.'); }).catch(er => toast(er.message)); break;
@@ -8124,9 +8124,15 @@ function themedIconHTML() {
   const a = window.MurmurAndroid;
   let can = false, has = false; try { can = !!(a && a.canPinIcon && a.canPinIcon()); has = !!(a && a.hasThemedIcon && a.hasThemedIcon()); } catch (e) {}
   if (!can) return '';
-  return has ? `<p class="small themed-ic-note">${icon('check')} Your home-screen Murmur icon changes colour with your theme.</p>`
-    : `<button type="button" class="photo-btn themed-ic-btn" data-act="pin-themed-icon">${icon('plus')}<span>Add a Murmur icon in these colours to your home screen</span></button>
-       <p class="small">It changes colour whenever you change the theme, and stays where you put it. (Android can’t recolour the app’s own icon, so you can remove the plain one.)</p>`;
+  // Its own setting: the home-screen icon's colours, picked separately from the app's theme.
+  const cur = store.get('iconTheme', 'murmur'), all = window.MURMUR_THEMES || [];
+  const sw = t => `<button type="button" class="theme-sw${t.id === cur ? ' on' : ''}" data-act="icon-theme" data-k="${t.id}" aria-pressed="${t.id === cur}">
+    <i style="background:${(t.light ? t.c : window.murmurSpotifyGreys(t.c))[1]};--sw-fg:${t.c[5]};--sw-accent:${t.c[7]}"></i>${esc(t.name)}</button>`;
+  return `<section class="icon-colors" aria-label="App icon colours"><h3 class="sub-head" style="margin:20px 0 4px">App icon colours</h3>
+    <p class="small" style="margin:0 0 8px">${has ? 'Your home-screen Murmur icon uses these colours. Pick any; it changes right where it is.' : 'Pick colours for a Murmur icon on your home screen (separate from the theme above).'}</p>
+    <div class="theme-grid">${all.map(sw).join('')}</div>
+    ${has ? '' : `<button type="button" class="photo-btn themed-ic-btn" data-act="pin-themed-icon">${icon('plus')}<span>Add this Murmur icon to your home screen</span></button>
+    <p class="small">It stays where you put it and changes colour when you pick new icon colours here. (Android can’t recolour the app’s own icon, so you can remove the plain one.)</p>`}</section>`;
 }
 function setTheme(id) {
   const applied = window.murmurApplyTheme ? window.murmurApplyTheme(id) : id;
