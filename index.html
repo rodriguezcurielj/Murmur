@@ -91,7 +91,7 @@ html.desktop-frame body::before{content:'';position:fixed;top:0;left:0;right:0;h
 html.desktop-frame .topbar{-webkit-app-region:drag;app-region:drag}
 #softRefresh{display:none!important}
 html.desktop-frame #softRefresh{display:inline-grid!important;-webkit-app-region:no-drag;app-region:no-drag}
-.soft-refresh.spinning svg{animation:spin .8s linear infinite}
+.soft-refresh.spinning svg,.acct-row.spinning .ar-ic svg{animation:spin .8s linear infinite}
 html.desktop-frame .topbar>*{-webkit-app-region:no-drag;app-region:no-drag}
 html.desktop-frame .full,html.desktop-frame .modal-back{top:var(--tb-h)}
 html.desktop-frame .menu,html.desktop-frame .toast{-webkit-app-region:no-drag;app-region:no-drag}
@@ -6055,11 +6055,20 @@ function act(el, e) {
       else { gateBack = 'app'; showGate('connect'); }
       break;
     }
-    case 'soft-refresh': {   // Windows app: get the newest page (past the saved copy), then reload where you were
+    case 'soft-refresh': {   // Account → Refresh Murmur (and the Windows app's button): newest version, fresh start, song keeps its place
       el.classList.add('spinning');
-      Promise.all(['index.html', 'config.js', 'sw.js'].map(u => fetch(u, { cache: 'no-store' }).catch(() => {})))
-        .then(() => navigator.serviceWorker && navigator.serviceWorker.getRegistration ? navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {}) : null)
-        .finally(() => { try { saveResume(); } catch (e) {} location.reload(); });
+      (async () => {
+        let newer = false;
+        try {
+          const html = await (await fetch('index.html', { cache: 'no-store' })).text();
+          ownCode = ownCode || pageCode(document);
+          newer = /<meta name="murmur-build"/.test(html) && pageCode(new DOMParser().parseFromString(html, 'text/html')) !== ownCode;
+        } catch (e) {}
+        await Promise.all(['config.js', 'sw.js'].map(u => fetch(u, { cache: 'no-store' }).catch(() => {})));
+        try { const r = navigator.serviceWorker && navigator.serviceWorker.getRegistration && await navigator.serviceWorker.getRegistration(); if (r) await r.update(); } catch (e) {}
+        toast(newer ? 'Getting the newest Murmur…' : 'You have the newest Murmur. Refreshing…');
+        setTimeout(() => { try { saveResume(); } catch (e) {} location.reload(); }, 800);
+      })();
       break;
     }
     case 'ts-cancel': stopWork((currentWork() || {}).kind); break;
@@ -8101,6 +8110,7 @@ function openAccount() {
     + group('Server', [
         me.role === 'owner' && server.on ? row('acct-people', 'shield', 'Admin', 'Accounts, YouTube, servers') : '',
         remote.base || cfg ? row('acct-server', 'server', 'Server', esc(serverLabel(remote.base || location.origin))) : '',
+        row('soft-refresh', 'repeat', 'Refresh Murmur', 'Get updates, fix glitches', { noChev: true }),
       ])
     + group('Account', [
         server.on ? row('acct-pin', 'lock', 'Change my PIN') : '',
