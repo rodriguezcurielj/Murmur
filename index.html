@@ -2513,11 +2513,11 @@ function refreshAfterSync() {
   if (typeof updateLikes === 'function') updateLikes();
 }
 /* ---------- resume: this device remembers the last song and where you were in it ---------- */
-function saveResume() {
+function saveResume(forcePlaying) {
   if (!state.current || !TRACKS[state.current]) return;
   try {
     store.set('resume', { current: state.current, ctx: state.ctx, list: state.list.slice(0, 2000), order: state.order.slice(0, 2000), pos: state.pos,
-      manual: state.manual.slice(0, 200), at: Math.floor(Engine.position() || 0), playing: !!Engine.playing, saved: Date.now() });
+      manual: state.manual.slice(0, 200), at: forcePlaying ? 0 : Math.floor(Engine.position() || 0), playing: !!(forcePlaying || Engine.playing), saved: Date.now() });
   } catch (e) {}
 }
 function restoreResume() {
@@ -3887,7 +3887,13 @@ const Engine = {
   get analyser() { return Synth.analyser; },
   setVolume() { Synth.setVolume(); YTEng.setVolume(); if (FileEng.audio && !FileEng.node) FileEng.audio.volume = volGain(); }
 };
-Synth.onEnd = FileEng.onEnd = YTEng.onEnd = () => next(true);
+/* A song finished. If a newer Murmur is waiting (people who always have music on never hit a quiet moment to
+   update), move to the next song and reload into the new version right there: it keeps playing that next song. */
+Synth.onEnd = FileEng.onEnd = YTEng.onEnd = () => {
+  next(true);
+  let waiting = false; try { waiting = updateWaiting; } catch (e) {}
+  if (waiting && !server.busy && !dlq.busy && $('#modal').hidden && state.current) { saveResume(true); location.reload(); }
+};
 
 /* ================= collections ================= */
 function mosaicFor(ids) {
