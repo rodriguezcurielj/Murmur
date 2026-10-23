@@ -46,7 +46,7 @@ public class MurmurWidget extends AppWidgetProvider {
     /** Redraw every Murmur widget. */
     static void refresh(Context ctx) {
         AppWidgetManager m = AppWidgetManager.getInstance(ctx);
-        for (Class<?> c : new Class<?>[] { MurmurWidget.class, MurmurWidgetSquare.class })
+        for (Class<?> c : new Class<?>[] { MurmurWidget.class, MurmurWidgetSquare.class, MurmurWidgetPanel.class })
             for (int id : m.getAppWidgetIds(new ComponentName(ctx, c))) draw(ctx, m, id);
     }
 

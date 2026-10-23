@@ -8252,8 +8252,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.7';
-const ANDROID_NEW = 'Nicer widgets: smooth rounded edges like the rest of your phone, a rounded cover, and a background tinted from the song.';
+const ANDROID_LATEST = '3.8';
+const ANDROID_NEW = 'New “Murmur panel” widget that fills a whole page of the Razr outside screen (add it from its Widgets panel).';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;

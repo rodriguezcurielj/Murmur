@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Murmur panel": fills a whole page of the Razr outside screen's Widgets panel (4 x 3 cells there).
+     Small minimum sizes on purpose: Motorola's panel only lists widgets whose minimum fits 4 x 3, and
+     targetCell makes it open at the full page. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp" android:minHeight="110dp"
+    android:minResizeWidth="110dp" android:minResizeHeight="110dp"
+    android:targetCellWidth="4" android:targetCellHeight="3"
+    android:maxResizeWidth="800dp" android:maxResizeHeight="800dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen|keyguard"
+    android:initialLayout="@layout/widget_large"
+    android:initialKeyguardLayout="@layout/widget_large"
+    android:previewLayout="@layout/widget_large"
+    android:description="@string/widget_panel_desc"
+    android:updatePeriodMillis="0" />

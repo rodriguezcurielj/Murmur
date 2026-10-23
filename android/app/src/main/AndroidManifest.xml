@@ -265,6 +265,13 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/murmur_widget_square_info" />
         </receiver>
+        <!-- Fills a whole page of the Razr outside screen's Widgets panel: Murmur's own panel there -->
+        <receiver android:name=".MurmurWidgetPanel" android:exported="true" android:label="Murmur panel">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/murmur_widget_panel_info" />
+        </receiver>
 
         <service
             android:name=".PlaybackService"
