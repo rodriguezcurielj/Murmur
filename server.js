@@ -130,6 +130,31 @@ const mail = require('./mail')(DATA, auth);   // PIN reset emails
 auth.useMailer(mail);
 mail.routes(app);
 const youtube = createYouTube(path.join(DATA, 'settings.json'), auth);
+/* Songs marked "not found" get another look with YouTube Music's song search (the regular search misses many
+   songs). A result with the same song name by the same artist becomes the match. Shortly after start, then daily. */
+async function recheckNotFound() {
+    const keys = spotify.notFound(); if (!keys.length) return;
+    const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+    // The song's name and artist: from the key ("n:artist|title"), or from anyone's imported songs (ISRC keys).
+    const info = {};
+    try { for (const v of Object.values(userData.syncCollection.get())) if (Array.isArray(v)) for (const t of v) if (t && t.key && keys.includes(t.key) && t.title) info[t.key] = t; } catch {}
+    let found = 0;
+    for (const k of keys) {
+        let artist = '', title = '';
+        if (k.startsWith('n:')) [artist, title] = k.slice(2).split('|'); else if (info[k]) { artist = info[k].artist; title = info[k].title; }
+        if (!title) continue;
+        const first = norm(String(artist).split(/,|&| x | feat/i)[0]);
+        try {
+            const items = await youtube.musicSearch(`${artist} - ${title}`);
+            const hit = items.find(y => norm(y.title).startsWith(norm(title)) && (!first || norm(y.channel).includes(first) || first.includes(norm(y.channel))));
+            if (hit) { await spotify.setFound(k, hit, 'Murmur'); found++; }
+        } catch {}
+        await new Promise(r => setTimeout(r, 1500));
+    }
+    if (found) console.log(`Found ${found} of ${keys.length} "not found" songs on YouTube Music.`);
+}
+setTimeout(recheckNotFound, 45e3);
+setInterval(recheckNotFound, 24 * 3600e3).unref();
 youtube.routes(app);
 createDiscover(DATA).routes(app);
 spotify.routes(app);

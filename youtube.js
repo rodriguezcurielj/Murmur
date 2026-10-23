@@ -106,6 +106,35 @@ module.exports = function createYouTube(file, auth) {
 
   /* YouTube's own web search (what youtube.com uses): no daily limit and about half a second, much faster than
      starting yt-dlp. Its answer format can change, so yt-dlp stays as the next fallback. */
+  /* YouTube Music's song search: finds the official audio for a song by its artist and name, also for songs the
+     regular YouTube search answers "no results" for (it does that for many Latin and Afrobeats songs). No quota. */
+  async function musicSearch(q) {
+    const r = await fetch('https://music.youtube.com/youtubei/v1/search?prettyPrint=false', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Origin': 'https://music.youtube.com', 'Referer': 'https://music.youtube.com/', 'Accept-Language': 'en-US' },
+      body: JSON.stringify({ context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20261020.01.00', hl: 'en', gl: 'US' } }, query: q, params: 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D' }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) throw new Error('YouTube Music search answered ' + r.status);
+    const out = [];
+    const runs = c => ((((c || {}).musicResponsiveListItemFlexColumnRenderer || {}).text || {}).runs || []).map(x => x.text);
+    const secs = t => String(t || '').split(':').reduce((a, b) => a * 60 + (+b || 0), 0);
+    const walk = o => {
+      if (!o || typeof o !== 'object') return;
+      const it = o.musicResponsiveListItemRenderer;
+      if (it) {
+        const id = (it.playlistItemData && it.playlistItemData.videoId) || (JSON.stringify(it.overlay || {}).match(/"videoId":"([\w-]{11})"/) || [])[1];
+        const cols = it.flexColumns || [], meta = runs(cols[1]).filter(x => x.trim() && x.trim() !== '•');
+        const thumbs = (((it.thumbnail || {}).musicThumbnailRenderer || {}).thumbnail || {}).thumbnails || [];
+        if (id) out.push({ id, title: runs(cols[0]).join(''), channel: String(meta[0] === 'Song' ? meta[1] || '' : meta[0] || ''),
+          thumb: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, duration: secs(meta.find(x => /^\d+:\d\d(:\d\d)?$/.test(x))) });
+        return;
+      }
+      for (const k in o) walk(o[k]);
+    };
+    walk(await r.json());
+    return out.filter(x => !x.duration || (x.duration > 30 && x.duration < 20 * 60));
+  }
+
   async function webSearch(q) {
     const r = await fetch('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept-Language': 'en-US' },
@@ -133,8 +162,9 @@ module.exports = function createYouTube(file, auth) {
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.items;
     // Daily API searches used up: YouTube's web search, then yt-dlp. Also when the API says it's used up mid-way.
     const fallback = async e => {
-      let items;
-      try { items = await webSearch(q); }
+      let items = [];
+      try { items = await musicSearch(q); } catch (me) { /* next */ }
+      if (!items.length) try { items = await webSearch(q); }
       catch (we) { if (!(await hasYtdlp())) throw e || we; items = await ytdlpSearch(q); }
       cache.set(q, { at: Date.now(), items }); saveCache();
       return items;
@@ -162,7 +192,8 @@ module.exports = function createYouTube(file, auth) {
         duration: seconds(x.contentDetails && x.contentDetails.duration)
       })).filter(x => x.duration > 30 && x.duration < 20 * 60);   // skip shorts and hour-long mixes
     }
-    if (!items.length) return webSearch(q);   // the API's music-only filters found nothing: ask like youtube.com does
+    if (!items.length) { try { items = await musicSearch(q); } catch (e) { /* next */ } }   // the API's filters found nothing
+    if (!items.length) return webSearch(q);
     cache.set(q, { at: Date.now(), items }); saveCache();
     if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
     return items;
@@ -173,7 +204,8 @@ module.exports = function createYouTube(file, auth) {
     const hit = cache.get('w:' + q);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.items;
     let items = [];
-    try { items = await webSearch(q); } catch (e) { /* try the others */ }
+    try { items = await musicSearch(q); } catch (e) { /* try the others */ }
+    try { items = [...items, ...(await webSearch(q))]; } catch (e) { /* fine */ }
     if (items.length < 8) { try { items = [...items, ...(await search(q, key))]; } catch (e) { if (!items.length && (await hasYtdlp())) items = await ytdlpSearch(q); } }
     items = items.filter((x, i, a) => a.findIndex(y => y.id === x.id) === i);
     if (items.length) { cache.set('w:' + q, { at: Date.now(), items }); saveCache(); }
@@ -246,5 +278,5 @@ module.exports = function createYouTube(file, auth) {
       res.json({ enabled: left.length > 0 });
     });
   }
-  return { syncCollection, routes };
+  return { syncCollection, routes, musicSearch };
 };

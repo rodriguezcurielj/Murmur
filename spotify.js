@@ -279,5 +279,14 @@ module.exports = function createSpotify(dir, auth, opts = {}) {
     await save('matches', matches);
   }
 
-  return { routes, importsFor: id => imports[id] || [], syncCollections, setFileMatch, setNotFound };
+  // Songs marked "not found" (for re-checking them), and giving one a YouTube match found later.
+  const notFound = () => Object.keys(matches).filter(k => matches[k] && matches[k].none && !matches[k].file && !matches[k].yt);
+  async function setFound(key, y, by) {
+    if (!matches[key] || !matches[key].none) return;
+    matches[key] = { ...matches[key], yt: { id: y.id, title: str(y.title), channel: str(y.channel), thumb: str(y.thumb, 500), duration: Number(y.duration) || 0 }, by, at: Date.now() };
+    delete matches[key].none;
+    await save('matches', matches);
+  }
+
+  return { routes, importsFor: id => imports[id] || [], syncCollections, setFileMatch, setNotFound, notFound, setFound };
 };
