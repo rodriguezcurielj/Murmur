@@ -187,6 +187,8 @@ body.tq-focus .mfy{display:none}
 .lib-item .meta{min-width:0;flex:1}
 .lib-item .nm{font-weight:600}
 .lib-item.playing .nm{color:var(--accent)}
+.st-item.playing{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 55%,transparent);border-radius:12px}
+.st-item.playing .sb{color:color-mix(in srgb,var(--accent) 70%,var(--muted))}
 .lib-item .sb{font-size:13px;color:var(--muted)}
 
 .cover{object-fit:cover;background:var(--raise);flex:none;aspect-ratio:1;max-width:100%}
@@ -1440,7 +1442,7 @@ body.in-radio .radio-only{display:grid!important}
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 /* Things that belong to a person (not a device): saved per account on the server, cached here per account. */
-const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home', 'stations', 'names', 'recentSearches', 'recentSearchSongs', 'prefs'];
+const SYNC_KEYS = ['liked', 'playlists', 'recent', 'plays', 'hidden', 'hiddenCols', 'ytTracks', 'ytRecent', 'spTracks', 'genres', 'history', 'home', 'stations', 'names', 'recentSearches', 'recentSearchSongs', 'prefs', 'nowPlaying'];
 /* Settings that follow you to every device too. Each is still read from its own key on the device; 'prefs' carries
    them between devices. Volume, sign-in, the server you use and where you paused stay with the device. */
 const PREF_KEYS = ['theme', 'eq', 'playback', 'shuffle', 'repeat', 'sorts', 'gpSkipped', 'discGenre', 'ytFullVideo'];
@@ -2314,10 +2316,11 @@ store.onChange = k => {
   userSync.dirty.add(k); savePending();
   clearTimeout(userSync.timer); userSync.timer = setTimeout(pushUserData, 800);
 };
-const SYNC_EMPTY = k => k === 'plays' || k === 'genres' || k === 'names' || k === 'home' || k === 'prefs' ? {} : [];
+const SYNC_EMPTY = k => k === 'plays' || k === 'genres' || k === 'names' || k === 'home' || k === 'prefs' || k === 'nowPlaying' ? {} : [];
 /* Another device may have saved since this one last looked. Instead of replacing its changes, combine them:
    start from what both saw last time (base), keep what each side added or removed. */
 function merge3(k, base, local, srv) {
+  if (k === 'nowPlaying') return newerNP(local, srv);
   if (base == null || srv == null) return local == null ? srv : mergeKey(k, srv, local);
   if (sameJSON(srv, base)) return local;          // nothing new on the server
   if (sameJSON(local, base)) return srv;          // nothing new here
@@ -2392,9 +2395,11 @@ setInterval(() => { if (document.visibilityState === 'visible') pullUserData(); 
 function legacyGet(k) { try { const v = localStorage.getItem('murmur:' + k); return v == null ? null : JSON.parse(v); } catch (e) { return null; } }
 /* Combine this device's copy with the server's: nothing liked or added here is dropped. */
 const byId = (arr, id) => { const m = new Map(); (arr || []).forEach(x => { if (x && id(x) != null) m.set(id(x), x); }); return m; };
+const newerNP = (a, b) => ((a && a.saved) || 0) >= ((b && b.saved) || 0) ? a : b;   // what's playing: the latest one wins
 function mergeKey(k, server, local) {
   if (local == null) return server;
   if (server == null) return local;
+  if (k === 'nowPlaying') return newerNP(local, server);
   if (k === 'liked' || k === 'hidden' || k === 'hiddenCols') return [...new Set([...local, ...server])];
   if (RS_KEYS[k]) return rsMerge(k, local, server);
   if (k === 'spTracks' || k === 'ytTracks' || k === 'stations') {
@@ -2485,7 +2490,9 @@ async function pullUserData() {
     if (v && typeof v.updatedAt === 'number' && v.updatedAt <= userSync.seen) return;
     const data = (await api('GET', 'api/me/data')).data;
     if (!data || !data.updatedAt || data.updatedAt <= userSync.seen) return;
-    if (!absorbServer(data)) return;
+    const changed = absorbServer(data);
+    if (userSync.npChanged) { userSync.npChanged = false; continueFromOther(); }
+    if (!changed) return;
     applyPrefs(); applyLibrary(); refreshAfterSync();
   } catch (e) {} finally { userSync.pulling = false; }
 }
@@ -2497,9 +2504,14 @@ function absorbServer(data) {
     SYNC_KEYS.forEach(k => {
       if (data[k] == null) return;
       const local = store.get(k, null);
-      const next = userSync.dirty.has(k) || userSync.inflight.has(k) ? merge3(k, userSync.base[k], local, data[k]) : data[k];
+      const next = k === 'nowPlaying' ? newerNP(local, data[k])
+        : userSync.dirty.has(k) || userSync.inflight.has(k) ? merge3(k, userSync.base[k], local, data[k]) : data[k];
       userSync.base[k] = data[k];
-      if (!sameJSON(next, local)) { store.set(k, next); changed = true; if (userSync.inflight.has(k)) { userSync.dirty.add(k); userSync.again = true; } }
+      if (!sameJSON(next, local)) {
+        store.set(k, next);
+        if (k === 'nowPlaying') { userSync.npChanged = true; return; }   // not a library change: no redraw
+        changed = true; if (userSync.inflight.has(k)) { userSync.dirty.add(k); userSync.again = true; }
+      }
     });
   } finally { userSync.ready = true; }
   userSync.seen = Math.max(userSync.seen, data.updatedAt || 0);
@@ -2512,11 +2524,90 @@ function refreshAfterSync() {
   if (typeof updateLikes === 'function') updateLikes();
 }
 /* ---------- resume: this device remembers the last song and where you were in it ---------- */
+// Put a saved station back as the playing radio (its seed, what it learned), so it keeps adding the right songs.
+function useStation(s) {
+  const st = stations().find(x => x.id === s.id) || {};
+  radio.seed = { ...s.seed }; radio.stationId = s.id || stationId(s.seed.artist, s.seed.title);
+  radio.down = new Set(st.down || []); radio.banned = new Set(st.banned || []);
+  radio.more = [...(st.seeds || []), ...(st.upArtists || [])].slice(-6); radio.waitNext = false;
+}
+/* ---------- carry on across devices: the same account picks up the same song, spot, queue and radio ---------- */
+const DEVICE_ID = (() => { try { let d = localStorage.getItem('murmur:deviceId'); if (!d) { d = Math.random().toString(36).slice(2, 10); localStorage.setItem('murmur:deviceId', d); } return d; } catch (e) { return 'x'; } })();
+const deviceName = () => window.MurmurAndroid ? 'your Android phone' : window.MurmurDesktop ? 'Murmur for Windows' : IOS_DEVICE ? 'your iPhone' : /Android/.test(navigator.userAgent) ? 'your phone' : 'your computer';
+let npShared = 0, npTimer = null, npAdopted = 0, npLast = '', npQuiet = 0;
+// What's playing, for your other devices: song, spot, the queue around it (with what's needed to show radio and
+// suggested songs that aren't in your library), and the station. Sent on song changes, play/pause and every 30 s.
+function shareNowPlaying(now) {
+  if (!me || !store.uid || !state.current || !TRACKS[state.current]) return;
+  if (Date.now() < npQuiet) { npLast = state.current + '|' + (Engine.playing ? 1 : 0); return; }   // just picked up from another device
+  const sig = state.current + '|' + (Engine.playing ? 1 : 0);
+  if (sig !== npLast) { npLast = sig; now = true; }   // a new song, or play / pause: tell the other devices right away
+  const wait = now ? 0 : Math.max(0, 30e3 - (Date.now() - npShared));
+  if (!now && npTimer) return;
+  clearTimeout(npTimer);
+  npTimer = setTimeout(() => {
+    npTimer = null; npShared = Date.now();
+    const start = Math.max(0, state.pos - 20);
+    const queue = state.order.slice(start, start + 300).map(i => state.list[i]).filter(id => TRACKS[id]);
+    const manual = state.manual.filter(id => TRACKS[id]).slice(0, 50);
+    const meta = {};
+    [...queue, ...manual].forEach(id => {
+      const t = TRACKS[id];
+      if (t.sp) meta[id] = { sp: 1, key: t.key, title: t.title, artist: t.artist, album: t.album, duration: t.duration, cover: t.cover, isrc: t.isrc, disc: t.disc ? 1 : 0 };
+      else if (t.yt) meta[id] = { yt: ytMeta(id) };
+    });
+    store.set('nowPlaying', { dev: DEVICE_ID, devName: deviceName(), current: state.current, ctx: state.ctx, queue, idx: Math.max(0, queue.indexOf(state.current)),
+      manual, meta, at: Math.floor(Engine.position() || 0), playing: !!Engine.playing, saved: Date.now(),
+      station: inRadio() && radio.seed ? { id: radio.stationId, seed: radio.seed } : null });
+  }, wait);
+}
+// Another device of yours played something more recently, and nothing's playing here: load it at the same
+// spot (paused), radio and all, and say where it came from.
+function continueFromOther(atStart) {
+  const np = store.get('nowPlaying', null);
+  if (!np || !np.current || np.dev === DEVICE_ID || np.saved <= npAdopted) return false;
+  const local = store.get('resume', null);
+  if (local && (local.saved || 0) >= np.saved) return false;
+  if (!atStart && Engine.playing) return false;   // don't take over what's playing here
+  npAdopted = np.saved; npQuiet = Date.now() + 4000;
+  // Same song as here: just move to the spot the other device is at, quietly.
+  if (!atStart && state.current === np.current && TRACKS[np.current]) {
+    if (np.at > 2 && !TRACKS[np.current].sp) Engine.seek(np.at); else if (TRACKS[np.current].sp) state.resumeAt = np.at;
+    saveResumeLocal(np); return true;
+  }
+  Object.entries(np.meta || {}).forEach(([id, m]) => {
+    if (TRACKS[id]) return;
+    if (m.sp) addSpTrack(m, m.disc ? 'discover' : 'spotify'); else if (m.yt) addYtTrack(m.yt);
+  });
+  const ok = id => TRACKS[id] && visible(id);
+  const queue = (np.queue || []).filter(ok);
+  if (!ok(np.current)) return false;
+  if (!queue.includes(np.current)) queue.unshift(np.current);
+  state.ctx = np.ctx || null;
+  if (state.ctx && state.ctx.type === 'radio' && np.station && np.station.seed) { useStation(np.station); radio.ids = queue.slice(); }
+  state.list = queue; state.order = queue.map((_, i) => i); state.pos = queue.indexOf(np.current);
+  state.passPlayed = new Set(queue.slice(0, state.pos));
+  state.manual = (np.manual || []).filter(ok);
+  if (TRACKS[np.current].sp) state.resumeAt = np.at > 2 ? np.at : 0;
+  loadAndPlay(np.current, false);
+  if (np.at > 2 && !TRACKS[np.current].sp) Engine.seek(np.at);
+  saveResumeLocal(np);
+  render(); highlight();
+  setTimeout(() => toast(`Picked up where you left off on ${np.devName || 'another device'}: ${TRACKS[np.current].title} at ${fmt(np.at || 0)}. Press play to carry on.`), atStart ? 1200 : 0);
+  return true;
+}
+// Mark it as this device's own place too (without sending it back out).
+function saveResumeLocal(np) {
+  try { store.set('resume', { current: np.current, ctx: np.ctx, list: state.list.slice(), order: state.order.slice(), pos: state.pos, manual: state.manual.slice(),
+    at: np.at || 0, playing: false, saved: np.saved, station: np.station || null }); } catch (e) {}
+}
 function saveResume(forcePlaying) {
   if (!state.current || !TRACKS[state.current]) return;
   try {
     store.set('resume', { current: state.current, ctx: state.ctx, list: state.list.slice(0, 2000), order: state.order.slice(0, 2000), pos: state.pos,
-      manual: state.manual.slice(0, 200), at: forcePlaying ? 0 : Math.floor(Engine.position() || 0), playing: !!(forcePlaying || Engine.playing), saved: Date.now() });
+      manual: state.manual.slice(0, 200), at: forcePlaying ? 0 : Math.floor(Engine.position() || 0), playing: !!(forcePlaying || Engine.playing), saved: Date.now(),
+      station: inRadio() && radio.seed ? { id: radio.stationId, seed: radio.seed } : null });
+    shareNowPlaying();
   } catch (e) {}
 }
 function restoreResume() {
@@ -2524,6 +2615,7 @@ function restoreResume() {
   if (!r || !r.current || !TRACKS[r.current] || !visible(r.current)) return false;
   const keep = new Set((r.list || []).filter(id => TRACKS[id] && visible(id)));
   state.ctx = r.ctx || null;
+  if (state.ctx && state.ctx.type === 'radio' && r.station && r.station.seed) useStation(r.station);
   state.list = (r.list || []).filter(id => keep.has(id));
   if (!state.list.includes(r.current)) state.list.unshift(r.current);
   const sameList = state.list.length === (r.list || []).length && Array.isArray(r.order) && r.order.length === state.list.length;
@@ -2740,6 +2832,7 @@ async function startRadio(artist, tid, saved, auto) {
     if (!radio.ids.length) { if (!auto) toast('Couldn’t find songs for that radio. Try another song or artist.'); return false; }
     saveStation(radio.seed, t ? tid : (saved && saved.tid) || '');
     playFrom('radio', 'station', 0);
+    highlight(); shareNowPlaying(true);
     if (!auto) navigate({ name: 'collection', type: 'radio', id: 'station' });
     return true;
   } catch (e) { radio.loading = false; if (!auto) toast(e.message); return false; }
@@ -5169,6 +5262,8 @@ function highlight() {
     r.classList.toggle('is-current', cur); r.classList.toggle('is-playing', cur && Engine.playing);
   });
   $$('[data-col-key]').forEach(el => el.classList.toggle('playing', !!state.ctx && el.dataset.colKey === state.ctx.type + ':' + state.ctx.id));
+  // The radio station that's playing: its whole box lights up (in the sidebar and on the Radio page).
+  $$('.st-item[data-id]').forEach(el => el.classList.toggle('playing', inRadio() && el.dataset.id === radio.stationId));
   $$('[data-act="play-col"]').forEach(b => {
     const on = sameCtx(b.dataset.type, b.dataset.id) && Engine.playing;
     if (b.classList.contains('on') !== on || !b.dataset.ready) {
@@ -5176,6 +5271,7 @@ function highlight() {
     }
   });
 }
+setInterval(() => { if (typeof Engine !== 'undefined' && Engine.playing) shareNowPlaying(); }, 30e3);
 function updatePlayIcons() {
   $$('[data-play-icon]').forEach(b => { b.innerHTML = icon(Engine.playing ? 'pause' : 'play'); b.setAttribute('aria-label', Engine.playing ? 'Pause' : 'Play'); });
   notifyApp();
@@ -8156,8 +8252,8 @@ const WINDOWS_APP = 'https://murmur.tail05789d.ts.net/downloads/Murmur-Setup.exe
 const isWindowsPC = () => /Windows NT/.test(navigator.userAgent) && !window.MurmurDesktop;
 /* Android app updates: people with an older app get a popup to install the new one. androiduild-apk.ps1 sets
    this to the version it builds. (Apps before 2.6 all report "2.3".) */
-const ANDROID_LATEST = '3.6';
-const ANDROID_NEW = 'Pick app icon colours in Account → Theme: with the One Home launcher the Murmur icon itself changes colour right where it is.';
+const ANDROID_LATEST = '3.7';
+const ANDROID_NEW = 'Nicer widgets: smooth rounded edges like the rest of your phone, a rounded cover, and a background tinted from the song.';
 const verNum = v => String(v).split('.').map(n => parseInt(n, 10) || 0).reduce((a, n, i) => a + n / Math.pow(1000, i), 0);
 function checkAppUpdate() {
   const app = window.MurmurAndroid;
@@ -8786,7 +8882,7 @@ setInterval(() => {
   state.playlists.forEach(p => { p.tracks = p.tracks.filter(visible); });
   state.recent = state.recent.filter(k => k !== 'album:uploads' || server.on);
   $('#upBtn').hidden = !canEditMusic();
-  if (!restoreResume()) resetPlayback();
+  if (!continueFromOther(true) && !restoreResume()) resetPlayback();
   {
     const hs = history.state || {}, fromHash = viewFromHash();
     state.view = fromHash.view;

@@ -90,7 +90,12 @@ public class MurmurWidget extends AppWidgetProvider {
         boolean has = !title.isEmpty();
         if (has(v, layout, R.id.w_title)) v.setTextViewText(R.id.w_title, has ? title : "Murmur");
         if (has(v, layout, R.id.w_artist)) v.setTextViewText(R.id.w_artist, has ? artist : "Tap to open");
-        if (art != null) v.setImageViewBitmap(R.id.w_art, art); else v.setImageViewResource(R.id.w_art, R.drawable.w_art_empty);
+        // The small cover in the one-row widget gets rounded corners; the big ones are clipped by the widget's own edge.
+        if (art != null) v.setImageViewBitmap(R.id.w_art, layout == R.layout.widget_wide ? rounded(art, 0.2f) : art);
+        else v.setImageViewResource(R.id.w_art, R.drawable.w_art_empty);
+        // Android 12+: the background takes a deep tint of the cover's colour.
+        if (art != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            v.setColorStateList(R.id.w_root, "setBackgroundTintList", android.content.res.ColorStateList.valueOf(coverTint(art)));
         v.setImageViewResource(R.id.w_play, playing ? R.drawable.n_pause : R.drawable.n_play);
         v.setContentDescription(R.id.w_play, playing ? "Pause" : "Play");
         // Only the song name opens Murmur. A tap target over the whole widget made the launcher open the app when
@@ -111,6 +116,27 @@ public class MurmurWidget extends AppWidgetProvider {
             v.setViewVisibility(R.id.w_like, has ? View.VISIBLE : View.GONE);
         }
         return v;
+    }
+
+    /** A copy of the cover with rounded corners ([frac] of its width). */
+    private static Bitmap rounded(Bitmap src, float frac) {
+        Bitmap out = Bitmap.createBitmap(src.getWidth(), src.getHeight(), Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas c = new android.graphics.Canvas(out);
+        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        p.setShader(new android.graphics.BitmapShader(src, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP));
+        float r = src.getWidth() * frac;
+        c.drawRoundRect(new android.graphics.RectF(0, 0, src.getWidth(), src.getHeight()), r, r, p);
+        return out;
+    }
+
+    /** The cover's average colour as a deep, dark shade (like Spotify's), for the widget background. */
+    private static int coverTint(Bitmap art) {
+        int c = Bitmap.createScaledBitmap(art, 1, 1, true).getPixel(0, 0);
+        float[] hsv = new float[3];
+        android.graphics.Color.colorToHSV(c, hsv);
+        hsv[1] = Math.min(0.7f, hsv[1] * 1.1f);
+        hsv[2] = 0.17f + 0.1f * hsv[2];   // always dark, so white text stays easy to read
+        return android.graphics.Color.HSVToColor(hsv);
     }
 
     private static boolean has(RemoteViews v, int layout, int view) {

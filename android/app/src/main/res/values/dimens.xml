@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget corner radius (Android 12+ uses the phone's own widget rounding, see values-v31) -->
+    <dimen name="w_radius">24dp</dimen>
+</resources>

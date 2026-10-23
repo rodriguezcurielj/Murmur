@@ -13,7 +13,8 @@ const KEYS = {
   stations: 'array',   // saved radio stations
   names: 'object',     // your own title and artist for songs
   recentSearches: 'array', recentSearchSongs: 'array',   // the Search page's recent searches, on every device
-  prefs: 'object'      // settings: theme, equalizer, playback, shuffle/repeat, sorting
+  prefs: 'object',     // settings: theme, equalizer, playback, shuffle/repeat, sorting
+  nowPlaying: 'object' // what's playing and where, so another device can carry on from the same spot
 };
 const MAX_BYTES = 4 * 1024 * 1024;   // per value; a very large library still fits easily
 

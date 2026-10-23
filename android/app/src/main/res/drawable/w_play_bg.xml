@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="#FFFFFFFF" />
-</shape>
+<!-- Play / pause: a white circle with a faint ring, so it reads on light and dark covers -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="oval"><solid android:color="#33000000" /></shape></item>
+    <item android:top="1dp" android:left="1dp" android:right="1dp" android:bottom="1dp"><shape android:shape="oval"><solid android:color="#FFFFFFFF" /></shape></item>
+</layer-list>
