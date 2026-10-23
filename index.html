@@ -691,12 +691,15 @@ body.in-radio .radio-only{display:grid!important}
 .pr-now{position:relative;overflow:hidden;isolation:isolate;display:flex;gap:36px;align-items:center;padding:28px 32px;border-radius:20px;margin-bottom:22px;background:var(--raise)}
 .pr-now::before{content:'';position:absolute;inset:-60px;z-index:-2;background:var(--pr-art) center/cover;filter:blur(50px) saturate(1.6) brightness(1.15);opacity:.9}
 .pr-now::after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,color-mix(in srgb,var(--bg) 20%,transparent) 0%,color-mix(in srgb,var(--bg) 70%,transparent) 80%)}
-.pr-cover{width:clamp(200px,22vw,340px);aspect-ratio:1;object-fit:cover;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);flex:none}
+.pr-cover{width:clamp(200px,22vw,340px);width:clamp(140px,26cqw,340px);aspect-ratio:1;object-fit:cover;border-radius:12px;box-shadow:0 18px 40px rgba(0,0,0,.45);flex:none}
 .pr-info{min-width:0;flex:1}
 .pr-title{font:800 clamp(22px,3.2vw,34px)/1.15 var(--font-display,inherit);margin:4px 0 2px;overflow-wrap:anywhere}
 .pr-artist{color:var(--muted);font-weight:600;font-size:16px;max-width:100%}
 .pr-artist:hover{color:var(--fg);text-decoration:underline}
-.pr-ctl{display:flex;align-items:center;gap:14px;margin:20px 0 12px}
+.pr-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:20px 0 12px}
+/* The round buttons keep their size when the window narrows (the cover shrinks instead) */
+.pr-ctl>button{flex:none}
+@container (max-width:900px){.pr-now{gap:22px;padding:22px 24px}.pr-ctl{gap:10px}}
 .pr-btn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);color:var(--fg);background:color-mix(in srgb,var(--bg) 40%,transparent)}
 .pr-btn:hover:not(:disabled){border-color:var(--fg)}
 .pr-btn:disabled{opacity:.35;cursor:default}
