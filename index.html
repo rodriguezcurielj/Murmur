@@ -1252,6 +1252,8 @@ body.in-radio .radio-only{display:grid!important}
   .genres{grid-auto-columns:42vw;gap:10px}
   .gt{font-size:17px;padding:12px}
   .player{grid-column:1;grid-template-columns:minmax(0,1fr) auto;margin:0 8px 6px;padding:6px;border-radius:8px;background:color-mix(in srgb,var(--tint,color-mix(in srgb,var(--accent) 45%,var(--bg))) 45%,var(--raise));min-height:0;gap:8px;overflow:hidden}
+  /* Light themes: --tint is the album's dark colour, so 45% turns the bar muddy grey and the artist line unreadable. */
+  html[data-theme=paper] .player,html[data-theme=daylight] .player,html[data-theme=mint] .player,html[data-theme=blossom] .player{background:color-mix(in srgb,var(--tint,color-mix(in srgb,var(--accent) 45%,var(--bg))) 12%,var(--raise))}
   .p-center,.p-right{display:none}
   .player{grid-template-columns:auto minmax(0,1fr) auto}
   .p-mini-ctrl{display:flex;align-items:center;gap:0;grid-column:1;grid-row:1}
