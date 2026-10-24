@@ -2432,6 +2432,15 @@ function applyLibrary() {
   state.hidden = new Set(store.get('hidden', [])); state.hiddenCols = new Set(store.get('hiddenCols', []));
   state.recent = store.get('recent', []);
   applyNames();
+  // Two copies of the same song (see spIdent) become one in Liked Songs and playlists.
+  const one = id => SP_ALIAS[id] || id, changed = [];
+  const liked = new Set([...state.liked].map(one));
+  if (liked.size !== state.liked.size || [...state.liked].some(id => SP_ALIAS[id])) { state.liked = liked; store.set('liked', [...liked]); changed.push('liked'); }
+  let plChanged = false;
+  state.playlists.forEach(p => { if (p.tracks.some(id => SP_ALIAS[id])) { p.tracks = [...new Set(p.tracks.map(one))]; plChanged = true; } });
+  if (plChanged) { store.set('playlists', state.playlists); changed.push('playlists'); }
+  if (changed.length) { saveSpCache(); changed.push('spTracks'); }
+  return changed;
 }
 async function loadUserData() {
   userSync.ready = false;
@@ -2469,16 +2478,16 @@ async function loadUserData() {
     });
     try { localStorage.setItem(mergedKey, '1'); } catch (e) {}
     applyPrefs();
-    applyLibrary();
+    applyLibrary().forEach(k => up.add(k));
     userSync.ready = true;
     userSync.dirty = up; savePending();
     if (up.size) pushUserData();
     return;
   }
   // Server unreachable: use this device's copy, and send anything unsaved once it's back.
-  applyLibrary();
+  const fixed = applyLibrary();
   userSync.ready = true;
-  pending.forEach(k => userSync.dirty.add(k));
+  [...pending, ...fixed].forEach(k => userSync.dirty.add(k)); savePending();
 }
 /* Pick up changes another device saved. Keys with unsent changes here are left alone until they're sent. */
 async function pullUserData() {
@@ -6601,8 +6610,21 @@ const normKey = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[�
 const matchKey = x => x.isrc ? 'isrc:' + x.isrc.toUpperCase() : 'n:' + normKey(x.artist) + '|' + normKey(x.title);
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
+/* The same song can come with or without an ISRC (so with a different key). Title + first artist tells them apart
+   from other songs, so a radio copy of a song you already liked counts as that song, not a second one. */
+const spIdent = x => String(x.title || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  .replace(/[(\[]\s*(feat|ft|with|con)\b.*?[)\]]/g, ' ').replace(/[(\[][^)\]]*remaster[^)\]]*[)\]]|\s-\s.*remaster.*$/g, ' ')
+  .replace(/\s(feat|ft)\.?\s.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim() + '|' + normKey(String(x.artist || '').split(/,|&|\s+x\s+/i)[0].replace(/\s*-\s*topic$/i, ''));
+const SP_IDENT = {};   // song identity -> the id it first came in as
+const SP_ALIAS = {};   // id of another copy -> that id
 function addSpTrack(x, source = 'spotify') {
   const id = 'sp-' + hashStr(x.key).toString(36) + hashStr('m' + x.key).toString(36);
+  const ident = x.title ? spIdent(x) : id;
+  if (source === 'discover' && !TRACKS[id]) {
+    const same = SP_ALIAS[id] || SP_IDENT[ident];
+    if (same && same !== id && TRACKS[same]) { SP_ALIAS[id] = same; return same; }
+  }
+  if (!SP_IDENT[ident]) SP_IDENT[ident] = id;
   if (TRACKS[id] && !(TRACKS[id].disc && source === 'spotify')) return id;   // an imported copy wins over a suggestion
   const isDisc = source === 'discover';
   TRACKS[id] = { id, sp: true, disc: isDisc, key: x.key, title: x.title, artist: x.artist || 'Unknown artist', album: x.album || (isDisc ? 'Discover' : 'Spotify'),
